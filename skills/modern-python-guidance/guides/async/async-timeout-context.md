@@ -51,7 +51,7 @@ async def fetch_data():
 
 - Context manager scopes timeout to an entire block, not just one awaitable
 - Multiple operations share the same deadline
-- Raises standard `TimeoutError` (not `asyncio.TimeoutError`)
+- Raises `TimeoutError` (3.12+) or `asyncio.TimeoutError` (3.11) — catch `TimeoutError` to cover both
 - `asyncio.timeout(None)` disables timeout (useful for conditional timeouts)
 
 ## Version Notes

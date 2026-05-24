@@ -41,6 +41,7 @@ def retry(func: F) -> F:  # loses parameter info in practice
 ## GOOD
 
 ```python
+from collections.abc import Callable
 from functools import wraps
 from typing import ParamSpec, TypeVar
 

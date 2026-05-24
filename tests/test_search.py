@@ -65,8 +65,9 @@ class TestFuzzyFallback:
 
 class TestDeterminism:
     def test_same_score_sorted_by_id(self, index):
-        results = search(index, "python")
-        ids = [r.guide_id for r in results]
+        results = search(index, "pydantic")
+        assert len(results) >= 2
+        assert not any(r.fuzzy for r in results)
         same_score_groups: dict[float, list[str]] = {}
         for r in results:
             same_score_groups.setdefault(r.score, []).append(r.guide_id)

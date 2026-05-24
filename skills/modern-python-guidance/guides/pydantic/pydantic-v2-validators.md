@@ -64,7 +64,7 @@ class User(BaseModel):
 
 ## Why
 
-- `@validator` and `@root_validator` are removed in Pydantic V2
+- `@validator` and `@root_validator` are deprecated in Pydantic V2 (removed in V3)
 - `@field_validator` is explicit about which fields it validates
 - `@model_validator(mode="before"|"after")` replaces `@root_validator(pre=True|False)`
 - `mode="after"` receives the model instance, not a raw dict

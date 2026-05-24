@@ -52,7 +52,7 @@ class User(BaseModel):
 
 ## Why
 
-- `class Config` is removed in Pydantic V2
+- `class Config` is deprecated in Pydantic V2 (removed in V3)
 - `ConfigDict` is typed — IDE autocompletion and type checking work
 - Some V1 config keys were renamed (`orm_mode` → `from_attributes`, `allow_population_by_field_name` → `populate_by_name`)
 - `model_config` is a class variable, not a nested class — simpler inheritance

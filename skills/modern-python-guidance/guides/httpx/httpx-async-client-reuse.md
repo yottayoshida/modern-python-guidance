@@ -26,11 +26,12 @@ Create one `httpx.AsyncClient` and reuse it across requests instead of creating 
 import httpx
 
 async def fetch_user(user_id: int) -> dict:
-    response = httpx.get(f"https://api.example.com/users/{user_id}")
-    return response.json()
+    async with httpx.AsyncClient() as client:
+        resp = await client.get(f"https://api.example.com/users/{user_id}")
+        return resp.json()
 
 async def fetch_many(ids: list[int]) -> list[dict]:
-    return [await fetch_user(i) for i in ids]
+    return [await fetch_user(i) for i in ids]  # new client per call
 ```
 
 ## GOOD
