@@ -30,6 +30,12 @@ dependencies = [
     "packaging>=23.0",
 ]
 
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "ruff>=0.4.0",
+]
+
 [project.scripts]
 modern-python-guidance = "modern_python_guidance.cli:main"
 mpg = "modern_python_guidance.cli:main"

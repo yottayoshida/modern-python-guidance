@@ -6,8 +6,6 @@ import json
 import subprocess
 import sys
 
-import pytest
-
 BIN = [sys.executable, "-m", "modern_python_guidance"]
 
 
@@ -83,7 +81,9 @@ class TestRetrieve:
         assert set(data[0].keys()) == expected_keys
 
     def test_retrieve_version_match_flag(self):
-        r = run_cli("retrieve", "taskgroup-over-gather", "--python-version", "3.9", "--format", "json")
+        r = run_cli(
+            "retrieve", "taskgroup-over-gather", "--python-version", "3.9", "--format", "json",
+        )
         data = json.loads(r.stdout)
         assert data[0]["version_match"] is False
 
