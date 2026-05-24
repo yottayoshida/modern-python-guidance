@@ -132,6 +132,7 @@ def _fuzzy_fallback(
     seen: set[str] = set()
     results: list[SearchResult] = []
     for match in matches:
+        ratio = difflib.SequenceMatcher(None, query, match).ratio()
         for guide_id in pool_to_guides[match]:
             if guide_id in seen:
                 continue
@@ -139,14 +140,11 @@ def _fuzzy_fallback(
             guide = candidates[guide_id]
             results.append(SearchResult(
                 guide_id=guide_id,
-                score=0.1,
+                score=round(ratio, 3),
                 meta=guide.meta,
                 token_estimate=token_estimate(guide.body),
                 fuzzy=True,
             ))
-            if len(results) >= min(limit, FUZZY_MAX):
-                break
-        if len(results) >= min(limit, FUZZY_MAX):
-            break
 
-    return results
+    results.sort(key=lambda r: (-r.score, r.guide_id))
+    return results[:min(limit, FUZZY_MAX)]

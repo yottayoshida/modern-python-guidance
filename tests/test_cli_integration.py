@@ -35,7 +35,7 @@ class TestSearch:
         assert "use-builtin-generics" in r.stdout
 
     def test_search_no_match_exits_1(self):
-        r = run_cli("search", "zzznonexistentzzzz", "--format", "json")
+        r = run_cli("search", "qqqxxx999zzz", "--format", "json")
         assert r.returncode == 1
 
     def test_search_with_version_filter(self):
