@@ -54,7 +54,8 @@ def build_index(guides_dir: Path | None = None) -> GuideIndex:
             expected_id = md_file.stem
             if meta.id != expected_id:
                 log.warning(
-                    "Guide ID mismatch: frontmatter says '%s', filename is '%s' — using frontmatter ID",
+                    "Guide ID mismatch: frontmatter says '%s', filename is '%s'"
+                    " — using frontmatter ID",
                     meta.id,
                     expected_id,
                 )

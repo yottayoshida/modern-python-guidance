@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import contextlib
 import json
 import signal
 import sys
@@ -17,10 +18,8 @@ from modern_python_guidance.version_detect import detect_version
 
 
 def main(argv: list[str] | None = None) -> None:
-    try:
+    with contextlib.suppress(AttributeError, OSError):
         signal.signal(signal.SIGPIPE, signal.SIG_DFL)
-    except (AttributeError, OSError):
-        pass
 
     parser = argparse.ArgumentParser(
         prog="modern-python-guidance",

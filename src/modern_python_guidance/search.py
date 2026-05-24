@@ -87,9 +87,8 @@ def _score(meta: GuideMeta, tokens: list[str]) -> float:
             score += WEIGHT_TAG
         if token in aliases_lower:
             score += WEIGHT_ALIAS
-        if any(token in alias for alias in aliases_lower):
-            if token not in aliases_lower:
-                score += WEIGHT_ALIAS * 0.5
+        if any(token in alias for alias in aliases_lower) and token not in aliases_lower:
+            score += WEIGHT_ALIAS * 0.5
         if token in title_words:
             score += WEIGHT_TITLE
         if token == meta.category.lower():
