@@ -149,4 +149,5 @@ def _fuzzy_fallback(
         if len(results) >= min(limit, FUZZY_MAX):
             break
 
+    results.sort(key=lambda r: r.guide_id)
     return results
