@@ -62,6 +62,9 @@ def main(argv: list[str] | None = None) -> None:
     p_detect = subparsers.add_parser("detect-version", help="Detect project Python version")
     p_detect.add_argument("--project-dir", type=Path, help="Project directory (default: cwd)")
 
+    # mcp
+    subparsers.add_parser("mcp", help="Start MCP server (JSON-RPC over stdio)")
+
     args = parser.parse_args(argv)
 
     if args.command is None:
@@ -81,6 +84,8 @@ def main(argv: list[str] | None = None) -> None:
             _cmd_list(args)
         elif args.command == "detect-version":
             _cmd_detect_version(args)
+        elif args.command == "mcp":
+            _cmd_mcp()
     except BrokenPipeError:
         sys.exit(0)
 
@@ -200,3 +205,9 @@ def _cmd_list(args: argparse.Namespace) -> None:
 def _cmd_detect_version(args: argparse.Namespace) -> None:
     version = detect_version(project_dir=args.project_dir)
     print(version)
+
+
+def _cmd_mcp() -> None:
+    from modern_python_guidance.mcp_server import serve
+
+    serve()

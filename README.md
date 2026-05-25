@@ -81,6 +81,40 @@ mpg list --python-version 3.9
 # Excludes: TaskGroup (3.11+), match/case (3.10+), etc.
 ```
 
+## MCP server
+
+mpg includes a built-in [MCP](https://modelcontextprotocol.io) server that exposes all 4 commands as tools. AI agents (Claude Code, Cursor, Gemini CLI, etc.) can discover and call them directly.
+
+### Setup with Claude Code
+
+```bash
+claude mcp add mpg -- mpg mcp
+```
+
+Or add to `.mcp.json` manually:
+
+```json
+{
+  "mcpServers": {
+    "mpg": {
+      "command": "mpg",
+      "args": ["mcp"]
+    }
+  }
+}
+```
+
+### Available tools
+
+| Tool | Description |
+|------|-------------|
+| `search_guides` | Search guides by keyword with fuzzy matching |
+| `retrieve_guides` | Get full BAD/GOOD content by guide ID |
+| `list_guides` | Browse all guides, filter by category/version |
+| `detect_python_version` | Auto-detect project Python version |
+
+The MCP server uses stdio transport (JSON-RPC 2.0) and adds zero additional dependencies.
+
 ## Agent Skills integration
 
 This project doubles as a [Claude Code Agent Skills](https://docs.anthropic.com/en/docs/claude-code) plugin. Install it into your project's `.claude/skills/` to give Claude automatic access to modern Python patterns when writing or reviewing code.
@@ -110,7 +144,8 @@ ruff check src/ tests/
 
 ```
 src/modern_python_guidance/
-├── cli.py              # Entry point (search, retrieve, list, detect-version)
+├── cli.py              # Entry point (search, retrieve, list, detect-version, mcp)
+├── mcp_server.py       # MCP server (JSON-RPC 2.0 over stdio)
 ├── frontmatter.py      # YAML-subset parser (no PyYAML dependency)
 ├── guide_index.py      # Guide discovery and indexing
 ├── search.py           # Weighted keyword search + fuzzy fallback
