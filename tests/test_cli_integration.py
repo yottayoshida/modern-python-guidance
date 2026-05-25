@@ -6,6 +6,8 @@ import json
 import subprocess
 import sys
 
+from modern_python_guidance import __version__
+
 BIN = [sys.executable, "-m", "modern_python_guidance"]
 
 
@@ -146,4 +148,4 @@ class TestVersion:
     def test_version_flag(self):
         r = run_cli("--version")
         assert "modern-python-guidance" in r.stdout
-        assert "0.1.0" in r.stdout
+        assert __version__ in r.stdout
