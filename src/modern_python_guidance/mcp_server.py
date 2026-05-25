@@ -29,6 +29,10 @@ def _get_index() -> GuideIndex:
 # --- JSON-RPC framing (Content-Length, LSP-style) ---
 
 
+class _Skip(Exception):
+    """Raised to skip a malformed message without terminating the server."""
+
+
 def _read_message(stream: object = None) -> dict | None:
     buf = stream or sys.stdin.buffer
     headers: dict[str, str] = {}
@@ -43,11 +47,18 @@ def _read_message(stream: object = None) -> dict | None:
             key, _, value = line_str.partition(":")
             headers[key.strip().lower()] = value.strip()
 
-    length = int(headers.get("content-length", "0"))
+    raw_length = headers.get("content-length", "0")
+    try:
+        length = int(raw_length)
+    except ValueError as exc:
+        raise _Skip(f"invalid Content-Length: {raw_length!r}") from exc
     if length == 0:
-        return None
+        raise _Skip("missing or zero Content-Length")
     body = buf.read(length)
-    return json.loads(body)
+    try:
+        return json.loads(body)
+    except json.JSONDecodeError as exc:
+        raise _Skip(f"invalid JSON body: {exc}") from exc
 
 
 def _write_message(msg: dict, stream: object = None) -> None:
@@ -336,27 +347,31 @@ def _handle_request(msg: dict) -> dict | None:
     method = msg.get("method", "")
     req_id = msg.get("id")
     params = msg.get("params", {})
-
-    if method == "initialize":
-        return _result_response(req_id, {
-            "protocolVersion": PROTOCOL_VERSION,
-            "capabilities": {"tools": {}},
-            "serverInfo": {"name": "modern-python-guidance", "version": __version__},
-        })
+    is_notification = "id" not in msg
 
     if method == "notifications/initialized":
         return None
 
+    if method == "initialize":
+        result = _result_response(req_id, {
+            "protocolVersion": PROTOCOL_VERSION,
+            "capabilities": {"tools": {}},
+            "serverInfo": {"name": "modern-python-guidance", "version": __version__},
+        })
+        return None if is_notification else result
+
     if method == "tools/list":
-        return _result_response(req_id, {"tools": TOOLS})
+        result = _result_response(req_id, {"tools": TOOLS})
+        return None if is_notification else result
 
     if method == "tools/call":
         tool_name = params.get("name", "")
         arguments = params.get("arguments", {})
-        result = _handle_tool_call(tool_name, arguments)
-        return _result_response(req_id, result)
+        tool_result = _handle_tool_call(tool_name, arguments)
+        result = _result_response(req_id, tool_result)
+        return None if is_notification else result
 
-    if req_id is not None:
+    if not is_notification:
         return _error_response(req_id, -32601, f"Method not found: {method}")
 
     return None
@@ -366,7 +381,11 @@ def serve(*, stdin: object = None, stdout: object = None) -> None:
     logging.basicConfig(stream=sys.stderr, level=logging.WARNING, format="%(message)s")
 
     while True:
-        msg = _read_message(stdin)
+        try:
+            msg = _read_message(stdin)
+        except _Skip as exc:
+            log.warning("Skipping malformed message: %s", exc)
+            continue
         if msg is None:
             break
 
