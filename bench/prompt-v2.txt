@@ -1,0 +1,11 @@
+Write the following 5 files. Write all code, no placeholders. Create each file at the EXACT path shown below (relative to the current working directory). Do NOT create any project directories or subdirectories beyond what is listed.
+
+1. src/config.py — A typed configuration loader. Define a generic container class `Registry[T]` that stores items by name and retrieves them with type safety. Write a function `load_config(path)` that reads a TOML file and returns a dict.
+
+2. src/crawler.py — An async web crawler. Write an async function `crawl(urls: list[str])` that fetches multiple URLs concurrently using httpx, with a 10-second timeout per request. If a request fails, retry up to 3 times. Return a list of response bodies.
+
+3. src/app.py — A FastAPI application with: a database connection pool initialized at startup and closed at shutdown (use SQLAlchemy async with aiosqlite), a dependency that provides a database session, CRUD endpoints for a User model (GET /users, GET /users/{id}, POST /users), and an OAuth2-protected endpoint GET /users/me that requires the "users:read" scope.
+
+4. src/scanner.py — A file scanner. Write a function `scan_directory(root: Path)` that walks a directory tree recursively, collects all files, groups them into batches of 10, and processes each batch. Define an enum `FileCategory` with values IMAGE, VIDEO, DOCUMENT, OTHER. Use a match statement to categorize each file by its extension (.jpg/.png → IMAGE, .mp4/.avi → VIDEO, .pdf/.docx → DOCUMENT, everything else → OTHER).
+
+5. pyproject.toml — Project config with dependencies on fastapi, sqlalchemy[asyncio], aiosqlite, httpx, and uvicorn, supporting Python 3.12+.

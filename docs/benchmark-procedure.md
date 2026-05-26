@@ -113,6 +113,16 @@ Token-based skill load verification is unreliable due to this caching behavior. 
 
 ## Prompt versioning
 
-| Version | Date | Changes |
-|---------|------|---------|
-| v1 | 2026-05-26 | Initial 6-file prompt. V1 terms retained as stress test |
+| Version | Date | Prompt file | Items | Scorer | Changes |
+|---------|------|-------------|-------|--------|---------|
+| v1 | 2026-05-26 | `bench/prompt.txt` | 17 | `bench/score.sh` | Initial 6-file prompt. V1 Pydantic terms as stress test |
+| v2 | 2026-05-26 | `bench/prompt-v2.txt` | 13 | `bench/score-v2.sh` | Redesign. Dropped Pydantic renames (Claude baseline 94.1%). Added SQLAlchemy 2.0, match patterns, stdlib 3.12+ features. Three-tier coverage design (Embedded/Guide-listed/Uncovered) |
+
+### Using v2 prompt
+
+`run.sh` is already configured to use `prompt-v2.txt`. Score with the v2 scorer:
+
+```bash
+./bench/run.sh 4 both
+./bench/score-v2.sh 4
+```

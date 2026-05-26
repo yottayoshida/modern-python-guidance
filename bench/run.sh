@@ -15,7 +15,8 @@ USER_SKILL_DIR="$HOME/.claude/skills/modern-python-guidance"
 RUN_ID="${1:?Usage: $0 <run_id> <control|treatment|both>}"
 SESSION="${2:?Usage: $0 <run_id> <control|treatment|both>}"
 RESULTS_DIR="$REPO_DIR/results/run-${RUN_ID}"
-PROMPT_FILE="$REPO_DIR/bench/prompt.txt"
+# Switch prompt version: prompt.txt (v1) or prompt-v2.txt (v2)
+PROMPT_FILE="$REPO_DIR/bench/prompt-v2.txt"
 BUDGET="2.00"
 
 GEN_SRC="$WORKSPACE/src"

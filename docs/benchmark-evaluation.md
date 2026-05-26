@@ -6,61 +6,93 @@ Issue: #8
 
 Embedding BAD/GOOD patterns in SKILL.md (pre-generation injection) reduces outdated Python patterns in AI-generated code, particularly for patterns that Ruff cannot auto-fix.
 
-## Evaluation checklist (17 items)
+---
 
-### P-01: Pydantic model with validators (6 items)
+## V2 Evaluation Checklist (13 items)
 
-File: `src/models.py`
+Prompt: `bench/prompt-v2.txt`
 
-| # | Outdated (BAD) | Modern (GOOD) | grep pattern |
-|---|----------------|---------------|-------------|
-| 1 | `@validator` | `@field_validator` | `@field_validator` |
-| 2 | `@root_validator` | `@model_validator` | `@model_validator` |
-| 3 | `class Config:` | `model_config = ConfigDict(...)` | `model_config` |
-| 4 | `orm_mode = True` | `from_attributes = True` | `from_attributes` |
-| 5 | `allow_population_by_field_name` | `populate_by_name` | `populate_by_name` |
-| 6 | `.dict()` | `.model_dump()` | `\.model_dump()` |
+V1 tested mostly Pydantic V1→V2 API renames. Claude already knows them (94.1% baseline). V2 tests design-level patterns where the old way still compiles but is architecturally wrong. These are patterns where APILOT research shows pre-generation guidance has significant impact (avg 89.42% reduction in outdated recommendations).
 
-### P-02: Pydantic serialization (5 items)
+### Coverage tiers
 
-File: `src/serialization.py`
+Items are grouped by SKILL.md coverage to measure the signal source:
 
-| # | Outdated (BAD) | Modern (GOOD) | grep pattern |
-|---|----------------|---------------|-------------|
-| 1 | `.parse_obj()` | `.model_validate()` | `\.model_validate(` |
-| 2 | `.parse_raw()` | `.model_validate_json()` | `\.model_validate_json(` |
-| 3 | `.json()` | `.model_dump_json()` | `\.model_dump_json()` |
-| 4 | `.schema()` | `.model_json_schema()` | `\.model_json_schema()` |
-| 5 | `.copy()` | `.model_copy()` | `\.model_copy(` |
+- **Tier E (Embedded)**: Pattern + code example in SKILL.md embedded section → Treatment should improve
+- **Tier G (Guide-listed)**: Guide name in SKILL.md "30 guides" list, no embedded example → might improve
+- **Tier U (Uncovered)**: Not in SKILL.md at all → control group, no difference expected
 
-### P-03: FastAPI lifecycle (3 items)
+### A: Structured Concurrency (1 item)
+
+File: `src/crawler.py`
+
+| # | Tier | Outdated (BAD) | Modern (GOOD) | grep detect |
+|---|------|----------------|---------------|-------------|
+| A1 | E | `asyncio.gather()` | `asyncio.TaskGroup` | `TaskGroup` vs `gather` |
+
+### F: FastAPI Architecture (3 items)
 
 File: `src/app.py`
 
-| # | Outdated (BAD) | Modern (GOOD) | grep pattern |
-|---|----------------|---------------|-------------|
-| 1 | `@app.on_event("startup")` | lifespan context manager | `lifespan` |
-| 2 | `@app.on_event("shutdown")` | lifespan context manager | (same as above) |
-| 3 | `Depends()` without `Annotated` | `Annotated[..., Depends()]` | `Annotated\[` |
+| # | Tier | Outdated (BAD) | Modern (GOOD) | grep detect |
+|---|------|----------------|---------------|-------------|
+| F1 | E | `@app.on_event("startup"/"shutdown")` | lifespan context manager | `lifespan` vs `on_event` |
+| F2 | E | `Depends()` without `Annotated` | `Annotated[..., Depends()]` | `Annotated\[` vs bare `Depends(` |
+| F3 | U | `Depends()` for OAuth scopes | `Security()` with scopes | `Security(` |
 
-### P-04: Async HTTP (2 items)
+### S: SQLAlchemy 2.0 (2 items)
 
-File: `src/fetcher.py`
+File: `src/app.py`
 
-| # | Outdated (BAD) | Modern (GOOD) | grep pattern |
-|---|----------------|---------------|-------------|
-| 1 | Per-request `AsyncClient` | Shared `AsyncClient` | `AsyncClient` |
-| 2 | `asyncio.gather()` | `asyncio.TaskGroup` | `TaskGroup` |
+| # | Tier | Outdated (BAD) | Modern (GOOD) | grep detect |
+|---|------|----------------|---------------|-------------|
+| S1 | U | `session.query(User)` | `select(User)` + `session.scalars()` | `session.query` vs `select(` |
+| S2 | U | sync `sessionmaker` in async | `async_sessionmaker` | `async_sessionmaker` |
 
-### P-05: Subprocess (1 item)
+### H: httpx (2 items)
 
-File: `src/runner.py`
+File: `src/crawler.py`
 
-| # | Outdated (BAD) | Modern (GOOD) | grep pattern |
-|---|----------------|---------------|-------------|
-| 2 | `subprocess.run(f"...", shell=True)` | `subprocess.run(["cmd", arg])` | `shell=True` (inverse) |
+| # | Tier | Outdated (BAD) | Modern (GOOD) | grep detect |
+|---|------|----------------|---------------|-------------|
+| H1 | E | per-request `AsyncClient()` in loop | shared `AsyncClient` | `AsyncClient` present |
+| H2 | U | manual retry loop only | `HTTPTransport(retries=)` | `HTTPTransport` |
 
-**P-05-1 excluded**: The prompt asks for `pyproject.toml` explicitly. Not a valid test.
+Note: H2 scores whether the model knows HTTPTransport exists. Manual retry for HTTP-level errors is legitimate on top of transport retries.
+
+### L: stdlib / typing (3 items)
+
+| # | Tier | File | Outdated (BAD) | Modern (GOOD) | grep detect |
+|---|------|------|----------------|---------------|-------------|
+| L1 | G | config.py | `import tomli` / `import toml` | `import tomllib` | `tomllib` |
+| L2 | G | scanner.py | `os.walk()` | `Path.walk()` (3.12+) | `.walk(` in pathlib context vs `os.walk` |
+| L3 | U | scanner.py | manual chunking loop | `itertools.batched()` (3.12+) | `batched` |
+
+### T: Type system (1 item)
+
+File: `src/config.py`
+
+| # | Tier | Outdated (BAD) | Modern (GOOD) | grep detect |
+|---|------|----------------|---------------|-------------|
+| T1 | G | `T = TypeVar("T")` + `Generic[T]` | PEP 695: `class Registry[T]:` | `TypeVar` vs `class.*\[` without TypeVar |
+
+### M: match statement (1 item)
+
+File: `src/scanner.py`
+
+| # | Tier | Outdated (BAD) | Modern (GOOD) | grep detect |
+|---|------|----------------|---------------|-------------|
+| M1 | G | `case IMAGE:` (bare name = capture!) | `case FileCategory.IMAGE:` (qualified) | `case FileCategory\.` vs `case [A-Z][A-Z]` |
+
+Note: In Python's structural pattern matching, bare names are always capture patterns — `case IMAGE:` captures the value into `IMAGE` rather than comparing against the constant. This is a real Python gotcha documented in PEP 636.
+
+### Tier summary
+
+| Tier | Items | Expected Treatment effect |
+|------|-------|--------------------------|
+| E (Embedded) | A1, F1, F2, H1 | Strong improvement |
+| G (Guide-listed) | L1, L2, T1, M1 | Possible improvement |
+| U (Uncovered) | F3, S1, S2, H2, L3 | No improvement (control) |
 
 ## Scoring
 
@@ -68,20 +100,175 @@ File: `src/runner.py`
 |--------|---------|
 | Modern patterns | Count of GOOD patterns detected |
 | Outdated patterns | Count of BAD patterns detected |
-| Score | `modern / 17 * 100` (%) |
+| Score | `modern / 13 * 100` (%) |
 | Improvement | Treatment score - Control score (pp) |
+| Tier E improvement | Treatment Tier E score - Control Tier E score |
+| Tier G improvement | Treatment Tier G score - Control Tier G score |
+| Tier U improvement | Treatment Tier U score - Control Tier U score (expected: ~0) |
 
-All 17 patterns are Ruff-uncoverable, so any improvement is attributable to SKILL.md.
+All 13 patterns are Ruff-uncoverable, so any improvement is attributable to SKILL.md.
 
 ## Interpretation
 
 | Improvement | Meaning | Action |
 |-------------|---------|--------|
-| 0-10pp | Marginal | Reconsider product positioning |
-| 10-30pp | Moderate | Strengthen SKILL.md, add more patterns |
-| 30pp+ | Strong | Double down on SKILL.md approach |
+| 0-10pp overall | Marginal | Reconsider product positioning |
+| 10-30pp overall | Moderate | Strengthen SKILL.md, add more patterns |
+| 30pp+ overall | Strong | Double down on SKILL.md approach |
 
-## Results
+### Tier-level interpretation
+
+| Outcome | Meaning |
+|---------|---------|
+| Tier E improves, U flat | SKILL.md embedded patterns work |
+| Tier G improves, U flat | SKILL.md guide listing alone has value |
+| Tier E+G flat, U flat | SKILL.md has no measurable effect |
+| Tier U also improves | Confound — skill toggle may not be working |
+
+## Design decisions (V2-specific)
+
+### Why V2 dropped Pydantic items
+
+V1's 11 Pydantic items (P-01, P-02) were API renames: `@validator` → `@field_validator`, `.dict()` → `.model_dump()`, etc. Claude scored 94.1% on these without any guidance. Pydantic V2 was released in June 2023 and is now well-represented in training data. These items have no room for SKILL.md to add value.
+
+### Why V2 adds SQLAlchemy, match, stdlib items
+
+The deep research identified that AI consistently falls back to old patterns when:
+1. The old API is backward-compatible and still works (e.g., `session.query()`)
+2. The new feature was introduced recently with low adoption (e.g., `itertools.batched`, PEP 695)
+3. The pattern involves a design decision, not a syntax swap (e.g., `Security()` vs `Depends()`)
+
+### Three-tier design
+
+Grouping items by SKILL.md coverage tier allows causal attribution. If only Tier E and G improve while Tier U stays flat, the improvement is attributable to SKILL.md content, not confounds like cache or session ordering.
+
+### Prompt contains no evaluation criteria
+
+`bench/prompt-v2.txt` contains only generation instructions — no BAD/GOOD hints, no "modern" or "best practice" keywords. Target Python version (3.12+) is stated only in the pyproject.toml spec.
+
+---
+
+## V1 Evaluation Checklist (17 items) — archived
+
+Prompt: `bench/prompt.txt`
+
+### V1 items (collapsed)
+
+| Category | Items | File |
+|----------|-------|------|
+| P-01: Pydantic model | 6 (validators, Config, orm_mode, dict) | models.py |
+| P-02: Pydantic serialization | 5 (parse_obj, parse_raw, json, schema, copy) | serialization.py |
+| P-03: FastAPI lifecycle | 3 (on_event, Annotated Depends) | app.py |
+| P-04: Async HTTP | 2 (AsyncClient, TaskGroup) | fetcher.py |
+| P-05: Subprocess | 1 (shell=True) | runner.py |
+| **Total** | **17** | |
+
+P-05-1 excluded: prompt asks for pyproject.toml explicitly.
+
+## V2 Results
+
+### V2 Run 4 (2026-05-26)
+
+| # | Tier | Pattern | Control | Treatment |
+|---|------|---------|---------|-----------|
+| A1 | E | TaskGroup vs gather | OUTDATED | OUTDATED |
+| F1 | E | lifespan vs on_event | MODERN | MODERN |
+| F2 | E | Annotated Depends | MODERN | OUTDATED |
+| F3 | U | Security() for OAuth | MODERN | MODERN |
+| S1 | U | select() vs query() | MODERN | MODERN |
+| S2 | U | async_sessionmaker | MODERN | MODERN |
+| H1 | E | shared AsyncClient | MODERN | MODERN |
+| H2 | U | HTTPTransport | OUTDATED | OUTDATED |
+| L1 | G | tomllib | MODERN | MODERN |
+| L2 | G | Path.walk() | MODERN | MODERN |
+| L3 | U | itertools.batched() | OUTDATED | OUTDATED |
+| T1 | G | PEP 695 generics | OUTDATED | OUTDATED |
+| M1 | G | qualified match names | MODERN | MODERN |
+
+| Metric | Control | Treatment |
+|--------|---------|-----------|
+| Modern | 9/13 | 8/13 |
+| Score | 69.2% | 61.5% |
+| Tier E (4) | 3/4 | 2/4 |
+| Tier G (4) | 3/4 | 3/4 |
+| Tier U (5) | 3/5 | 3/5 |
+
+### V2 Run 5 (2026-05-26)
+
+| # | Tier | Pattern | Control | Treatment |
+|---|------|---------|---------|-----------|
+| A1 | E | TaskGroup vs gather | OUTDATED | OUTDATED |
+| F1 | E | lifespan vs on_event | MODERN | MODERN |
+| F2 | E | Annotated Depends | MODERN | OUTDATED |
+| F3 | U | Security() for OAuth | MODERN | MODERN |
+| S1 | U | select() vs query() | MODERN | MODERN |
+| S2 | U | async_sessionmaker | MODERN | MODERN |
+| H1 | E | shared AsyncClient | MODERN | MODERN |
+| H2 | U | HTTPTransport | OUTDATED | OUTDATED |
+| L1 | G | tomllib | MODERN | MODERN |
+| L2 | G | Path.walk() | MODERN | MODERN |
+| L3 | U | itertools.batched() | MODERN | MODERN |
+| T1 | G | PEP 695 generics | OUTDATED | OUTDATED |
+| M1 | G | qualified match names | MODERN | MODERN |
+
+| Metric | Control | Treatment |
+|--------|---------|-----------|
+| Modern | 10/13 | 9/13 |
+| Score | 76.9% | 69.2% |
+| Tier E (4) | 3/4 | 2/4 |
+| Tier G (4) | 3/4 | 3/4 |
+| Tier U (5) | 4/5 | 4/5 |
+
+### V2 Run 6 (2026-05-26)
+
+| # | Tier | Pattern | Control | Treatment |
+|---|------|---------|---------|-----------|
+| A1 | E | TaskGroup vs gather | OUTDATED | OUTDATED |
+| F1 | E | lifespan vs on_event | MODERN | MODERN |
+| F2 | E | Annotated Depends | MODERN | MODERN |
+| F3 | U | Security() for OAuth | MODERN | MODERN |
+| S1 | U | select() vs query() | MODERN | MODERN |
+| S2 | U | async_sessionmaker | MODERN | MODERN |
+| H1 | E | shared AsyncClient | MODERN | MODERN |
+| H2 | U | HTTPTransport | OUTDATED | OUTDATED |
+| L1 | G | tomllib | MODERN | MODERN |
+| L2 | G | Path.walk() | MODERN | MODERN |
+| L3 | U | itertools.batched() | OUTDATED | OUTDATED |
+| T1 | G | PEP 695 generics | OUTDATED | OUTDATED |
+| M1 | G | qualified match names | MODERN | MODERN |
+
+| Metric | Control | Treatment |
+|--------|---------|-----------|
+| Modern | 9/13 | 9/13 |
+| Score | 69.2% | 69.2% |
+| Tier E (4) | 3/4 | 3/4 |
+| Tier G (4) | 3/4 | 3/4 |
+| Tier U (5) | 3/5 | 3/5 |
+
+### V2 Aggregate
+
+| Metric | Run 4 | Run 5 | Run 6 | Average |
+|--------|-------|-------|-------|---------|
+| Control score | 69.2% | 76.9% | 69.2% | 71.8% |
+| Treatment score | 61.5% | 69.2% | 69.2% | 66.6% |
+| Improvement | -7.7pp | -7.7pp | 0pp | -5.1pp |
+| Tier E improvement | -1 | -1 | 0 | -0.7 |
+| Tier G improvement | 0 | 0 | 0 | 0 |
+| Tier U improvement | 0 | 0 | 0 | 0 |
+
+### V2 Key observations
+
+1. **Control baseline dropped to 71.8%**: V2 evaluation criteria successfully target patterns where Claude doesn't reliably generate modern code. The 22.3pp drop from V1 (94.1%) confirms the evaluation redesign was effective.
+2. **SKILL.md shows negative effect (-5.1pp)**: Treatment averaged worse than Control, driven by F2 (Annotated Depends) regression in 2 of 3 runs. This is the same stochastic regression pattern seen in V1 Run 1.
+3. **A1 (TaskGroup) remains the hardest pattern**: Neither Control nor Treatment used TaskGroup in any of the 6 sessions (V2). Claude consistently defaults to `asyncio.gather`.
+4. **T1 (PEP 695) never achieved**: All 6 sessions used `TypeVar`. PEP 695 syntax (`class Foo[T]:`) has very low adoption in training data.
+5. **H2 (HTTPTransport) never achieved**: No session used `HTTPTransport(retries=)`. Manual retry loops are the default.
+6. **Tier analysis confirms no SKILL.md signal**: Tier E (Embedded) shows -0.7 average, Tier G and U show exactly 0. SKILL.md's embedded patterns provide no improvement; the negative Tier E result is stochastic noise from F2.
+7. **Physical verification passed all 6 sessions**: Skill toggle mechanism is reliable across all V2 runs.
+
+---
+
+## V1 Results
 
 ### Run 0 (2026-05-26) — INVALID
 
@@ -156,7 +343,17 @@ Skill load verification:
 ## Limitations
 
 - Single AI model (Claude). Results may differ with GPT, Gemini, etc.
-- Small sample (N=3). Not statistically rigorous.
+- Small sample (N=3 per version). Not statistically rigorous.
 - Prompt wording affects results. Different phrasings may yield different patterns.
 - Claude's training data evolves. Results are point-in-time.
-- P-04-2 (TaskGroup vs gather) has a legitimate caveat — gather supports `return_exceptions=True` which TaskGroup does not.
+- A1 (TaskGroup vs gather) has a legitimate caveat — gather supports `return_exceptions=True` which TaskGroup does not.
+- H2 (HTTPTransport) only handles ConnectError/ConnectTimeout. Manual retry for HTTP-level errors is legitimate.
+- M1 (match qualified names) grep detection is fragile — depends on AI's naming choices.
+- T1 (PEP 695) checker support is still maturing — some toolchains don't fully support it yet.
+
+## Prompt versioning
+
+| Version | Date | Items | Changes |
+|---------|------|-------|---------|
+| v1 | 2026-05-26 | 17 | Initial. 6 files, Pydantic V1 terms as stress test |
+| v2 | 2026-05-26 | 13 | Redesign. Dropped Pydantic renames, added SQLAlchemy/match/stdlib. Three-tier coverage design |
