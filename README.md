@@ -16,17 +16,17 @@ LLMs often produce outdated Python — `typing.List` instead of `list`, `@valida
 pip install modern-python-guidance
 
 # Search for a pattern
-mpg search "typing list"
-#   use-builtin-generics                     score=18.0  [typing]
+mpg search "pydantic validator"
+#   pydantic-v2-validators                   score=18.0  [pydantic]
 
 # Get the full guide
-mpg retrieve use-builtin-generics
-# --- use-builtin-generics (version match: YES) ---
+mpg retrieve pydantic-v2-validators
+# --- pydantic-v2-validators (version match: YES) ---
 # ## BAD
-# from typing import List, Dict, Optional
+# @validator("name")
 # ...
 # ## GOOD
-# names: list[str] = []
+# @field_validator("name")
 # ...
 ```
 
