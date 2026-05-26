@@ -20,21 +20,24 @@ A/B test measuring whether SKILL.md pre-generation guidance reduces outdated Pyt
 ```bash
 cd ~/claude_workspace/modern-python-guidance
 
-# Run with default run_id=1
-./bench/run.sh
+# Run both sessions sequentially
+./bench/run.sh 1 both
 
-# Or specify a run_id for repeated runs
-./bench/run.sh 1
-./bench/run.sh 2
-./bench/run.sh 3
+# Or run individually (for re-running a failed session)
+./bench/run.sh 2 control
+./bench/run.sh 2 treatment
+
+# Score
+./bench/score.sh 1
 ```
 
 ### What run.sh does
 
 1. Verifies the skill directory exists
-2. **Session A (Control)**: Moves the skill directory to `.__disabled__` (disabling it), runs `claude -p` with the prompt, captures generated code + JSON output
-3. **Session B (Treatment)**: Restores the skill directory, runs `claude -p` again, captures results
-4. Uses `trap EXIT` to restore the skill even if the script fails
+2. Records physical evidence of skill directory state to `skill-verify.log` before and after each session
+3. **Control**: Moves the skill directory to `.__disabled__` (disabling it), runs `claude -p` with the prompt, captures generated code + JSON output
+4. **Treatment**: Restores the skill directory, runs `claude -p` again, captures results
+5. Uses `trap EXIT` to restore the skill even if the script fails
 
 ### Output
 
@@ -44,6 +47,7 @@ results/run-<N>/
   session-b.json       # CC output with usage info (Treatment)
   session-a.stderr     # stderr from Control session
   session-b.stderr     # stderr from Treatment session
+  skill-verify.log     # Physical evidence of skill toggle
   control/src/         # Generated code without skill
   treatment/src/       # Generated code with skill
 ```
@@ -57,7 +61,7 @@ results/run-<N>/
 The scorer:
 - Checks 17 pattern items via grep (P-05-1 excluded, see below)
 - Reports modern vs outdated pattern counts per session
-- Verifies skill loading via `cache_creation_input_tokens` difference
+- Verifies skill loading via physical directory evidence (primary) and token analysis (supplementary)
 
 For the full evaluation criteria, see `docs/benchmark-evaluation.md`.
 
@@ -75,9 +79,27 @@ The prompt explicitly asks for `pyproject.toml`. Testing whether the AI chooses 
 
 `bench/prompt.txt` contains only generation instructions — no BAD/GOOD hints, no "modern" or "best practice" keywords. The evaluation criteria live separately in `docs/benchmark-evaluation.md` to prevent answer leakage.
 
-### Skill toggle via mv
+### Skill toggle via rm/ln-s (not mv)
 
-`skillOverrides` in Claude Code settings is broken (GitHub Issue #50631). The `mv` approach reliably toggles the skill by renaming its directory.
+Claude Code scans `.claude/skills/*/SKILL.md` regardless of directory name. Renaming a skill directory (e.g. appending `.__disabled__`) does NOT prevent CC from loading the `SKILL.md` inside it. `skillOverrides` is also broken (GitHub Issue #50631).
+
+The only reliable method: remove the symlink entirely for Control, recreate it for Treatment.
+
+```bash
+# Control: remove symlink (target directory is untouched)
+rm "$SKILL_DIR"
+
+# Treatment: recreate symlink
+ln -s "$SKILL_TARGET" "$SKILL_DIR"
+```
+
+`trap EXIT` ensures the symlink is recreated even if the script fails.
+
+### Cache and session independence
+
+Claude Code uses Anthropic's prompt cache (KV-cache reuse). When sessions run back-to-back, the second session may reuse cached KV pairs from the first, causing `cache_creation_input_tokens` to appear lower. This is a compute optimization — the model receives identical information and produces identical output distributions regardless of cache state.
+
+Token-based skill load verification is unreliable due to this caching behavior. Physical directory state verification (`skill-verify.log`) is the primary evidence that the skill toggle worked correctly.
 
 ## Troubleshooting
 
@@ -91,6 +113,16 @@ The prompt explicitly asks for `pyproject.toml`. Testing whether the AI chooses 
 
 ## Prompt versioning
 
-| Version | Date | Changes |
-|---------|------|---------|
-| v1 | 2026-05-26 | Initial 6-file prompt. V1 terms retained as stress test |
+| Version | Date | Prompt file | Items | Scorer | Changes |
+|---------|------|-------------|-------|--------|---------|
+| v1 | 2026-05-26 | `bench/prompt.txt` | 17 | `bench/score.sh` | Initial 6-file prompt. V1 Pydantic terms as stress test |
+| v2 | 2026-05-26 | `bench/prompt-v2.txt` | 13 | `bench/score-v2.sh` | Redesign. Dropped Pydantic renames (Claude baseline 94.1%). Added SQLAlchemy 2.0, match patterns, stdlib 3.12+ features. Three-tier coverage design (Embedded/Guide-listed/Uncovered) |
+
+### Using v2 prompt
+
+`run.sh` is already configured to use `prompt-v2.txt`. Score with the v2 scorer:
+
+```bash
+./bench/run.sh 4 both
+./bench/score-v2.sh 4
+```

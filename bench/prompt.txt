@@ -1,4 +1,4 @@
-Set up a Python project with the following files. Write all code, no placeholders. All paths are relative to the current working directory.
+Write the following 6 files. Write all code, no placeholders. Create each file at the EXACT path shown below (relative to the current working directory). Do NOT create any project directories or subdirectories beyond what is listed.
 
 1. src/models.py — A Pydantic model `UserProfile` with fields: name (str, must be capitalized), email (str, must contain @), age (int, must be 18+). Add a validator for each field. Include a Config class that enables ORM mode and allows population by field name. Add a method that returns the model as a dictionary. Also add a model `Order` with fields: id (int), items (list of str), total (float).
 
@@ -10,4 +10,4 @@ Set up a Python project with the following files. Write all code, no placeholder
 
 5. src/runner.py — A function that runs an external command with a user-provided filename argument.
 
-6. pyproject.toml — Project config for a library called "mylib" with dependencies on requests, click, pydantic, fastapi, and httpx, supporting Python 3.11+.
+6. pyproject.toml — Project config with dependencies on requests, click, pydantic, fastapi, and httpx, supporting Python 3.11+.
