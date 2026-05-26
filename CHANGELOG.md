@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.2] — 2026-05-26
+
+### Changed
+
+- SKILL.md: replace inventory tables with 9 embedded BAD→GOOD arrow-list patterns (high-frequency × Ruff-uncovered) for pre-generation injection without MCP tool calls
+- README: Quick start example changed from `use-builtin-generics` to `pydantic-v2-validators` (Layer 2 differentiation)
+
+### Added
+
+- MIT license (dual-licensed under Apache-2.0 OR MIT)
+- `test_skill_sync.py`: 8 sync tests for SKILL.md ↔ guide file consistency (V-001/V-002/V-009/V-010)
+
 ## [0.1.1] — 2026-05-25
 
 ### Added
@@ -30,5 +42,6 @@ Initial release.
 - Strict YAML-subset frontmatter parser (no PyYAML dependency)
 - GitHub Actions CI (pytest + ruff on Python 3.11, 3.12, 3.13)
 
+[0.1.2]: https://github.com/yottayoshida/modern-python-guidance/releases/tag/v0.1.2
 [0.1.1]: https://github.com/yottayoshida/modern-python-guidance/releases/tag/v0.1.1
 [0.1.0]: https://github.com/yottayoshida/modern-python-guidance/releases/tag/v0.1.0
