@@ -183,4 +183,4 @@ Contributions welcome! To add a new guide:
 
 ## License
 
-Apache-2.0 — see [LICENSE](LICENSE).
+Apache-2.0 OR MIT — see [LICENSE](LICENSE) and [LICENSE-MIT](LICENSE-MIT).
