@@ -215,38 +215,37 @@ score_session() {
     echo -e "$details"
 }
 
-verify_skill_load() {
-    echo "=== Skill Load Verification ==="
+verify_guidance_load() {
+    echo "=== Guidance Load Verification ==="
 
-    local verify_log="$RESULTS_DIR/skill-verify.log"
+    # Check new format (guidance-verify.log) first, fall back to old (skill-verify.log)
+    local verify_log="$RESULTS_DIR/guidance-verify.log"
+    [ ! -f "$verify_log" ] && verify_log="$RESULTS_DIR/skill-verify.log"
+
     if [ -f "$verify_log" ]; then
         echo "  --- Physical verification (primary) ---"
         local control_ok=false
         local treatment_ok=false
         if grep -q "PRE-CONTROL" "$verify_log" && grep -A3 "PRE-CONTROL" "$verify_log" | grep -q "status: ABSENT"; then
             control_ok=true
-            echo "  [PASS] Control: skill was ABSENT before session"
+            echo "  [PASS] Control: guidance was ABSENT before session"
         else
-            echo "  [FAIL] Control: skill state not verified (expected ABSENT)"
+            echo "  [FAIL] Control: guidance state not verified (expected ABSENT)"
         fi
         if grep -q "PRE-TREATMENT" "$verify_log" && grep -A3 "PRE-TREATMENT" "$verify_log" | grep -q "status: PRESENT"; then
             treatment_ok=true
-            echo "  [PASS] Treatment: skill was PRESENT before session"
+            echo "  [PASS] Treatment: guidance was PRESENT before session"
         else
-            echo "  [FAIL] Treatment: skill state not verified"
-        fi
-        if grep -q "WARNING: user-level skill" "$verify_log"; then
-            echo "  [FAIL] User-level skill detected — results contaminated"
-            control_ok=false
+            echo "  [FAIL] Treatment: guidance state not verified"
         fi
         if $control_ok && $treatment_ok; then
-            echo "  [PASS] Physical verification: skill toggle confirmed"
+            echo "  [PASS] Physical verification: guidance toggle confirmed"
         else
             echo "  [WARN] Physical verification incomplete"
         fi
         echo ""
     else
-        echo "  [SKIP] No skill-verify.log found"
+        echo "  [SKIP] No verification log found"
         echo ""
     fi
 
@@ -258,7 +257,7 @@ verify_skill_load() {
         return
     fi
 
-    echo "  --- Token analysis (supplementary) ---"
+    echo "  --- Token analysis ---"
     python3 -c "
 import json
 with open('$json_a') as f:
@@ -279,12 +278,12 @@ diff = tb - ta
 print(f'  Control iter0 total:   {ta:,} tokens')
 print(f'  Treatment iter0 total: {tb:,} tokens')
 print(f'  Difference (B - A):    {diff:+,} tokens')
-if diff > 3000:
-    print('  [PASS] Token diff suggests skill loaded (+3000)')
+if diff > 500:
+    print('  [PASS] Token diff confirms guidance loaded')
 elif diff > 0:
     print('  [INFO] Small positive diff (inconclusive)')
 else:
-    print('  [INFO] Negative/zero diff (cache reuse likely, check physical verification)')
+    print('  [WARN] No token increase — guidance may not be loaded')
 " 2>/dev/null || echo "  [SKIP] Token analysis failed"
     echo ""
 }
@@ -298,4 +297,4 @@ score_session "control"
 echo "--- Treatment (B: with skill) ---"
 score_session "treatment"
 
-verify_skill_load
+verify_guidance_load

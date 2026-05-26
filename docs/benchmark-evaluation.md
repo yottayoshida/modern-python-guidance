@@ -245,7 +245,7 @@ P-05-1 excluded: prompt asks for pyproject.toml explicitly.
 | Tier G (4) | 3/4 | 3/4 |
 | Tier U (5) | 3/5 | 3/5 |
 
-### V2 Aggregate
+### V2 Runs 4-6 Aggregate (INVALID — skill not loaded)
 
 | Metric | Run 4 | Run 5 | Run 6 | Average |
 |--------|-------|-------|-------|---------|
@@ -256,15 +256,117 @@ P-05-1 excluded: prompt asks for pyproject.toml explicitly.
 | Tier G improvement | 0 | 0 | 0 | 0 |
 | Tier U improvement | 0 | 0 | 0 | 0 |
 
-### V2 Key observations
+### V2 Runs 4-6 Key observations (skill-based — INVALID)
 
-1. **Control baseline dropped to 71.8%**: V2 evaluation criteria successfully target patterns where Claude doesn't reliably generate modern code. The 22.3pp drop from V1 (94.1%) confirms the evaluation redesign was effective.
-2. **SKILL.md shows negative effect (-5.1pp)**: Treatment averaged worse than Control, driven by F2 (Annotated Depends) regression in 2 of 3 runs. This is the same stochastic regression pattern seen in V1 Run 1.
-3. **A1 (TaskGroup) remains the hardest pattern**: Neither Control nor Treatment used TaskGroup in any of the 6 sessions (V2). Claude consistently defaults to `asyncio.gather`.
-4. **T1 (PEP 695) never achieved**: All 6 sessions used `TypeVar`. PEP 695 syntax (`class Foo[T]:`) has very low adoption in training data.
-5. **H2 (HTTPTransport) never achieved**: No session used `HTTPTransport(retries=)`. Manual retry loops are the default.
-6. **Tier analysis confirms no SKILL.md signal**: Tier E (Embedded) shows -0.7 average, Tier G and U show exactly 0. SKILL.md's embedded patterns provide no improvement; the negative Tier E result is stochastic noise from F2.
-7. **Physical verification passed all 6 sessions**: Skill toggle mechanism is reliable across all V2 runs.
+**Root cause**: SKILL.md body is NOT loaded in `claude -p` (pipe mode). Skills are deferred/on-demand — the body is only loaded when the Skill tool is explicitly invoked. In pipe mode, Claude never self-invokes skills. Token analysis showed no increase between Control and Treatment, confirming the guidance was absent in all 6 Treatment sessions.
+
+These runs are invalid as A/B tests. Both Control and Treatment ran without guidance.
+
+### V2 Run 7 (2026-05-26, rules-based toggle)
+
+| # | Tier | Pattern | Control | Treatment |
+|---|------|---------|---------|-----------|
+| A1 | E | TaskGroup vs gather | OUTDATED | MODERN |
+| F1 | E | lifespan vs on_event | MODERN | MODERN |
+| F2 | E | Annotated Depends | MODERN | MODERN |
+| F3 | U | Security() for OAuth | MODERN | MODERN |
+| S1 | U | select() vs query() | MODERN | MODERN |
+| S2 | U | async_sessionmaker | MODERN | MODERN |
+| H1 | E | shared AsyncClient | MODERN | MODERN |
+| H2 | U | HTTPTransport | OUTDATED | OUTDATED |
+| L1 | G | tomllib | MODERN | MODERN |
+| L2 | G | Path.walk() | MODERN | MODERN |
+| L3 | U | itertools.batched() | OUTDATED | MODERN |
+| T1 | G | PEP 695 generics | OUTDATED | MODERN |
+| M1 | G | qualified match names | MODERN | MODERN |
+
+| Metric | Control | Treatment |
+|--------|---------|-----------|
+| Modern | 10/13 | 12/13 |
+| Score | 76.9% | 92.3% |
+| Tier E (4) | 3/4 | 4/4 |
+| Tier G (4) | 3/4 | 4/4 |
+| Tier U (5) | 4/5 | 4/5 |
+
+Token diff: +1,834 (PASS). Physical verification: PASS.
+
+### V2 Run 8 (2026-05-26, rules-based toggle)
+
+| # | Tier | Pattern | Control | Treatment |
+|---|------|---------|---------|-----------|
+| A1 | E | TaskGroup vs gather | OUTDATED | MODERN |
+| F1 | E | lifespan vs on_event | MODERN | MODERN |
+| F2 | E | Annotated Depends | MODERN | MODERN |
+| F3 | U | Security() for OAuth | MODERN | MODERN |
+| S1 | U | select() vs query() | MODERN | MODERN |
+| S2 | U | async_sessionmaker | MODERN | MODERN |
+| H1 | E | shared AsyncClient | MODERN | MODERN |
+| H2 | U | HTTPTransport | OUTDATED | OUTDATED |
+| L1 | G | tomllib | MODERN | MODERN |
+| L2 | G | Path.walk() | MODERN | MODERN |
+| L3 | U | itertools.batched() | MODERN | MODERN |
+| T1 | G | PEP 695 generics | OUTDATED | MODERN |
+| M1 | G | qualified match names | MODERN | MODERN |
+
+| Metric | Control | Treatment |
+|--------|---------|-----------|
+| Modern | 10/13 | 12/13 |
+| Score | 76.9% | 92.3% |
+| Tier E (4) | 3/4 | 4/4 |
+| Tier G (4) | 3/4 | 4/4 |
+| Tier U (5) | 4/5 | 4/5 |
+
+Token diff: +1,143 (PASS). Physical verification: PASS.
+
+### V2 Run 9 (2026-05-26, rules-based toggle)
+
+| # | Tier | Pattern | Control | Treatment |
+|---|------|---------|---------|-----------|
+| A1 | E | TaskGroup vs gather | OUTDATED | MODERN |
+| F1 | E | lifespan vs on_event | MODERN | MODERN |
+| F2 | E | Annotated Depends | OUTDATED | MODERN |
+| F3 | U | Security() for OAuth | MODERN | MODERN |
+| S1 | U | select() vs query() | MODERN | MODERN |
+| S2 | U | async_sessionmaker | MODERN | MODERN |
+| H1 | E | shared AsyncClient | MODERN | MODERN |
+| H2 | U | HTTPTransport | OUTDATED | OUTDATED |
+| L1 | G | tomllib | MODERN | MODERN |
+| L2 | G | Path.walk() | MODERN | MODERN |
+| L3 | U | itertools.batched() | OUTDATED | MODERN |
+| T1 | G | PEP 695 generics | OUTDATED | MODERN |
+| M1 | G | qualified match names | MODERN | MODERN |
+
+| Metric | Control | Treatment |
+|--------|---------|-----------|
+| Modern | 8/13 | 12/13 |
+| Score | 61.5% | 92.3% |
+| Tier E (4) | 2/4 | 4/4 |
+| Tier G (4) | 3/4 | 4/4 |
+| Tier U (5) | 3/5 | 4/5 |
+
+Token diff: +1,229 (PASS). Physical verification: PASS.
+
+### V2 Rules-based Aggregate (Runs 7-9)
+
+| Metric | Run 7 | Run 8 | Run 9 | Average |
+|--------|-------|-------|-------|---------|
+| Control score | 76.9% | 76.9% | 61.5% | 71.8% |
+| Treatment score | 92.3% | 92.3% | 92.3% | 92.3% |
+| Improvement | +15.4pp | +15.4pp | +30.8pp | **+20.5pp** |
+| Tier E improvement | +1 | +1 | +2 | +1.3 |
+| Tier G improvement | +1 | +1 | +1 | +1.0 |
+| Tier U improvement | 0 | 0 | +1 | +0.3 |
+
+### V2 Key observations (rules-based, Runs 7-9)
+
+1. **Guidance delivery fixed**: Moving content from `skills/` (deferred/on-demand) to `.claude/rules/` (always-loaded) resolved the root cause. Token analysis confirms +1,143 to +1,834 token increase in Treatment sessions.
+2. **Consistent +20.5pp improvement**: Treatment averaged 92.3% across all 3 runs (zero variance). Control varied from 61.5% to 76.9% (stochastic).
+3. **A1 (TaskGroup) flipped in all 3 runs**: The hardest pattern in Runs 4-6 (never achieved) became consistently MODERN with guidance. This is the strongest single-item signal.
+4. **T1 (PEP 695) flipped in all 3 runs**: TypeVar → PEP 695 syntax conversion is reliably triggered by the guide listing alone (Tier G).
+5. **L3 (itertools.batched) improved**: 2 of 3 Treatment runs used `batched()`, up from 1 of 3 Controls. As a Tier U item, this may be spillover from general "modern stdlib" priming.
+6. **H2 (HTTPTransport) remains the only unachieved item**: 0/6 sessions used it. This Tier U control group item confirms the guidance isn't causing false positive improvements.
+7. **Tier analysis confirms causal attribution**: Tier E (+1.3 avg) and Tier G (+1.0 avg) show clear improvement. Tier U (+0.3 avg) is near-zero, confirming the effect comes from SKILL.md content, not confounds.
+8. **F2 stochastic noise resolved**: Runs 4-6 showed F2 (Annotated Depends) regression in Treatment. With guidance actually loaded (Runs 7-9), F2 is consistently MODERN in Treatment.
 
 ---
 
@@ -353,7 +455,8 @@ Skill load verification:
 
 ## Prompt versioning
 
-| Version | Date | Items | Changes |
-|---------|------|-------|---------|
-| v1 | 2026-05-26 | 17 | Initial. 6 files, Pydantic V1 terms as stress test |
-| v2 | 2026-05-26 | 13 | Redesign. Dropped Pydantic renames, added SQLAlchemy/match/stdlib. Three-tier coverage design |
+| Version | Date | Items | Delivery | Changes |
+|---------|------|-------|----------|---------|
+| v1 | 2026-05-26 | 17 | skills/ (broken) | Initial. 6 files, Pydantic V1 terms as stress test |
+| v2 Runs 4-6 | 2026-05-26 | 13 | skills/ (broken) | Redesign. Dropped Pydantic renames, added SQLAlchemy/match/stdlib. Three-tier coverage. **INVALID**: skill body not loaded in pipe mode |
+| v2 Runs 7-9 | 2026-05-26 | 13 | rules/ (fixed) | Same prompt as v2. Toggle via `.claude/rules/modern-python.md` create/delete. **VALID**: +20.5pp avg improvement |

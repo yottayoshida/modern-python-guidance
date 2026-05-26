@@ -9,9 +9,6 @@ set -euo pipefail
 
 REPO_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 WORKSPACE="$HOME/claude_workspace"
-SKILL_DIR="$WORKSPACE/.claude/skills/modern-python-guidance"
-SKILL_TARGET="$REPO_DIR/skills/modern-python-guidance"
-USER_SKILL_DIR="$HOME/.claude/skills/modern-python-guidance"
 RUN_ID="${1:?Usage: $0 <run_id> <control|treatment|both>}"
 SESSION="${2:?Usage: $0 <run_id> <control|treatment|both>}"
 RESULTS_DIR="$REPO_DIR/results/run-${RUN_ID}"
@@ -22,55 +19,48 @@ BUDGET="2.00"
 GEN_SRC="$WORKSPACE/src"
 GEN_PYPROJECT="$WORKSPACE/pyproject.toml"
 
-# --- Skill toggle: rm/ln-s (not mv) ---
-# CC scans .claude/skills/*/SKILL.md regardless of directory name.
-# Renaming within .claude/skills/ does NOT disable the skill.
-# The only reliable method: remove the symlink entirely.
+# --- Guidance toggle: rules/ file (not skills/) ---
+# Skills body is NOT loaded in pipe mode (claude -p). Only description is visible.
+# Rules files (.claude/rules/*.md) without paths: are always loaded into system prompt.
+# Toggle by adding/removing the rules file.
+RULE_FILE="$WORKSPACE/.claude/rules/modern-python.md"
+RULE_SOURCE="$REPO_DIR/skills/modern-python-guidance/SKILL.md"
 
-disable_skill() {
-    if [ -L "$SKILL_DIR" ] || [ -d "$SKILL_DIR" ]; then
-        rm "$SKILL_DIR"
+disable_guidance() {
+    rm -f "$RULE_FILE"
+}
+
+enable_guidance() {
+    if [ ! -f "$RULE_FILE" ]; then
+        # Copy body only (strip YAML frontmatter between --- markers)
+        awk 'BEGIN{c=0} /^---$/{c++; next} c>=2{print}' "$RULE_SOURCE" > "$RULE_FILE"
     fi
 }
 
-enable_skill() {
-    if [ ! -L "$SKILL_DIR" ] && [ ! -d "$SKILL_DIR" ]; then
-        ln -s "$SKILL_TARGET" "$SKILL_DIR"
-    fi
-}
-
-restore_skill_on_exit() {
-    enable_skill
-    echo "[cleanup] Skill restored."
+restore_guidance_on_exit() {
+    enable_guidance
+    echo "[cleanup] Rules file restored."
 }
 
 # --- Verification logging ---
 record_verify() {
     local label="$1"
-    local log="$RESULTS_DIR/skill-verify.log"
+    local log="$RESULTS_DIR/guidance-verify.log"
 
     echo "=== $label $(date -u '+%Y-%m-%dT%H:%M:%SZ') ===" >> "$log"
 
-    # Target skill state
-    echo "SKILL_DIR=$SKILL_DIR" >> "$log"
-    if [ -L "$SKILL_DIR" ]; then
-        echo "status: PRESENT (symlink -> $(readlink "$SKILL_DIR"))" >> "$log"
-    elif [ -d "$SKILL_DIR" ]; then
-        echo "status: PRESENT (directory)" >> "$log"
+    # Rules file state (primary toggle mechanism)
+    echo "RULE_FILE=$RULE_FILE" >> "$log"
+    if [ -f "$RULE_FILE" ]; then
+        echo "status: PRESENT ($(wc -c < "$RULE_FILE") bytes)" >> "$log"
+        echo "first_line: $(head -1 "$RULE_FILE")" >> "$log"
     else
         echo "status: ABSENT" >> "$log"
     fi
 
-    # User-level skill check
-    if [ -L "$USER_SKILL_DIR" ] || [ -d "$USER_SKILL_DIR" ]; then
-        echo "WARNING: user-level skill also exists at $USER_SKILL_DIR" >> "$log"
-    else
-        echo "user-level: absent (ok)" >> "$log"
-    fi
-
-    # Full skill directory listing (catch unexpected skills)
-    echo "--- all project-level skills ---" >> "$log"
-    ls "$WORKSPACE/.claude/skills/" 2>/dev/null | grep -v '^\.' >> "$log" || echo "(empty)" >> "$log"
+    # Check for other rules that might contain Python guidance
+    echo "--- all rules files ---" >> "$log"
+    ls "$WORKSPACE/.claude/rules/" 2>/dev/null | grep -v '^\.' >> "$log" || echo "(empty)" >> "$log"
 
     echo "" >> "$log"
 }
@@ -122,19 +112,18 @@ cleanup_generated() {
 # --- Session runners ---
 run_control() {
     echo ""
-    echo "--- Session A: Control (skill DISABLED) ---"
+    echo "--- Session A: Control (guidance DISABLED) ---"
 
-    # Disable: remove symlink entirely
-    disable_skill
-    trap restore_skill_on_exit EXIT
+    disable_guidance
+    trap restore_guidance_on_exit EXIT
 
-    # Verify skill is gone
-    if [ -L "$SKILL_DIR" ] || [ -d "$SKILL_DIR" ]; then
-        echo "ERROR: Skill still exists after rm!" >&2
+    # Verify rules file is gone
+    if [ -f "$RULE_FILE" ]; then
+        echo "ERROR: Rules file still exists after rm!" >&2
         exit 1
     fi
     record_verify "PRE-CONTROL"
-    echo "[ok] Skill removed from .claude/skills/ (verified)"
+    echo "[ok] Rules file removed (verified)"
 
     # Clean workspace
     if [ -d "$GEN_SRC" ]; then
@@ -152,28 +141,27 @@ run_control() {
     cleanup_generated "$RESULTS_DIR/control"
     echo "[ok] Control files saved to $RESULTS_DIR/control/"
 
-    # Restore skill if running control only
+    # Restore guidance if running control only
     if [ "$SESSION" = "control" ]; then
-        enable_skill
+        enable_guidance
         trap - EXIT
-        echo "[ok] Skill symlink restored."
+        echo "[ok] Rules file restored."
     fi
 }
 
 run_treatment() {
     echo ""
-    echo "--- Session B: Treatment (skill ENABLED) ---"
+    echo "--- Session B: Treatment (guidance ENABLED) ---"
 
-    # Ensure skill is present
-    enable_skill
+    enable_guidance
     trap - EXIT
 
-    if [ ! -L "$SKILL_DIR" ] && [ ! -d "$SKILL_DIR" ]; then
-        echo "ERROR: Skill not found at $SKILL_DIR" >&2
+    if [ ! -f "$RULE_FILE" ]; then
+        echo "ERROR: Rules file not found at $RULE_FILE" >&2
         exit 1
     fi
     record_verify "PRE-TREATMENT"
-    echo "[ok] Skill present in .claude/skills/ (verified)"
+    echo "[ok] Rules file present ($(wc -c < "$RULE_FILE") bytes, verified)"
 
     # Clean workspace
     if [ -d "$GEN_SRC" ]; then
@@ -198,21 +186,8 @@ if [ ! -f "$PROMPT_FILE" ]; then
     exit 1
 fi
 
-if [ ! -d "$SKILL_TARGET" ]; then
-    echo "ERROR: Skill source not found at $SKILL_TARGET" >&2
-    exit 1
-fi
-
-if [ ! -L "$SKILL_DIR" ] && [ ! -d "$SKILL_DIR" ]; then
-    echo "ERROR: Skill not symlinked at $SKILL_DIR" >&2
-    echo "Create it: ln -s $SKILL_TARGET $SKILL_DIR" >&2
-    exit 1
-fi
-
-# Check user-level duplicate
-if [ -L "$USER_SKILL_DIR" ] || [ -d "$USER_SKILL_DIR" ]; then
-    echo "ERROR: Skill also exists at user-level $USER_SKILL_DIR" >&2
-    echo "Remove it to avoid contamination: rm $USER_SKILL_DIR" >&2
+if [ ! -f "$RULE_SOURCE" ]; then
+    echo "ERROR: Guidance source not found at $RULE_SOURCE" >&2
     exit 1
 fi
 
@@ -255,13 +230,13 @@ case "$SESSION" in
         run_treatment
         echo ""
         echo "=== Treatment session complete ==="
-        echo "Score with: ./bench/score.sh $RUN_ID"
+        echo "Score with: ./bench/score-v2.sh $RUN_ID"
         ;;
     both)
         run_control
         run_treatment
         echo ""
         echo "=== Run $RUN_ID Complete ==="
-        echo "Score with: ./bench/score.sh $RUN_ID"
+        echo "Score with: ./bench/score-v2.sh $RUN_ID"
         ;;
 esac
