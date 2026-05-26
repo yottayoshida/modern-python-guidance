@@ -12,8 +12,8 @@ WORKSPACE="$HOME/claude_workspace"
 RUN_ID="${1:?Usage: $0 <run_id> <control|treatment|both>}"
 SESSION="${2:?Usage: $0 <run_id> <control|treatment|both>}"
 RESULTS_DIR="$REPO_DIR/results/run-${RUN_ID}"
-# Switch prompt version: prompt.txt (v1) or prompt-v2.txt (v2)
-PROMPT_FILE="$REPO_DIR/bench/prompt-v2.txt"
+# Switch prompt version: prompt.txt (v1), prompt-v2.txt (v2), prompt-v3.txt (v3)
+PROMPT_FILE="$REPO_DIR/bench/prompt-v3.txt"
 BUDGET="2.00"
 
 GEN_SRC="$WORKSPACE/src"
