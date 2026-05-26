@@ -222,43 +222,78 @@ score_session() {
 
 verify_skill_load() {
     echo "=== Skill Load Verification ==="
+
+    # Primary: physical directory evidence
+    local verify_log="$RESULTS_DIR/skill-verify.log"
+    if [ -f "$verify_log" ]; then
+        echo "  --- Physical verification (primary) ---"
+        local control_ok=false
+        local treatment_ok=false
+        if grep -q "PRE-CONTROL" "$verify_log" && grep -A3 "PRE-CONTROL" "$verify_log" | grep -q "status: ABSENT"; then
+            control_ok=true
+            echo "  [PASS] Control: skill was ABSENT before session"
+        else
+            echo "  [FAIL] Control: skill state not verified (expected ABSENT)"
+        fi
+        if grep -q "PRE-TREATMENT" "$verify_log" && grep -A3 "PRE-TREATMENT" "$verify_log" | grep -q "status: PRESENT"; then
+            treatment_ok=true
+            echo "  [PASS] Treatment: skill was PRESENT before session"
+        else
+            echo "  [FAIL] Treatment: skill state not verified"
+        fi
+        # Check for user-level contamination
+        if grep -q "WARNING: user-level skill" "$verify_log"; then
+            echo "  [FAIL] User-level skill detected — results contaminated"
+            control_ok=false
+        fi
+        if $control_ok && $treatment_ok; then
+            echo "  [PASS] Physical verification: skill toggle confirmed"
+        else
+            echo "  [WARN] Physical verification incomplete"
+        fi
+        echo ""
+    else
+        echo "  [SKIP] No skill-verify.log found (older run format)"
+        echo ""
+    fi
+
+    # Secondary: token count (supplementary, unreliable with cache)
     local json_a="$RESULTS_DIR/session-a.json"
     local json_b="$RESULTS_DIR/session-b.json"
 
     if [ ! -f "$json_a" ] || [ ! -f "$json_b" ]; then
-        echo "  [SKIP] Session JSON files not found."
+        echo "  [SKIP] Session JSON files not found for token check."
         return
     fi
 
-    local tokens_a tokens_b
-    tokens_a=$(python3 -c "
-import json, sys
+    echo "  --- Token analysis (supplementary) ---"
+    python3 -c "
+import json
 with open('$json_a') as f:
-    d = json.load(f)
-u = d.get('usage', {})
-print(u.get('cache_creation_input_tokens', 0))
-" 2>/dev/null || echo "N/A")
-
-    tokens_b=$(python3 -c "
-import json, sys
+    a = json.load(f)['usage']
 with open('$json_b') as f:
-    d = json.load(f)
-u = d.get('usage', {})
-print(u.get('cache_creation_input_tokens', 0))
-" 2>/dev/null || echo "N/A")
+    b = json.load(f)['usage']
 
-    echo "  Control (A) cache_creation_input_tokens: $tokens_a"
-    echo "  Treatment (B) cache_creation_input_tokens: $tokens_b"
+def iter0_total(u):
+    iters = u.get('iterations', [])
+    if not iters:
+        return u.get('cache_creation_input_tokens', 0) + u.get('cache_read_input_tokens', 0) + u.get('input_tokens', 0)
+    i = iters[0]
+    return i.get('cache_creation_input_tokens', 0) + i.get('cache_read_input_tokens', 0) + i.get('input_tokens', 0)
 
-    if [ "$tokens_a" != "N/A" ] && [ "$tokens_b" != "N/A" ]; then
-        local diff=$((tokens_b - tokens_a))
-        echo "  Difference (B - A): $diff tokens"
-        if [ "$diff" -gt 500 ]; then
-            echo "  [PASS] Skill likely loaded (diff > 500 tokens)"
-        else
-            echo "  [WARN] Skill may NOT have loaded (diff <= 500 tokens)"
-        fi
-    fi
+ta = iter0_total(a)
+tb = iter0_total(b)
+diff = tb - ta
+print(f'  Control iter0 total:   {ta:,} tokens')
+print(f'  Treatment iter0 total: {tb:,} tokens')
+print(f'  Difference (B - A):    {diff:+,} tokens')
+if diff > 3000:
+    print('  [PASS] Token diff suggests skill loaded (+3000)')
+elif diff > 0:
+    print('  [INFO] Small positive diff (inconclusive)')
+else:
+    print('  [INFO] Negative/zero diff (cache reuse likely, check physical verification)')
+" 2>/dev/null || echo "  [SKIP] Token analysis failed"
     echo ""
 }
 

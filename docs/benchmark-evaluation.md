@@ -83,38 +83,75 @@ All 17 patterns are Ruff-uncoverable, so any improvement is attributable to SKIL
 
 ## Results
 
-### Run 1 (2026-05-26) — INVALID
+### Run 0 (2026-05-26) — INVALID
 
 Evaluation checklists leaked into prompts. Both sessions scored 18/18. Discarded.
 
-### Run 2
+### Run 1 (2026-05-26)
 
 | Session | Modern | Outdated | Total | Score |
 |---------|--------|----------|-------|-------|
-| Control (A) | | | 17 | |
-| Treatment (B) | | | 17 | |
-| **Improvement** | | | | pp |
+| Control (A) | 16 | 1 | 17 | 94.1% |
+| Treatment (B) | 15 | 2 | 17 | 88.2% |
+| **Improvement** | | | | **-5.9pp** |
+
+Outdated in Control: P-04-2 (asyncio.gather)
+Outdated in Treatment: P-03-3 (Depends without Annotated), P-04-2 (asyncio.gather)
 
 Skill load verification:
-- Control tokens: 
-- Treatment tokens: 
-- Difference: 
+- Physical: PASS (Control=ABSENT, Treatment=PRESENT)
+- Control tokens: 61,135
+- Treatment tokens: 63,517
+- Difference: +2,382 (inconclusive)
 
-### Run 3
+### Run 2 (2026-05-26)
 
-(template)
+| Session | Modern | Outdated | Total | Score |
+|---------|--------|----------|-------|-------|
+| Control (A) | 16 | 1 | 17 | 94.1% |
+| Treatment (B) | 16 | 1 | 17 | 94.1% |
+| **Improvement** | | | | **0pp** |
 
-### Run 4
+Outdated in both: P-04-2 (asyncio.gather)
 
-(template)
+Skill load verification:
+- Physical: PASS (Control=ABSENT, Treatment=PRESENT)
+- Control tokens: 61,350
+- Treatment tokens: 63,050
+- Difference: +1,700 (inconclusive)
+
+### Run 3 (2026-05-26)
+
+| Session | Modern | Outdated | Total | Score |
+|---------|--------|----------|-------|-------|
+| Control (A) | 16 | 1 | 17 | 94.1% |
+| Treatment (B) | 17 | 0 | 17 | 100.0% |
+| **Improvement** | | | | **+5.9pp** |
+
+Outdated in Control: P-04-2 (asyncio.gather)
+Treatment: perfect score (17/17)
+
+Skill load verification:
+- Physical: PASS (Control=ABSENT, Treatment=PRESENT)
+- Control tokens: 61,218
+- Treatment tokens: 67,488
+- Difference: +6,270 (PASS)
 
 ## Aggregate
 
-| Metric | Run 2 | Run 3 | Run 4 | Average |
+| Metric | Run 1 | Run 2 | Run 3 | Average |
 |--------|-------|-------|-------|---------|
-| Control score | | | | |
-| Treatment score | | | | |
-| Improvement | | | | |
+| Control score | 94.1% | 94.1% | 94.1% | 94.1% |
+| Treatment score | 88.2% | 94.1% | 100.0% | 94.1% |
+| Improvement | -5.9pp | 0pp | +5.9pp | 0pp |
+
+### Key observations
+
+1. **Control ceiling is very high (94.1%)**: Claude already generates Pydantic V2 modern patterns without SKILL.md. 16 of 17 items were consistently modern across all Control runs.
+2. **P-04-2 (TaskGroup vs gather) is the only consistent gap**: All 3 Control runs used `asyncio.gather`. Only Treatment Run 3 used `TaskGroup`, suggesting SKILL.md's guidance is only visibly effective on this specific pattern.
+3. **Net improvement is zero**: Treatment averaged the same as Control (94.1%). The positive effect in Run 3 was offset by the negative result in Run 1 (stochastic regression on P-03-3).
+4. **Stochastic noise dominates**: Run 1 Treatment regressed on P-03-3 (Annotated), a pattern unrelated to SKILL.md's guidance direction. This indicates LLM output variance exceeds SKILL.md's signal.
+5. **Physical verification passed all 6 sessions**: The skill toggle mechanism (rm/ln-s) is reliable.
 
 ## Limitations
 
