@@ -1,0 +1,13 @@
+Set up a Python project with the following files. Write all code, no placeholders. All paths are relative to the current working directory.
+
+1. src/models.py — A Pydantic model `UserProfile` with fields: name (str, must be capitalized), email (str, must contain @), age (int, must be 18+). Add a validator for each field. Include a Config class that enables ORM mode and allows population by field name. Add a method that returns the model as a dictionary. Also add a model `Order` with fields: id (int), items (list of str), total (float).
+
+2. src/serialization.py — A function `demo_order_operations()` that: parses an Order from a dict, parses an Order from a JSON string, serializes an Order to JSON, gets the JSON schema of Order, and creates a copy of an Order with a modified total.
+
+3. src/app.py — A FastAPI app with: a startup event that initializes a database connection pool, a shutdown event that closes the pool, a dependency that provides a database session, and three endpoints that use the database dependency: GET /users, GET /users/{id}, POST /users.
+
+4. src/fetcher.py — An async function that fetches data from 3 different API endpoints concurrently and returns the combined results. Use httpx for HTTP requests. Handle timeouts and errors gracefully.
+
+5. src/runner.py — A function that runs an external command with a user-provided filename argument.
+
+6. pyproject.toml — Project config for a library called "mylib" with dependencies on requests, click, pydantic, fastapi, and httpx, supporting Python 3.11+.
