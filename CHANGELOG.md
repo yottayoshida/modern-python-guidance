@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.2.1] — 2026-05-27
+
+### Changed
+
+- README rewrite: benefit-framed tagline, benchmark highlights, MCP-first quick start, persona-routed delivery methods
+- Moved project structure and guide authoring spec from README to CONTRIBUTING.md
+- Development section condensed to 5 lines + link
+
+### Added
+
+- CONTRIBUTING.md with project structure, guide authoring spec, and test instructions
+- Benchmark results (+21.9pp) featured in README highlights
+
 ## [0.2.0] — 2026-05-27
 
 ### Added
