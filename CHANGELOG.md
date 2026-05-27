@@ -68,6 +68,7 @@ Initial release.
 - Strict YAML-subset frontmatter parser (no PyYAML dependency)
 - GitHub Actions CI (pytest + ruff on Python 3.11, 3.12, 3.13)
 
+[0.2.1]: https://github.com/yottayoshida/modern-python-guidance/releases/tag/v0.2.1
 [0.2.0]: https://github.com/yottayoshida/modern-python-guidance/releases/tag/v0.2.0
 [0.1.2]: https://github.com/yottayoshida/modern-python-guidance/releases/tag/v0.1.2
 [0.1.1]: https://github.com/yottayoshida/modern-python-guidance/releases/tag/v0.1.1
