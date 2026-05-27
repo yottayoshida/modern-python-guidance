@@ -26,7 +26,7 @@ def _get_index() -> GuideIndex:
     return _index
 
 
-# --- JSON-RPC framing (Content-Length, LSP-style) ---
+# --- JSON-RPC framing (newline-delimited JSON) ---
 
 
 class _Skip(Exception):
@@ -34,39 +34,22 @@ class _Skip(Exception):
 
 
 def _read_message(stream: object = None) -> dict | None:
-    buf = stream or sys.stdin.buffer
-    headers: dict[str, str] = {}
-    while True:
-        line = buf.readline()
-        if not line:
-            return None
-        line_str = line.decode("utf-8", errors="replace").rstrip("\r\n")
-        if line_str == "":
-            break
-        if ":" in line_str:
-            key, _, value = line_str.partition(":")
-            headers[key.strip().lower()] = value.strip()
-
-    raw_length = headers.get("content-length", "0")
+    buf = stream or sys.stdin
+    line = buf.readline()
+    if not line:
+        return None
+    line = line.strip()
+    if not line:
+        return _read_message(stream)
     try:
-        length = int(raw_length)
-    except ValueError as exc:
-        raise _Skip(f"invalid Content-Length: {raw_length!r}") from exc
-    if length == 0:
-        raise _Skip("missing or zero Content-Length")
-    body = buf.read(length)
-    try:
-        return json.loads(body)
+        return json.loads(line)
     except json.JSONDecodeError as exc:
-        raise _Skip(f"invalid JSON body: {exc}") from exc
+        raise _Skip(f"invalid JSON: {exc}") from exc
 
 
 def _write_message(msg: dict, stream: object = None) -> None:
-    out = stream or sys.stdout.buffer
-    body = json.dumps(msg, ensure_ascii=False).encode("utf-8")
-    header = f"Content-Length: {len(body)}\r\n\r\n".encode()
-    out.write(header)
-    out.write(body)
+    out = stream or sys.stdout
+    out.write(json.dumps(msg, ensure_ascii=False) + "\n")
     out.flush()
 
 
