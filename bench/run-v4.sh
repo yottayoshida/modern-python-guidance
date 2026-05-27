@@ -71,15 +71,15 @@ cleanup_variant() {
 
     case "$variant" in
         a)
-            [ -d "$WORKSPACE/src" ] && mv "$WORKSPACE/src" "$dest/src"
-            [ -f "$WORKSPACE/pyproject.toml" ] && mv "$WORKSPACE/pyproject.toml" "$dest/pyproject.toml"
-            [ -f "$WORKSPACE/setup.py" ] && mv "$WORKSPACE/setup.py" "$dest/setup.py"
+            [ -d "$WORKSPACE/src" ] && mv "$WORKSPACE/src" "$dest/src" || true
+            [ -f "$WORKSPACE/pyproject.toml" ] && mv "$WORKSPACE/pyproject.toml" "$dest/pyproject.toml" || true
+            [ -f "$WORKSPACE/setup.py" ] && mv "$WORKSPACE/setup.py" "$dest/setup.py" || true
             ;;
         b)
-            [ -d "$WORKSPACE/myapp" ] && mv "$WORKSPACE/myapp" "$dest/myapp"
+            [ -d "$WORKSPACE/myapp" ] && mv "$WORKSPACE/myapp" "$dest/myapp" || true
             ;;
         c)
-            [ -d "$WORKSPACE/tests" ] && mv "$WORKSPACE/tests" "$dest/tests"
+            [ -d "$WORKSPACE/tests" ] && mv "$WORKSPACE/tests" "$dest/tests" || true
             ;;
     esac
 }
