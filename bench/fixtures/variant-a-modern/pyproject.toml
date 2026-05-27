@@ -1,0 +1,16 @@
+[project]
+name = "benchmark-app"
+version = "0.1.0"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi",
+    "sqlalchemy[asyncio]",
+    "httpx",
+    "uvicorn",
+]
+
+[tool.ruff]
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP"]

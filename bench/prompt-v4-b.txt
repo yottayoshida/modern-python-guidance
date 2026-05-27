@@ -1,0 +1,7 @@
+Write the following 3 files for a Django application. Write all code, no placeholders. Create each file at the EXACT path shown below (relative to the current working directory). Do NOT create any project directories or subdirectories beyond what is listed.
+
+1. myapp/models.py — Django models. Define a `Product` model with fields: name (CharField), price (DecimalField), metadata (a field that stores arbitrary JSON data natively). Add a database-level constraint that ensures price is non-negative.
+
+2. myapp/views.py — Django views. Write a view function `product_list(request)` that returns all products as JSON. Make it handle requests asynchronously. Write a second view `product_detail(request, pk)` that returns a single product.
+
+3. myapp/urls.py — URL configuration. Wire up the two views above with appropriate URL patterns.
