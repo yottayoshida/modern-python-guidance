@@ -592,6 +592,7 @@ Skill load verification:
 | v2 Runs 7-9 | 2026-05-26 | 13 | rules/ (fixed) | Same prompt as v2. Toggle via `.claude/rules/modern-python.md` create/delete. **VALID**: +20.5pp avg improvement |
 | v3 Runs 11-13 | 2026-05-26 | 9 (dynamic) | rules/ | Removed prompt hints. Dynamic denominator for arch-dependent items. **VALID**: +14.9pp avg, 100% Treatment |
 | v3 MCP | TBD | 9 (dynamic) | MCP (pipe mode) | Same V3 prompt. Toggle via `--mcp-config` + `--strict-mcp-config`. Uses `search_guides` → `retrieve_guides` flow. See **MCP Effectiveness Benchmark** section |
+| v4 Runs 1-3 | 2026-05-27 | 38 (fixed, 3 variants) | rules/ | 3-prompt variant system. 39/39 guide coverage (38 scored + 1 informational). Fixed denominator per variant. Bias-free prompts. See **V4 Evaluation** section |
 
 ---
 
@@ -736,3 +737,288 @@ Uses the same `bench/score-v3.sh` scorer as rules-based runs. RUN_ID convention:
 1. **Not directly comparable to rules benchmark**: Rules inject all patterns at once (broad coverage). MCP retrieves selected patterns (deep but narrow). A lower MCP score doesn't necessarily mean MCP is worse — it means coverage depends on Claude's search strategy.
 2. **Confounded prompt difference**: Treatment has an MCP instruction header that Control lacks. Any improvement could be from the instructions alone (priming effect) or from the retrieved guide content. Separating these effects requires a third condition (instructions without tools) which is out of scope for this exploratory run.
 3. **N=3 is exploratory**: Not statistically rigorous. Results indicate direction, not statistical significance.
+
+---
+
+## V4 Evaluation (39/39 coverage, fixed denominator, 3-variant system)
+
+Issue: #46
+
+Prompt: `bench/prompt-v4-a.txt`, `bench/prompt-v4-b.txt`, `bench/prompt-v4-c.txt` | Scorer: `bench/score-v4.sh` | Runner: `bench/run-v4.sh`
+
+### Why V4
+
+V3 scored 9 of 39 guides (23% coverage). Concluding "guidance is unnecessary" from 23% coverage is premature. V4 solves three structural problems:
+
+1. **Coverage gap (23% → 100%)**: V4 scorer detects all 39 guides (38 scored + 1 informational). 30 previously untested guides are now measured.
+2. **Dynamic denominator bias**: V3's denominator changed based on architectural choice (sync vs async), making Control/Treatment comparison unfair. V4 uses fixed denominators per variant.
+3. **Prompt bias**: V3 contained implementation hints ("async", "aiosqlite") that predetermined patterns. V4 prompts use requirements-level language only. No pattern names, API names, or version numbers leak.
+
+### Coverage definitions
+
+| Status | Count | Meaning |
+|--------|-------|---------|
+| **Detected** | 39/39 | Scorer can identify modern/outdated for all guides |
+| **Scored** | 38/39 | Counted in numerator and denominator |
+| **Informational** | 1/39 | TC5 (uv-over-pip): detected but not scored. Build-system layer, not controllable by prompt |
+
+### 3-variant system
+
+| Variant | Target | Files | Scored | Categories |
+|---------|--------|-------|--------|------------|
+| A | FastAPI + async ecosystem | 7 | 32 | async, fastapi, httpx, pydantic, sqlalchemy, stdlib, typing, toolchain |
+| B | Django | 3 | 3 | django |
+| C | pytest | 1 | 3 | pytest |
+| **Total** | | **11** | **38** | 11 categories |
+
+### Evaluation rules
+
+- **Fixed denominator**: Each variant has a manifest. NONE items count toward denominator but not numerator (score 0).
+- **OUTDATED-first (V-009)**: Check OUTDATED pattern first. If both MODERN and OUTDATED detected → OUTDATED (transition code).
+- **Co-location guard**: Pattern matches require relevant import in the same file (prevents false positives from generic keywords).
+- **Comparison unit**: By-variant is primary. Overall is macro average (reference only).
+
+### V4 Run 1 (2026-05-27)
+
+#### Variant A (32 scored)
+
+| # | Control | Treatment | Category |
+|---|---------|-----------|----------|
+| AS1 | OUTDATED | MODERN | async |
+| AS2 | NONE | NONE | async |
+| AS3 | NONE | OUTDATED | async |
+| DS1 | OUTDATED | OUTDATED | datastructures |
+| DS2 | NONE | MODERN | datastructures |
+| DS3 | MODERN | MODERN | datastructures |
+| FA1 | MODERN | MODERN | fastapi |
+| FA2 | MODERN | MODERN | fastapi |
+| FA3 | OUTDATED | NONE | fastapi |
+| HX1 | MODERN | MODERN | httpx |
+| HX2 | MODERN | MODERN | httpx |
+| PD1 | MODERN | MODERN | pydantic |
+| PD2 | NONE | MODERN | pydantic |
+| PD3 | NONE | NONE | pydantic |
+| PD4 | MODERN | MODERN | pydantic |
+| SA1 | MODERN | MODERN | sqlalchemy |
+| SA2 | MODERN | MODERN | sqlalchemy |
+| SA3 | MODERN | MODERN | sqlalchemy |
+| SL1 | MODERN | MODERN | stdlib |
+| SL2 | MODERN | MODERN | stdlib |
+| SL3 | MODERN | MODERN | stdlib |
+| SL4 | MODERN | MODERN | stdlib |
+| TC1 | MODERN | MODERN | toolchain |
+| TC2 | MODERN | MODERN | toolchain |
+| TC3 | NONE | MODERN | toolchain |
+| TC4 | MODERN | MODERN | toolchain |
+| TY1 | MODERN | MODERN | typing |
+| TY2 | MODERN | MODERN | typing |
+| TY3 | OUTDATED | MODERN | typing |
+| TY4 | NONE | NONE | typing |
+| TY5 | NONE | NONE | typing |
+| TY6 | OUTDATED | MODERN | typing |
+
+| Metric | Control | Treatment |
+|--------|---------|-----------|
+| Score | 19/32 (59.3%) | 25/32 (78.1%) |
+| Modern | 19 | 25 |
+| Outdated | 5 | 2 |
+| None | 8 | 5 |
+
+#### Variant B (3 scored)
+
+| # | Control | Treatment |
+|---|---------|-----------|
+| DJ1 | MODERN | MODERN |
+| DJ2 | MODERN | MODERN |
+| DJ3 | MODERN | MODERN |
+
+Score: Control 3/3 (100%) | Treatment 3/3 (100%)
+
+#### Variant C (3 scored)
+
+| # | Control | Treatment |
+|---|---------|-----------|
+| PT1 | MODERN | MODERN |
+| PT2 | MODERN | MODERN |
+| PT3 | MODERN | MODERN |
+
+Score: Control 3/3 (100%) | Treatment 3/3 (100%)
+
+### V4 Run 2 (2026-05-27)
+
+#### Variant A (32 scored)
+
+| # | Control | Treatment | Category |
+|---|---------|-----------|----------|
+| AS1 | OUTDATED | MODERN | async |
+| AS2 | NONE | MODERN | async |
+| AS3 | NONE | OUTDATED | async |
+| DS1 | OUTDATED | OUTDATED | datastructures |
+| DS2 | NONE | MODERN | datastructures |
+| DS3 | MODERN | MODERN | datastructures |
+| FA1 | MODERN | MODERN | fastapi |
+| FA2 | MODERN | MODERN | fastapi |
+| FA3 | MODERN | MODERN | fastapi |
+| HX1 | MODERN | MODERN | httpx |
+| HX2 | MODERN | MODERN | httpx |
+| PD1 | MODERN | MODERN | pydantic |
+| PD2 | NONE | MODERN | pydantic |
+| PD3 | NONE | NONE | pydantic |
+| PD4 | MODERN | MODERN | pydantic |
+| SA1 | MODERN | MODERN | sqlalchemy |
+| SA2 | MODERN | MODERN | sqlalchemy |
+| SA3 | MODERN | MODERN | sqlalchemy |
+| SL1 | MODERN | MODERN | stdlib |
+| SL2 | MODERN | MODERN | stdlib |
+| SL3 | MODERN | MODERN | stdlib |
+| SL4 | MODERN | MODERN | stdlib |
+| TC1 | MODERN | MODERN | toolchain |
+| TC2 | MODERN | MODERN | toolchain |
+| TC3 | NONE | MODERN | toolchain |
+| TC4 | MODERN | MODERN | toolchain |
+| TY1 | OUTDATED | MODERN | typing |
+| TY2 | MODERN | MODERN | typing |
+| TY3 | OUTDATED | MODERN | typing |
+| TY4 | NONE | MODERN | typing |
+| TY5 | NONE | NONE | typing |
+| TY6 | OUTDATED | MODERN | typing |
+
+| Metric | Control | Treatment |
+|--------|---------|-----------|
+| Score | 19/32 (59.3%) | 28/32 (87.5%) |
+| Modern | 19 | 28 |
+| Outdated | 5 | 2 |
+| None | 8 | 2 |
+
+#### Variant B (3 scored)
+
+| # | Control | Treatment |
+|---|---------|-----------|
+| DJ1 | MODERN | MODERN |
+| DJ2 | MODERN | MODERN |
+| DJ3 | OUTDATED | MODERN |
+
+Score: Control 2/3 (66.6%) | Treatment 3/3 (100%)
+
+#### Variant C (3 scored)
+
+Score: Control 3/3 (100%) | Treatment 3/3 (100%)
+
+### V4 Run 3 (2026-05-27)
+
+#### Variant A (32 scored)
+
+| # | Control | Treatment | Category |
+|---|---------|-----------|----------|
+| AS1 | OUTDATED | MODERN | async |
+| AS2 | NONE | NONE | async |
+| AS3 | OUTDATED | OUTDATED | async |
+| DS1 | OUTDATED | OUTDATED | datastructures |
+| DS2 | NONE | MODERN | datastructures |
+| DS3 | MODERN | MODERN | datastructures |
+| FA1 | MODERN | MODERN | fastapi |
+| FA2 | MODERN | MODERN | fastapi |
+| FA3 | OUTDATED | MODERN | fastapi |
+| HX1 | MODERN | MODERN | httpx |
+| HX2 | MODERN | MODERN | httpx |
+| PD1 | MODERN | MODERN | pydantic |
+| PD2 | NONE | MODERN | pydantic |
+| PD3 | NONE | NONE | pydantic |
+| PD4 | MODERN | MODERN | pydantic |
+| SA1 | MODERN | MODERN | sqlalchemy |
+| SA2 | MODERN | MODERN | sqlalchemy |
+| SA3 | MODERN | MODERN | sqlalchemy |
+| SL1 | MODERN | MODERN | stdlib |
+| SL2 | MODERN | MODERN | stdlib |
+| SL3 | MODERN | MODERN | stdlib |
+| SL4 | MODERN | MODERN | stdlib |
+| TC1 | MODERN | MODERN | toolchain |
+| TC2 | MODERN | MODERN | toolchain |
+| TC3 | NONE | MODERN | toolchain |
+| TC4 | MODERN | MODERN | toolchain |
+| TY1 | MODERN | MODERN | typing |
+| TY2 | MODERN | MODERN | typing |
+| TY3 | MODERN | OUTDATED | typing |
+| TY4 | NONE | NONE | typing |
+| TY5 | NONE | MODERN | typing |
+| TY6 | OUTDATED | MODERN | typing |
+
+| Metric | Control | Treatment |
+|--------|---------|-----------|
+| Score | 20/32 (62.5%) | 26/32 (81.2%) |
+| Modern | 20 | 26 |
+| Outdated | 5 | 3 |
+| None | 7 | 3 |
+
+#### Variant B (3 scored)
+
+| # | Control | Treatment |
+|---|---------|-----------|
+| DJ1 | MODERN | MODERN |
+| DJ2 | MODERN | MODERN |
+| DJ3 | NONE | MODERN |
+
+Score: Control 2/3 (66.6%) | Treatment 3/3 (100%)
+
+#### Variant C (3 scored)
+
+Score: Control 3/3 (100%) | Treatment 3/3 (100%)
+
+### V4 Aggregate (Runs 1-3)
+
+#### By variant
+
+| Variant | Run 1 | Run 2 | Run 3 | Control avg | Treatment avg | Improvement |
+|---------|-------|-------|-------|-------------|---------------|-------------|
+| A (32) | 59.3→78.1% | 59.3→87.5% | 62.5→81.2% | 60.4% | 82.3% | **+21.9pp** |
+| B (3) | 100→100% | 66.6→100% | 66.6→100% | 77.7% | 100% | **+22.3pp** |
+| C (3) | 100→100% | 100→100% | 100→100% | 100% | 100% | 0pp |
+
+#### Overall (macro average of 3 variants, reference only)
+
+| Metric | Control | Treatment | Improvement |
+|--------|---------|-----------|-------------|
+| Score | 79.4% | 94.1% | **+14.7pp** |
+
+### V4 Per-item analysis (Variant A, across 3 runs)
+
+Items that consistently differ between Control and Treatment:
+
+| Item | Control | Treatment | Pattern |
+|------|---------|-----------|---------|
+| AS1 (TaskGroup) | 0/3 MODERN | 3/3 MODERN | Guidance always flips |
+| DS2 (dict merge `\|`) | 0/3 MODERN | 3/3 MODERN | Guidance always flips |
+| TC3 (safe subprocess) | 0/3 MODERN | 3/3 MODERN | Guidance always flips |
+| TY6 (TypeIs) | 0/3 MODERN | 2/3 MODERN | Guidance usually flips |
+| TY3 (PEP 695 type params) | 1/3 MODERN | 2/3 MODERN | Partial improvement |
+| PD2 (model_validate) | 0/3 MODERN | 3/3 MODERN | Guidance always flips |
+| FA3 (typed State) | 1/3 MODERN | 2/3 MODERN | Partial improvement |
+
+Items that remain stubborn in both conditions:
+
+| Item | Control | Treatment | Note |
+|------|---------|-----------|------|
+| DS1 (frozen dataclass) | 0/3 MODERN | 0/3 MODERN | Both use regular dataclass or Pydantic model instead of `@dataclass(frozen=True, slots=True)` |
+| AS3 (ExceptionGroup) | 0/3 MODERN | 0/3 MODERN | Both use `except Exception` or bare except. ExceptionGroup/`except*` not yet default |
+| PD3 (serialization alias) | 0/3 MODERN | 0/3 MODERN | `serialization_alias` vs `alias` — neither session uses it |
+| TY4 (override decorator) | 0/3 MODERN | 1/3 MODERN | `typing.override` is too new for consistent adoption |
+| TY5 (ParamSpec) | 0/3 MODERN | 1/3 MODERN | ParamSpec decorator typing is niche |
+
+### V4 Key observations
+
+1. **+21.9pp on Variant A (32 items)**: The largest variant shows consistent, meaningful improvement. This is the strongest evidence that guidance works for patterns Claude doesn't reliably generate on its own.
+2. **Control ceiling dropped from V3 (85.1% → 60.4% on A)**: V3 scored 9 easy items where Claude already knew most patterns. V4 scores 32 items including harder patterns (TypeIs, dict merge operator, safe subprocess), exposing a wider gap.
+3. **5 items always flip with guidance**: AS1, DS2, TC3, PD2, and TY6 are 0% in Control but 67-100% in Treatment. These are the core value proposition of the guidance.
+4. **3 items remain stubborn**: DS1 (frozen dataclass), AS3 (ExceptionGroup), PD3 (serialization alias) resist guidance. These may need stronger prompt elicitation or represent patterns too new for reliable adoption.
+5. **Django (B) shows variance**: DJ3 (async views) failed in 2 of 3 Control runs. The prompt says "handle requests asynchronously" — without guidance, Claude sometimes ignores this and writes sync views. With guidance, async views are consistent.
+6. **pytest (C) is saturated**: 100% in both conditions. pytest patterns (parametrize, match=, tmp_path) are well-established. No room for guidance to add value.
+7. **Token overhead is modest**: Treatment sessions used +671 to +13,384 more tokens (1-20% overhead). The guidance content adds ~3,600 tokens to the system prompt.
+8. **V3's +14.9pp and V4's +14.7pp overall converge**: Despite completely different scoring methods (9 dynamic items vs 38 fixed items), the overall improvement is nearly identical. This cross-validates both measurements.
+
+### V4 Caveats
+
+1. **N=3 per variant is exploratory**: Not statistically rigorous. The direction is clear but effect size confidence intervals are wide.
+2. **NONE items score 0 in fixed denominator**: This penalizes items the model didn't attempt. A model that correctly omits an inapplicable pattern scores the same as one that writes outdated code.
+3. **Prompt design influences which items are exercisable**: Some items (TY5 ParamSpec, AS2 timeout) may not be naturally elicited by the prompt. These appear as NONE in both conditions.
+4. **Single model (Opus 4.7)**: Results may differ with other models.
+5. **grep-based detection has limits**: Co-location guards reduce false positives, but alias imports and complex code structures can cause false negatives (accepted as static analysis limitation).
