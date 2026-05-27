@@ -648,9 +648,88 @@ Each run is classified by JSONL analysis:
 
 Uses the same `bench/score-v3.sh` scorer as rules-based runs. RUN_ID convention: `mcp-1`, `mcp-2`, etc.
 
-### Results
+### Results (Opus 4.7, N=3)
 
-Results will be recorded here after N≥3 runs are completed. This is exploratory (N=3). Larger sample (N=5+) planned in #46.
+#### MCP Run mcp-1
+
+| # | Category | Control | Treatment |
+|---|----------|---------|-----------|
+| A1 | Perf | PARTIAL (gather) | MODERN (TaskGroup) |
+| M1 | Safety | MODERN | MODERN |
+| F3 | Safety | MODERN | MODERN |
+| F1 | Compat | MODERN | MODERN |
+| F2 | Compat | MODERN | MODERN |
+| S1 | Compat | MODERN | OUTDATED (session.query) |
+| L1 | Compat | MODERN | MODERN |
+| S2 | Perf | N/A (sync app) | MODERN |
+| H1 | Perf | MODERN | MODERN |
+
+| Metric | Control | Treatment |
+|--------|---------|-----------|
+| Architecture | async crawler, sync app | async crawler, async app |
+| Score | 8/8 (100%) | 8/9 (88.8%) |
+| Token diff | — | +17,760 |
+| MCP tool_use | 0 | 12 (search:9, retrieve:1, list:2) |
+
+#### MCP Run mcp-2
+
+| # | Category | Control | Treatment |
+|---|----------|---------|-----------|
+| A1 | Perf | N/A (sync crawler) | MODERN (TaskGroup) |
+| M1 | Safety | MODERN | MODERN |
+| F3 | Safety | MODERN | MODERN |
+| F1 | Compat | MODERN | MODERN |
+| F2 | Compat | OUTDATED (bare Depends) | MODERN |
+| S1 | Compat | MODERN | MODERN |
+| L1 | Compat | MODERN | MODERN |
+| S2 | Perf | N/A (sync app) | MODERN |
+| H1 | Perf | MODERN | MODERN |
+
+| Metric | Control | Treatment |
+|--------|---------|-----------|
+| Architecture | sync crawler, sync app | async crawler, async app |
+| Score | 6/7 (85.7%) | 9/9 (100%) |
+| Token diff | — | +29,074 |
+| MCP tool_use | 0 | 10 (search:9, retrieve:1) |
+
+#### MCP Run mcp-3
+
+| # | Category | Control | Treatment |
+|---|----------|---------|-----------|
+| A1 | Perf | PARTIAL (gather) | MODERN (TaskGroup) |
+| M1 | Safety | MODERN | MODERN |
+| F3 | Safety | MODERN | MODERN |
+| F1 | Compat | MODERN | MODERN |
+| F2 | Compat | MODERN | MODERN |
+| S1 | Compat | MODERN | MODERN |
+| L1 | Compat | MODERN | MODERN |
+| S2 | Perf | N/A (sync app) | MODERN |
+| H1 | Perf | MODERN | MODERN |
+
+| Metric | Control | Treatment |
+|--------|---------|-----------|
+| Architecture | async crawler, sync app | async crawler, async app |
+| Score | 8/8 (100%) | 9/9 (100%) |
+| Token diff | — | +27,190 |
+| MCP tool_use | 0 | VALID |
+
+#### MCP Aggregate (mcp-1 to mcp-3)
+
+| Metric | mcp-1 | mcp-2 | mcp-3 | Average |
+|--------|-------|-------|-------|---------|
+| Control score | 100% | 85.7% | 100% | 95.2% |
+| Treatment score | 88.8% | 100% | 100% | 96.3% |
+| Improvement | -11.2pp | +14.3pp | 0pp | **+1.0pp** |
+| Token diff | +17,760 | +29,074 | +27,190 | +24,675 |
+
+#### MCP Key observations
+
+1. **MCP mechanism works in pipe mode**: All 3 Treatment sessions successfully called `search_guides` (9 calls each) and `retrieve_guides` (1 call each). Token diffs of +17K to +29K confirm guide content was loaded.
+2. **A1 (TaskGroup) is the strongest signal**: All 3 Control runs used `gather` or sequential async. All 3 Treatment runs used `TaskGroup`. This is the most consistent single-item improvement.
+3. **Opus 4.7 Control is strong**: Average 95.2%, up from 71.8% (Opus 4.6, rules benchmark V2). Opus 4.7 already knows most modern patterns without guidance. The ceiling for improvement is lower.
+4. **Architecture influence**: All 3 Treatment runs chose async app architecture. 2 of 3 Control runs chose sync app. The async-related guides (TaskGroup, async_sessionmaker) appear to influence the architectural decision itself, not just pattern usage within a chosen architecture.
+5. **S1 regression in mcp-1**: Treatment used `session.query()` despite having access to guides. MCP's selective retrieval means not all patterns are covered every time — Claude searched for async/httpx/FastAPI topics but may not have retrieved SQLAlchemy-specific guides.
+6. **Net improvement is marginal (+1.0pp)**: Because Opus 4.7 Control already scores ~95%, the room for MCP to add value is narrow. The value proposition shifts from "fixing mistakes" to "ensuring consistency" — Treatment variance (88.8%–100%) is comparable to Control variance (85.7%–100%).
 
 ### Caveats
 
