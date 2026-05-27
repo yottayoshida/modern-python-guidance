@@ -5,29 +5,65 @@
 [![Python](https://img.shields.io/pypi/pyversions/modern-python-guidance.svg)](https://pypi.org/project/modern-python-guidance/)
 [![License](https://img.shields.io/github/license/yottayoshida/modern-python-guidance.svg)](LICENSE)
 
-LLMs often produce outdated Python — `typing.List` instead of `list`, `@validator` instead of `@field_validator`, `setup.py` instead of `pyproject.toml`. This tool provides 39 version-aware BAD/GOOD pattern guides that show the modern replacement, filtered by your project's Python version.
+Stop your AI from writing `typing.List`, `@validator`, and `setup.py`. 39 version-aware BAD/GOOD pattern guides that teach AI coding agents to write modern Python — delivered via MCP, CLI, or Agent Skills.
+
+## Highlights
+
+- **Measurable impact**: +14.7pp overall improvement in A/B benchmark with 38 scored items ([details](docs/benchmark-evaluation.md)). Largest variant (FastAPI, 32 items): Control 60.4% → Treatment 82.3%
+- **39 guides** across stdlib, Pydantic, FastAPI, Django, SQLAlchemy, pytest, and toolchain
+- **Version-aware**: auto-detects your project's Python version and filters guides accordingly
+- **3 delivery methods**: MCP server, CLI, Agent Skills plugin
+- **Not Ruff**: Ruff auto-fixes syntax (`List` → `list`). mpg guides design decisions that Ruff can't touch — `TaskGroup` over `gather`, Pydantic V2 migration, SQLAlchemy 2.0 style
 
 > **Note:** The tool itself requires Python 3.11+ to run. Guides cover patterns from Python 3.9 onward, and `--python-version` filters guides for your target environment.
 
 ## Quick start
 
+### MCP (for AI coding agents)
+
+Install, then register the MCP server with your agent:
+
 ```bash
-# Install
+pip install modern-python-guidance
+```
+
+**Claude Code:**
+```bash
+claude mcp add mpg -- mpg mcp
+```
+
+**Other MCP-compatible agents** (Cursor, Windsurf, etc.) — add to your MCP config:
+```json
+{
+  "mcpServers": {
+    "mpg": {
+      "command": "mpg",
+      "args": ["mcp"]
+    }
+  }
+}
+```
+
+Your agent gets access to `search_guides`, `retrieve_guides`, `list_guides`, and `detect_python_version`.
+
+### CLI
+
+```bash
 pip install modern-python-guidance
 
 # Search for a pattern
 mpg search "pydantic validator"
-#   pydantic-v2-validators                   score=18.0  [pydantic]
 
 # Get the full guide
 mpg retrieve pydantic-v2-validators
-# --- pydantic-v2-validators (version match: YES) ---
-# ## BAD
-# @validator("name")
-# ...
-# ## GOOD
-# @field_validator("name")
-# ...
+```
+
+### Agent Skills (Claude Code plugin)
+
+```bash
+# Symlink into your project
+SKILL_DIR=$(python -c "from pathlib import Path; import modern_python_guidance; print(Path(modern_python_guidance.__file__).parent / 'skills' / 'modern-python-guidance')")
+ln -s "$SKILL_DIR" your-project/.claude/skills/modern-python-guidance
 ```
 
 `mpg` is the short alias for `modern-python-guidance`. Both work.
@@ -81,54 +117,6 @@ mpg list --python-version 3.9
 # Excludes: TaskGroup (3.11+), match/case (3.10+), etc.
 ```
 
-## MCP server
-
-mpg includes a built-in [MCP](https://modelcontextprotocol.io) server that exposes all 4 commands as tools. AI agents (Claude Code, Cursor, Gemini CLI, etc.) can discover and call them directly.
-
-### Setup with Claude Code
-
-```bash
-claude mcp add mpg -- mpg mcp
-```
-
-Or add to `.mcp.json` manually:
-
-```json
-{
-  "mcpServers": {
-    "mpg": {
-      "command": "mpg",
-      "args": ["mcp"]
-    }
-  }
-}
-```
-
-### Available tools
-
-| Tool | Description |
-|------|-------------|
-| `search_guides` | Search guides by keyword with fuzzy matching |
-| `retrieve_guides` | Get full BAD/GOOD content by guide ID |
-| `list_guides` | Browse all guides, filter by category/version |
-| `detect_python_version` | Auto-detect project Python version |
-
-The MCP server uses stdio transport (JSON-RPC 2.0) and adds zero additional dependencies.
-
-## Agent Skills integration
-
-This project doubles as a [Claude Code Agent Skills](https://docs.anthropic.com/en/docs/claude-code) plugin. Install it into your project's `.claude/skills/` to give Claude automatic access to modern Python patterns when writing or reviewing code.
-
-```bash
-# Find where the package is installed
-SKILL_DIR=$(python -c "from pathlib import Path; import modern_python_guidance; print(Path(modern_python_guidance.__file__).parent / 'skills' / 'modern-python-guidance')")
-
-# Symlink into your project
-ln -s "$SKILL_DIR" your-project/.claude/skills/modern-python-guidance
-```
-
-For other AI tools (Cursor, Copilot, etc.), use the CLI directly — pipe `mpg search` or `mpg retrieve` output into your workflow.
-
 ## Development
 
 ```bash
@@ -137,49 +125,9 @@ cd modern-python-guidance
 uv venv && source .venv/bin/activate
 uv pip install -e ".[dev]"
 pytest
-ruff check src/ tests/
 ```
 
-### Project structure
-
-```
-src/modern_python_guidance/
-├── cli.py              # Entry point (search, retrieve, list, detect-version, mcp)
-├── mcp_server.py       # MCP server (JSON-RPC 2.0 over stdio)
-├── frontmatter.py      # YAML-subset parser (no PyYAML dependency)
-├── guide_index.py      # Guide discovery and indexing
-├── search.py           # Weighted keyword search + fuzzy fallback
-├── retrieve.py         # Guide retrieval and JSON rendering
-├── version_detect.py   # Python version auto-detection
-└── compat.py           # Shared helpers
-
-skills/modern-python-guidance/
-├── SKILL.md            # Agent Skills plugin entry point
-└── guides/             # 39 guide files by category
-```
-
-See [docs/design.md](docs/design.md) for the full design document.
-
-## Contributing
-
-Contributions welcome! To add a new guide:
-
-1. Create `skills/modern-python-guidance/guides/<category>/<id>.md`
-2. Include YAML frontmatter with these fields:
-
-| Field | Type | Values |
-|-------|------|--------|
-| `id` | string | Unique kebab-case identifier (must match filename) |
-| `title` | string | Short descriptive title |
-| `category` | string | Must match parent directory name |
-| `layer` | int | 1 (stdlib), 2 (frameworks), 3 (toolchain) |
-| `tags` | list | Search keywords |
-| `aliases` | list | Alternate names (old API names, etc.) |
-| `python` | string | Minimum version, e.g. `">=3.11"` |
-| `frequency` | string | `high` (LLMs do this often), `medium`, `low` |
-
-3. Write BAD/GOOD/Why/Version Notes sections
-4. Run `pytest` to verify the guide parses correctly
+See [CONTRIBUTING.md](CONTRIBUTING.md) for project structure and guide authoring details.
 
 ## License
 
