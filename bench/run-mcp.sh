@@ -6,6 +6,9 @@ set -euo pipefail
 #   ./bench/run-mcp.sh <run_id> control    — Run without MCP (baseline)
 #   ./bench/run-mcp.sh <run_id> treatment  — Run with MCP guide tools
 #   ./bench/run-mcp.sh <run_id> both       — Run control then treatment
+#
+# Environment:
+#   MODEL=claude-opus-4-7  ./bench/run-mcp.sh ...   — Override model (default: no flag = user default)
 
 REPO_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 WORKSPACE="$HOME/claude_workspace"
@@ -13,6 +16,7 @@ RUN_ID="${1:?Usage: $0 <run_id> <control|treatment|both>}"
 SESSION="${2:?Usage: $0 <run_id> <control|treatment|both>}"
 RESULTS_DIR="$REPO_DIR/results/run-${RUN_ID}"
 BUDGET="2.00"
+MODEL="${MODEL:-}"
 
 PROMPT_CONTROL="$REPO_DIR/bench/prompt-v3.txt"
 PROMPT_TREATMENT="$REPO_DIR/bench/prompt-v3-mcp.txt"
@@ -170,9 +174,10 @@ run_control() {
         mv "$GEN_SRC" "$BACKUP"
     fi
 
-    echo "[running] claude -p (Control, no MCP) from $WORKSPACE ..."
+    echo "[running] claude -p (Control, no MCP${MODEL:+, model=$MODEL}) from $WORKSPACE ..."
     local session_json
     session_json=$(cd "$WORKSPACE" && claude -p \
+        ${MODEL:+--model "$MODEL"} \
         --strict-mcp-config --mcp-config '{"mcpServers":{}}' \
         --output-format json --max-budget-usd "$BUDGET" \
         < "$PROMPT_CONTROL" 2>"$RESULTS_DIR/session-a.stderr") || true
@@ -206,9 +211,10 @@ run_treatment() {
         mv "$GEN_SRC" "$BACKUP"
     fi
 
-    echo "[running] claude -p (Treatment, MCP enabled) from $WORKSPACE ..."
+    echo "[running] claude -p (Treatment, MCP enabled${MODEL:+, model=$MODEL}) from $WORKSPACE ..."
     local session_json
     session_json=$(cd "$WORKSPACE" && claude -p \
+        ${MODEL:+--model "$MODEL"} \
         --strict-mcp-config --mcp-config "$MCP_CONFIG" \
         --allowedTools \
             'Bash(*)' 'Read(*)' 'Write(*)' 'Edit(*)' \
@@ -312,6 +318,7 @@ echo "=== MCP Effectiveness Benchmark Run $RUN_ID ($SESSION) ==="
 echo "Control prompt: $PROMPT_CONTROL"
 echo "Treatment prompt: $PROMPT_TREATMENT"
 echo "MCP config: $MCP_CONFIG"
+echo "Model: ${MODEL:-<default>}"
 echo "Results: $RESULTS_DIR"
 
 # --- Execute ---
