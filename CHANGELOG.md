@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.2.0] — 2026-05-27
+
+### Added
+
+- 9 new Layer 2 guides: Django (`django-json-field`, `django-async-views`, `django-check-constraints`), SQLAlchemy (`sqlalchemy-2-style`, `sqlalchemy-mapped-column`, `sqlalchemy-async-session`), pytest (`pytest-parametrize`, `pytest-tmp-path`, `pytest-raises-match`)
+- SQLAlchemy 2.0 embedded patterns in SKILL.md (zero Ruff overlap)
+
+### Changed
+
+- Guide count: 30 → 39. Layer 2 coverage: 30% (9/30) → 46% (18/39)
+- MCP server `retrieve_guides` max items: 30 → 39
+- SKILL.md description trigger keywords: added "django", "sqlalchemy", "pytest"
+
 ## [0.1.2] — 2026-05-26
 
 ### Changed
@@ -42,6 +55,7 @@ Initial release.
 - Strict YAML-subset frontmatter parser (no PyYAML dependency)
 - GitHub Actions CI (pytest + ruff on Python 3.11, 3.12, 3.13)
 
+[0.2.0]: https://github.com/yottayoshida/modern-python-guidance/releases/tag/v0.2.0
 [0.1.2]: https://github.com/yottayoshida/modern-python-guidance/releases/tag/v0.1.2
 [0.1.1]: https://github.com/yottayoshida/modern-python-guidance/releases/tag/v0.1.1
 [0.1.0]: https://github.com/yottayoshida/modern-python-guidance/releases/tag/v0.1.0
