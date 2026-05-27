@@ -590,3 +590,149 @@ Skill load verification:
 | v1 | 2026-05-26 | 17 | skills/ (broken) | Initial. 6 files, Pydantic V1 terms as stress test |
 | v2 Runs 4-6 | 2026-05-26 | 13 | skills/ (broken) | Redesign. Dropped Pydantic renames, added SQLAlchemy/match/stdlib. Three-tier coverage. **INVALID**: skill body not loaded in pipe mode |
 | v2 Runs 7-9 | 2026-05-26 | 13 | rules/ (fixed) | Same prompt as v2. Toggle via `.claude/rules/modern-python.md` create/delete. **VALID**: +20.5pp avg improvement |
+| v3 Runs 11-13 | 2026-05-26 | 9 (dynamic) | rules/ | Removed prompt hints. Dynamic denominator for arch-dependent items. **VALID**: +14.9pp avg, 100% Treatment |
+| v3 MCP | TBD | 9 (dynamic) | MCP (pipe mode) | Same V3 prompt. Toggle via `--mcp-config` + `--strict-mcp-config`. Uses `search_guides` → `retrieve_guides` flow. See **MCP Effectiveness Benchmark** section |
+
+---
+
+## MCP Effectiveness Benchmark
+
+Issue: #49
+
+### Purpose
+
+Validate that MCP delivery (`claude -p --mcp-config`) works in pipe mode and produces measurable code quality improvement. This is the realistic user delivery path — users install mpg via `uv tool install` and use MCP tools, not `.claude/rules/` injection.
+
+### Why a separate benchmark
+
+The rules-based benchmark (V2/V3 above) proved that guidance content improves code quality (+20.5pp / +14.9pp). But rules/ injection is not the user-facing delivery mechanism — MCP is. This benchmark independently verifies:
+
+1. **Mechanism**: Claude actually calls `search_guides` and `retrieve_guides` via MCP in pipe mode
+2. **Effectiveness**: Retrieved guide content produces measurable improvement vs no-guidance baseline
+
+### Key differences from rules-based benchmark
+
+| Aspect | Rules benchmark | MCP benchmark |
+|--------|----------------|---------------|
+| Delivery | Full guide content injected into system prompt | Claude selectively searches and retrieves guides |
+| Coverage | All patterns always present (broad) | Only searched/retrieved patterns present (deep but narrow) |
+| Toggle | `.claude/rules/` file create/delete | `--mcp-config` flag present/absent |
+| Isolation | N/A | `--strict-mcp-config` blocks workspace MCP |
+| Verification | Token diff + physical file check | JSONL tool_use block analysis |
+| Prompt | Same file for both sessions | Different files (MCP instruction header in treatment) |
+
+### Benchmark design
+
+**Control**: `claude -p --strict-mcp-config --mcp-config '{"mcpServers":{}}' < bench/prompt-v3.txt`
+- Empty MCP config — no tools available
+- Same V3 generation prompt as rules benchmark
+
+**Treatment**: `claude -p --strict-mcp-config --mcp-config bench/mcp-config.json --allowedTools ... < bench/prompt-v3-mcp.txt`
+- mpg MCP server enabled with 4 tools: `search_guides`, `retrieve_guides`, `list_guides`, `detect_python_version`
+- Treatment prompt = MCP instruction block + `---` + identical V3 prompt body
+- `--allowedTools` explicitly permits MCP tool calls + standard tools
+
+**Prompt bias prevention (QA V-006)**: The MCP instruction block says "search for relevant Python patterns across at least 4 different topics" but does NOT provide specific search query examples. Claude chooses its own search terms, preventing the prompt from leaking pattern names.
+
+### Run validity classification
+
+Each run is classified by JSONL analysis:
+
+| Verdict | Criteria | Meaning |
+|---------|----------|---------|
+| VALID | Control: 0 MCP calls; Treatment: tools registered + search≥1 + retrieve≥1 | Clean A/B separation |
+| INVALID_NO_TOOL | Treatment: tools registered but 0 tool_use blocks | MCP available but Claude chose not to use it |
+| INVALID_ERROR | Missing JSONL, tools not registered, or Control had MCP calls | Infrastructure failure |
+
+### Scoring
+
+Uses the same `bench/score-v3.sh` scorer as rules-based runs. RUN_ID convention: `mcp-1`, `mcp-2`, etc.
+
+### Results (Opus 4.7, N=3)
+
+#### MCP Run mcp-1
+
+| # | Category | Control | Treatment |
+|---|----------|---------|-----------|
+| A1 | Perf | PARTIAL (gather) | MODERN (TaskGroup) |
+| M1 | Safety | MODERN | MODERN |
+| F3 | Safety | MODERN | MODERN |
+| F1 | Compat | MODERN | MODERN |
+| F2 | Compat | MODERN | MODERN |
+| S1 | Compat | MODERN | OUTDATED (session.query) |
+| L1 | Compat | MODERN | MODERN |
+| S2 | Perf | N/A (sync app) | MODERN |
+| H1 | Perf | MODERN | MODERN |
+
+| Metric | Control | Treatment |
+|--------|---------|-----------|
+| Architecture | async crawler, sync app | async crawler, async app |
+| Score | 8/8 (100%) | 8/9 (88.8%) |
+| Token diff | — | +17,760 |
+| MCP tool_use | 0 | 12 (search:9, retrieve:1, list:2) |
+
+#### MCP Run mcp-2
+
+| # | Category | Control | Treatment |
+|---|----------|---------|-----------|
+| A1 | Perf | N/A (sync crawler) | MODERN (TaskGroup) |
+| M1 | Safety | MODERN | MODERN |
+| F3 | Safety | MODERN | MODERN |
+| F1 | Compat | MODERN | MODERN |
+| F2 | Compat | OUTDATED (bare Depends) | MODERN |
+| S1 | Compat | MODERN | MODERN |
+| L1 | Compat | MODERN | MODERN |
+| S2 | Perf | N/A (sync app) | MODERN |
+| H1 | Perf | MODERN | MODERN |
+
+| Metric | Control | Treatment |
+|--------|---------|-----------|
+| Architecture | sync crawler, sync app | async crawler, async app |
+| Score | 6/7 (85.7%) | 9/9 (100%) |
+| Token diff | — | +29,074 |
+| MCP tool_use | 0 | 10 (search:9, retrieve:1) |
+
+#### MCP Run mcp-3
+
+| # | Category | Control | Treatment |
+|---|----------|---------|-----------|
+| A1 | Perf | PARTIAL (gather) | MODERN (TaskGroup) |
+| M1 | Safety | MODERN | MODERN |
+| F3 | Safety | MODERN | MODERN |
+| F1 | Compat | MODERN | MODERN |
+| F2 | Compat | MODERN | MODERN |
+| S1 | Compat | MODERN | MODERN |
+| L1 | Compat | MODERN | MODERN |
+| S2 | Perf | N/A (sync app) | MODERN |
+| H1 | Perf | MODERN | MODERN |
+
+| Metric | Control | Treatment |
+|--------|---------|-----------|
+| Architecture | async crawler, sync app | async crawler, async app |
+| Score | 8/8 (100%) | 9/9 (100%) |
+| Token diff | — | +27,190 |
+| MCP tool_use | 0 | VALID |
+
+#### MCP Aggregate (mcp-1 to mcp-3)
+
+| Metric | mcp-1 | mcp-2 | mcp-3 | Average |
+|--------|-------|-------|-------|---------|
+| Control score | 100% | 85.7% | 100% | 95.2% |
+| Treatment score | 88.8% | 100% | 100% | 96.3% |
+| Improvement | -11.2pp | +14.3pp | 0pp | **+1.0pp** |
+| Token diff | +17,760 | +29,074 | +27,190 | +24,675 |
+
+#### MCP Key observations
+
+1. **MCP mechanism works in pipe mode**: All 3 Treatment sessions successfully called `search_guides` (9 calls each) and `retrieve_guides` (1 call each). Token diffs of +17K to +29K confirm guide content was loaded.
+2. **A1 (TaskGroup) is the strongest signal**: All 3 Control runs used `gather` or sequential async. All 3 Treatment runs used `TaskGroup`. This is the most consistent single-item improvement.
+3. **Opus 4.7 Control is strong**: Average 95.2%, up from 71.8% (Opus 4.6, rules benchmark V2). Opus 4.7 already knows most modern patterns without guidance. The ceiling for improvement is lower.
+4. **Architecture influence**: All 3 Treatment runs chose async app architecture. 2 of 3 Control runs chose sync app. The async-related guides (TaskGroup, async_sessionmaker) appear to influence the architectural decision itself, not just pattern usage within a chosen architecture.
+5. **S1 regression in mcp-1**: Treatment used `session.query()` despite having access to guides. MCP's selective retrieval means not all patterns are covered every time — Claude searched for async/httpx/FastAPI topics but may not have retrieved SQLAlchemy-specific guides.
+6. **Net improvement is marginal (+1.0pp)**: Because Opus 4.7 Control already scores ~95%, the room for MCP to add value is narrow. The value proposition shifts from "fixing mistakes" to "ensuring consistency" — Treatment variance (88.8%–100%) is comparable to Control variance (85.7%–100%).
+
+### Caveats
+
+1. **Not directly comparable to rules benchmark**: Rules inject all patterns at once (broad coverage). MCP retrieves selected patterns (deep but narrow). A lower MCP score doesn't necessarily mean MCP is worse — it means coverage depends on Claude's search strategy.
+2. **Confounded prompt difference**: Treatment has an MCP instruction header that Control lacks. Any improvement could be from the instructions alone (priming effect) or from the retrieved guide content. Separating these effects requires a third condition (instructions without tools) which is out of scope for this exploratory run.
+3. **N=3 is exploratory**: Not statistically rigorous. Results indicate direction, not statistical significance.

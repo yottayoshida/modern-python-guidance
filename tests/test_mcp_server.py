@@ -10,26 +10,15 @@ BIN = [sys.executable, "-m", "modern_python_guidance", "mcp"]
 
 
 def _encode_message(msg: dict) -> bytes:
-    body = json.dumps(msg).encode("utf-8")
-    return f"Content-Length: {len(body)}\r\n\r\n".encode() + body
+    return (json.dumps(msg) + "\n").encode("utf-8")
 
 
 def _decode_messages(data: bytes) -> list[dict]:
     messages = []
-    pos = 0
-    while pos < len(data):
-        header_end = data.find(b"\r\n\r\n", pos)
-        if header_end == -1:
-            break
-        header_block = data[pos:header_end].decode("utf-8")
-        content_length = 0
-        for line in header_block.split("\r\n"):
-            if line.lower().startswith("content-length:"):
-                content_length = int(line.split(":", 1)[1].strip())
-        body_start = header_end + 4
-        body = data[body_start : body_start + content_length]
-        messages.append(json.loads(body))
-        pos = body_start + content_length
+    for line in data.decode("utf-8").splitlines():
+        line = line.strip()
+        if line:
+            messages.append(json.loads(line))
     return messages
 
 
@@ -295,9 +284,7 @@ class TestStdoutPollution:
         proc = subprocess.run(BIN, input=stdin_data, capture_output=True, timeout=10)
         decoded = _decode_messages(proc.stdout)
         total_expected_bytes = sum(
-            len(f"Content-Length: {len(json.dumps(m).encode())}\r\n\r\n".encode())
-            + len(json.dumps(m).encode())
-            for m in decoded
+            len((json.dumps(m) + "\n").encode()) for m in decoded
         )
         assert len(proc.stdout) == total_expected_bytes, (
             f"stdout contains {len(proc.stdout) - total_expected_bytes} extra bytes"
