@@ -51,7 +51,8 @@ LLMs frequently generate outdated Python patterns: `typing.List` instead of `lis
 │ skills/modern-python-guidance/guides/                   │
 │  typing/ async/ stdlib/ data-structures/                │
 │  pydantic/ fastapi/ httpx/ toolchain/                   │
-│  (30 guide files)                                       │
+│  django/ sqlalchemy/ pytest/                            │
+│  (39 guide files)                                       │
 └─────────────────────────────────────────────────────────┘
 ```
 
@@ -198,7 +199,7 @@ The CLI defaults to JSON when piped and human-readable when attached to a TTY. T
 | Layer | Scope | Categories | Count |
 |-------|-------|-----------|-------|
 | 1 — stdlib | Python standard library | typing, async, stdlib, data-structures | 16 |
-| 2 — frameworks | Third-party frameworks | pydantic, fastapi, httpx | 9 |
+| 2 — frameworks | Third-party frameworks | pydantic, fastapi, httpx, django, sqlalchemy, pytest | 18 |
 | 3 — toolchain | Development tools | toolchain | 5 |
 
 ## Design decisions

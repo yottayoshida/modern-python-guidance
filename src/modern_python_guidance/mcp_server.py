@@ -138,8 +138,8 @@ TOOLS = [
                 "guide_ids": {
                     "type": "array",
                     "items": {"type": "string"},
-                    "description": "Guide IDs to retrieve (max 30)",
-                    "maxItems": 30,
+                    "description": "Guide IDs to retrieve (max 39)",
+                    "maxItems": 39,
                 },
                 "python_version": {
                     "type": "string",
@@ -282,8 +282,8 @@ def _tool_retrieve(arguments: dict) -> dict:
     guide_ids = arguments.get("guide_ids", [])
     if not guide_ids:
         return _tool_result("guide_ids is required and must not be empty", is_error=True)
-    if len(guide_ids) > 30:
-        return _tool_result("guide_ids exceeds maximum of 30", is_error=True)
+    if len(guide_ids) > 39:
+        return _tool_result("guide_ids exceeds maximum of 39", is_error=True)
 
     pv = arguments.get("python_version")
     err = _validate_python_version(pv)
