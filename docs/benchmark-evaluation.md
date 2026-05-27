@@ -590,3 +590,70 @@ Skill load verification:
 | v1 | 2026-05-26 | 17 | skills/ (broken) | Initial. 6 files, Pydantic V1 terms as stress test |
 | v2 Runs 4-6 | 2026-05-26 | 13 | skills/ (broken) | Redesign. Dropped Pydantic renames, added SQLAlchemy/match/stdlib. Three-tier coverage. **INVALID**: skill body not loaded in pipe mode |
 | v2 Runs 7-9 | 2026-05-26 | 13 | rules/ (fixed) | Same prompt as v2. Toggle via `.claude/rules/modern-python.md` create/delete. **VALID**: +20.5pp avg improvement |
+| v3 Runs 11-13 | 2026-05-26 | 9 (dynamic) | rules/ | Removed prompt hints. Dynamic denominator for arch-dependent items. **VALID**: +14.9pp avg, 100% Treatment |
+| v3 MCP | TBD | 9 (dynamic) | MCP (pipe mode) | Same V3 prompt. Toggle via `--mcp-config` + `--strict-mcp-config`. Uses `search_guides` → `retrieve_guides` flow. See **MCP Effectiveness Benchmark** section |
+
+---
+
+## MCP Effectiveness Benchmark
+
+Issue: #49
+
+### Purpose
+
+Validate that MCP delivery (`claude -p --mcp-config`) works in pipe mode and produces measurable code quality improvement. This is the realistic user delivery path — users install mpg via `uv tool install` and use MCP tools, not `.claude/rules/` injection.
+
+### Why a separate benchmark
+
+The rules-based benchmark (V2/V3 above) proved that guidance content improves code quality (+20.5pp / +14.9pp). But rules/ injection is not the user-facing delivery mechanism — MCP is. This benchmark independently verifies:
+
+1. **Mechanism**: Claude actually calls `search_guides` and `retrieve_guides` via MCP in pipe mode
+2. **Effectiveness**: Retrieved guide content produces measurable improvement vs no-guidance baseline
+
+### Key differences from rules-based benchmark
+
+| Aspect | Rules benchmark | MCP benchmark |
+|--------|----------------|---------------|
+| Delivery | Full guide content injected into system prompt | Claude selectively searches and retrieves guides |
+| Coverage | All patterns always present (broad) | Only searched/retrieved patterns present (deep but narrow) |
+| Toggle | `.claude/rules/` file create/delete | `--mcp-config` flag present/absent |
+| Isolation | N/A | `--strict-mcp-config` blocks workspace MCP |
+| Verification | Token diff + physical file check | JSONL tool_use block analysis |
+| Prompt | Same file for both sessions | Different files (MCP instruction header in treatment) |
+
+### Benchmark design
+
+**Control**: `claude -p --strict-mcp-config --mcp-config '{"mcpServers":{}}' < bench/prompt-v3.txt`
+- Empty MCP config — no tools available
+- Same V3 generation prompt as rules benchmark
+
+**Treatment**: `claude -p --strict-mcp-config --mcp-config bench/mcp-config.json --allowedTools ... < bench/prompt-v3-mcp.txt`
+- mpg MCP server enabled with 4 tools: `search_guides`, `retrieve_guides`, `list_guides`, `detect_python_version`
+- Treatment prompt = MCP instruction block + `---` + identical V3 prompt body
+- `--allowedTools` explicitly permits MCP tool calls + standard tools
+
+**Prompt bias prevention (QA V-006)**: The MCP instruction block says "search for relevant Python patterns across at least 4 different topics" but does NOT provide specific search query examples. Claude chooses its own search terms, preventing the prompt from leaking pattern names.
+
+### Run validity classification
+
+Each run is classified by JSONL analysis:
+
+| Verdict | Criteria | Meaning |
+|---------|----------|---------|
+| VALID | Control: 0 MCP calls; Treatment: tools registered + search≥1 + retrieve≥1 | Clean A/B separation |
+| INVALID_NO_TOOL | Treatment: tools registered but 0 tool_use blocks | MCP available but Claude chose not to use it |
+| INVALID_ERROR | Missing JSONL, tools not registered, or Control had MCP calls | Infrastructure failure |
+
+### Scoring
+
+Uses the same `bench/score-v3.sh` scorer as rules-based runs. RUN_ID convention: `mcp-1`, `mcp-2`, etc.
+
+### Results
+
+Results will be recorded here after N≥3 runs are completed. This is exploratory (N=3). Larger sample (N=5+) planned in #46.
+
+### Caveats
+
+1. **Not directly comparable to rules benchmark**: Rules inject all patterns at once (broad coverage). MCP retrieves selected patterns (deep but narrow). A lower MCP score doesn't necessarily mean MCP is worse — it means coverage depends on Claude's search strategy.
+2. **Confounded prompt difference**: Treatment has an MCP instruction header that Control lacks. Any improvement could be from the instructions alone (priming effect) or from the retrieved guide content. Separating these effects requires a third condition (instructions without tools) which is out of scope for this exploratory run.
+3. **N=3 is exploratory**: Not statistically rigorous. Results indicate direction, not statistical significance.

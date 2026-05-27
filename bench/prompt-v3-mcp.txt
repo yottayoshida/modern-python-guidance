@@ -1,0 +1,20 @@
+You have access to MCP tools from "mpg" (modern-python-guidance) that provide best-practice guides for modern Python patterns. Before writing any code, you MUST:
+
+1. Use search_guides to search for relevant Python patterns across at least 4 different topics related to the task below (e.g., async patterns, type annotations, web frameworks, database patterns, file handling, configuration, etc.)
+2. Use retrieve_guides to fetch the full content of any guides found
+3. Apply the BAD/GOOD patterns from the retrieved guides in your implementation
+
+This is mandatory — do not skip the search and retrieve steps.
+
+---
+Write the following 5 files. Write all code, no placeholders. Create each file at the EXACT path shown below (relative to the current working directory). Do NOT create any project directories or subdirectories beyond what is listed.
+
+1. src/config.py — A typed configuration loader. Define a generic container class `Registry[T]` that stores items by name and retrieves them with type safety. Write a function `load_config(path)` that reads a TOML file and returns a dict. Include a `created_at` timestamp field (UTC) in the registry entries.
+
+2. src/crawler.py — A web crawler. Write a function `crawl(urls: list[str])` that fetches a list of URLs using httpx and returns their response bodies. Handle failures gracefully — a single bad URL should not lose the other results.
+
+3. src/app.py — A FastAPI application with SQLAlchemy and a database. It should have: a User model with CRUD endpoints (GET /users, GET /users/{id}, POST /users), an OAuth2-protected endpoint GET /users/me that requires the "users:read" scope, and proper database lifecycle management.
+
+4. src/scanner.py — A file scanner. Write a function `scan_directory(root: Path)` that walks a directory tree recursively, collects all files, groups them into batches of 10, and processes each batch. Define an enum `FileCategory` with values IMAGE, VIDEO, DOCUMENT, OTHER. Use a match statement to categorize each file by its extension (.jpg/.png → IMAGE, .mp4/.avi → VIDEO, .pdf/.docx → DOCUMENT, everything else → OTHER).
+
+5. pyproject.toml — Project config with dependencies on fastapi, sqlalchemy, httpx, and uvicorn, supporting Python 3.12+.
