@@ -28,6 +28,7 @@ class SearchResult:
     meta: GuideMeta
     token_estimate: int
     fuzzy: bool = False
+    snippet: str = ""
 
 
 def search(
@@ -64,6 +65,7 @@ def search(
                 score=score,
                 meta=meta,
                 token_estimate=token_estimate(guide.body),
+                snippet=guide.snippet,
             ))
 
     results.sort(key=lambda r: (-r.score, r.guide_id))
@@ -143,6 +145,7 @@ def _fuzzy_fallback(
                 meta=guide.meta,
                 token_estimate=token_estimate(guide.body),
                 fuzzy=True,
+                snippet=guide.snippet,
             ))
 
     results.sort(key=lambda r: (-r.score, r.guide_id))

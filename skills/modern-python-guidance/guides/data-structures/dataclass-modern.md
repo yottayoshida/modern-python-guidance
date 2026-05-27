@@ -1,22 +1,24 @@
 ---
 id: dataclass-modern
-title: Use Modern Dataclass Features (slots, kw_only)
+title: Use Modern Dataclass Features (frozen, slots, kw_only)
 category: data-structures
 layer: 1
 tags:
   - dataclass
   - slots
   - kw_only
+  - frozen
+  - immutable
 aliases:
   - dataclass
   - dataclasses
 python: ">=3.10"
-frequency: medium
+frequency: high
 ---
 
 # Use Modern Dataclass Features
 
-Since Python 3.10, dataclasses support `slots=True` and `kw_only=True` for better performance and safer APIs.
+Since Python 3.10, dataclasses support `frozen=True`, `slots=True`, and `kw_only=True` for immutable value objects with better performance.
 
 ## BAD
 
@@ -24,17 +26,14 @@ Since Python 3.10, dataclasses support `slots=True` and `kw_only=True` for bette
 from dataclasses import dataclass
 
 @dataclass
-class Point:
-    x: float
-    y: float
-    z: float = 0.0
+class AppConfig:
+    db_host: str
+    db_port: int
+    debug: bool = False
 
-# No slots: allows typos on attributes
-p = Point(1.0, 2.0)
-p.w = 3.0  # silently creates new attribute (typo for 'z')
-
-# Positional args: easy to mix up x and y
-p = Point(2.0, 1.0)  # is this (x=2, y=1) or (x=1, y=2)?
+config = AppConfig("localhost", 5432)
+config.db_host = "evil.example.com"  # mutable — accidental or malicious mutation
+config.typo_field = True  # silently creates new attribute
 ```
 
 ## GOOD
@@ -42,31 +41,44 @@ p = Point(2.0, 1.0)  # is this (x=2, y=1) or (x=1, y=2)?
 ```python
 from dataclasses import dataclass
 
-@dataclass(slots=True, kw_only=True)
-class Point:
-    x: float
-    y: float
-    z: float = 0.0
+@dataclass(frozen=True, slots=True, kw_only=True)
+class AppConfig:
+    db_host: str
+    db_port: int
+    debug: bool = False
 
-p = Point(x=1.0, y=2.0)
-p.w = 3.0  # AttributeError: 'Point' has no attribute 'w'
-
-# kw_only forces explicit names — no positional confusion
-p = Point(x=2.0, y=1.0)  # intent is clear
+config = AppConfig(db_host="localhost", db_port=5432)
+config.db_host = "evil"  # FrozenInstanceError
+config.typo_field = True  # AttributeError
 ```
 
 ## Why
 
-- `slots=True`: 20-35% less memory, faster attribute access, prevents typo attributes
-- `kw_only=True`: forces named arguments, eliminates positional ordering bugs
-- `frozen=True` + `slots=True`: fast immutable value objects
-- Combine for production data classes: `@dataclass(slots=True, frozen=True, kw_only=True)`
+### When to use each flag
+
+| Flag | Use when | Effect |
+|------|----------|--------|
+| `frozen=True` | Value objects, configs, DTOs, dict keys | Immutable + hashable |
+| `slots=True` | Always (unless you need `__dict__`) | 20-35% less memory, faster access, blocks typo attrs |
+| `kw_only=True` | 3+ fields, or fields of same type | Forces named args, prevents ordering bugs |
+
+### When NOT to use
+
+- **`frozen`**: Skip when you need mutable builder pattern or in-place updates in tight loops
+- **`slots`**: Skip when you need `__dict__` introspection, multiple inheritance with conflicting slots, or dynamic attribute assignment
+- **`kw_only`**: Skip for 1-2 field classes where positional is unambiguous (e.g., `Point(x, y)`)
+
+### Decision checklist
+
+1. Is this a value object, config, or DTO? → Add `frozen=True`
+2. Do you need `__dict__` or multiple inheritance? → If no, add `slots=True`
+3. Are there 3+ fields or fields of the same type? → Add `kw_only=True`
 
 ## Version Notes
 
 - 3.10+: `slots=True`, `kw_only=True`
 - 3.10+: Per-field `kw_only` via `field(kw_only=True)`
-- 3.7-3.9: Basic `@dataclass` without slots/kw_only
+- 3.7-3.9: Basic `@dataclass` and `frozen=True` only (no slots/kw_only)
 
 ## References
 
