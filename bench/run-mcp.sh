@@ -185,7 +185,7 @@ run_control() {
     echo "$session_json" > "$RESULTS_DIR/session-a.json"
 
     local session_id
-    session_id=$(python3 -c "import json,sys; print(json.loads(sys.stdin).get('session_id',''))" <<< "$session_json" 2>/dev/null || echo "")
+    session_id=$(python3 -c "import json; print(json.load(open('$RESULTS_DIR/session-a.json')).get('session_id',''))" 2>/dev/null || echo "")
 
     echo "[info] Control session_id: $session_id"
 
@@ -228,7 +228,7 @@ run_treatment() {
     echo "$session_json" > "$RESULTS_DIR/session-b.json"
 
     local session_id
-    session_id=$(python3 -c "import json,sys; print(json.loads(sys.stdin).get('session_id',''))" <<< "$session_json" 2>/dev/null || echo "")
+    session_id=$(python3 -c "import json; print(json.load(open('$RESULTS_DIR/session-b.json')).get('session_id',''))" 2>/dev/null || echo "")
 
     echo "[info] Treatment session_id: $session_id"
 
