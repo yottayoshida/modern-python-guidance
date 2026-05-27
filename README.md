@@ -5,7 +5,7 @@
 [![Python](https://img.shields.io/pypi/pyversions/modern-python-guidance.svg)](https://pypi.org/project/modern-python-guidance/)
 [![License](https://img.shields.io/github/license/yottayoshida/modern-python-guidance.svg)](LICENSE)
 
-LLMs often produce outdated Python — `typing.List` instead of `list`, `@validator` instead of `@field_validator`, `setup.py` instead of `pyproject.toml`. This tool provides 30 version-aware BAD/GOOD pattern guides that show the modern replacement, filtered by your project's Python version.
+LLMs often produce outdated Python — `typing.List` instead of `list`, `@validator` instead of `@field_validator`, `setup.py` instead of `pyproject.toml`. This tool provides 39 version-aware BAD/GOOD pattern guides that show the modern replacement, filtered by your project's Python version.
 
 > **Note:** The tool itself requires Python 3.11+ to run. Guides cover patterns from Python 3.9 onward, and `--python-version` filters guides for your target environment.
 
@@ -56,15 +56,15 @@ mpg search "typing" --format json | jq '.[0].id'
 
 ## Guide coverage
 
-30 guides across 3 layers:
+39 guides across 3 layers:
 
 | Layer | Categories | Count | Examples |
 |-------|-----------|-------|---------|
 | **1 — stdlib** | typing, async, stdlib, data-structures | 16 | `list` over `List`, `match`/`case`, `TaskGroup` |
-| **2 — frameworks** | pydantic, fastapi, httpx | 9 | Pydantic V2 migration, `Annotated[Depends]`, `AsyncClient` |
+| **2 — frameworks** | pydantic, fastapi, httpx, django, sqlalchemy, pytest | 18 | Pydantic V2 migration, SQLAlchemy 2.0 style, `Annotated[Depends]` |
 | **3 — toolchain** | toolchain | 5 | `uv` over `pip`, `ruff` over flake8, `pickle` avoidance |
 
-Run `mpg list` to see all 30 guides, or [browse them on GitHub](skills/modern-python-guidance/guides/).
+Run `mpg list` to see all 39 guides, or [browse them on GitHub](skills/modern-python-guidance/guides/).
 
 ## Version-aware filtering
 
@@ -155,7 +155,7 @@ src/modern_python_guidance/
 
 skills/modern-python-guidance/
 ├── SKILL.md            # Agent Skills plugin entry point
-└── guides/             # 30 guide files by category
+└── guides/             # 39 guide files by category
 ```
 
 See [docs/design.md](docs/design.md) for the full design document.

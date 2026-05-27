@@ -19,7 +19,7 @@ V1 tested mostly Pydantic V1→V2 API renames. Claude already knows them (94.1% 
 Items are grouped by SKILL.md coverage to measure the signal source:
 
 - **Tier E (Embedded)**: Pattern + code example in SKILL.md embedded section → Treatment should improve
-- **Tier G (Guide-listed)**: Guide name in SKILL.md "30 guides" list, no embedded example → might improve
+- **Tier G (Guide-listed)**: Guide name in SKILL.md "39 guides" list, no embedded example → might improve
 - **Tier U (Uncovered)**: Not in SKILL.md at all → control group, no difference expected
 
 ### A: Structured Concurrency (1 item)

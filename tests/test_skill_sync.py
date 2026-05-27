@@ -31,6 +31,8 @@ EMBEDDED_GUIDE_IDS = [
     "taskgroup-over-gather",
     "pyproject-toml-over-setup",
     "safe-subprocess",
+    "sqlalchemy-2-style",
+    "sqlalchemy-mapped-column",
 ]
 
 
@@ -64,12 +66,12 @@ class TestV001SkillGuideSync:
             )
 
     def test_catalog_heading_exists(self, skill_text):
-        assert "## All 30 guides by category" in skill_text, (
+        assert "## All 39 guides by category" in skill_text, (
             "Catalog heading missing from SKILL.md"
         )
 
     def test_catalog_ids_exist(self, skill_text, guide_index):
-        catalog_section = skill_text.split("## All 30 guides by category")[-1]
+        catalog_section = skill_text.split("## All 39 guides by category")[-1]
         ids_in_catalog = _extract_backtick_ids(catalog_section)
         for guide_id in ids_in_catalog:
             assert guide_index.get(guide_id) is not None, (
@@ -77,14 +79,14 @@ class TestV001SkillGuideSync:
             )
 
     def test_catalog_count_matches(self, guide_index, skill_text):
-        assert "30 guides" in skill_text
-        assert len(guide_index) == 30, (
-            f"SKILL.md says 30 guides but found {len(guide_index)}"
+        assert "39 guides" in skill_text
+        assert len(guide_index) == 39, (
+            f"SKILL.md says 39 guides but found {len(guide_index)}"
         )
 
     def test_catalog_covers_all_guides(self, skill_text, guide_index):
         """Reverse check: every guide ID appears in the catalog section."""
-        catalog_section = skill_text.split("## All 30 guides by category")[-1]
+        catalog_section = skill_text.split("## All 39 guides by category")[-1]
         catalog_ids = set(_extract_backtick_ids(catalog_section))
         for guide_id in guide_index.guides:
             assert guide_id in catalog_ids, (
