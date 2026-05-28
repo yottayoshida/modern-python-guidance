@@ -19,15 +19,29 @@ Stop your AI from writing `typing.List`, `@validator`, and `setup.py`. 39 versio
 
 ## Quick start
 
-### MCP (for AI coding agents)
-
-Install, then register the MCP server with your agent:
+### Claude Code (recommended)
 
 ```bash
 pip install modern-python-guidance
+mpg setup
 ```
 
-**Claude Code:**
+This registers the MCP server and links Agent Skills in one command. Start a new Claude Code session afterwards — newly registered MCP servers and skills take effect on the next launch.
+
+### CLI
+
+```bash
+pip install modern-python-guidance
+mpg search "pydantic validator"
+mpg retrieve pydantic-v2-validators
+```
+
+`mpg` is the short alias for `modern-python-guidance`. Both work.
+
+<details>
+<summary>Manual setup / other agents</summary>
+
+**MCP registration (Claude Code):**
 ```bash
 claude mcp add mpg -- mpg mcp
 ```
@@ -44,29 +58,21 @@ claude mcp add mpg -- mpg mcp
 }
 ```
 
-Your agent gets access to `search_guides`, `retrieve_guides`, `list_guides`, and `detect_python_version`.
-
-### CLI
-
+**Agent Skills symlink (Claude Code):**
 ```bash
-pip install modern-python-guidance
-
-# Search for a pattern
-mpg search "pydantic validator"
-
-# Get the full guide
-mpg retrieve pydantic-v2-validators
+mpg setup --skills-only
 ```
 
-### Agent Skills (Claude Code plugin)
+**`mpg setup` flags:**
+| Flag | Purpose |
+|------|---------|
+| `--mcp-only` | MCP registration only |
+| `--skills-only` | Agent Skills symlink only |
+| `--scope {user,local}` | MCP scope (default: user) |
+| `--project-dir PATH` | Target project for Skills symlink |
+| `--dry-run` | Show what would be done |
 
-```bash
-# Symlink into your project
-SKILL_DIR=$(python -c "from pathlib import Path; import modern_python_guidance; print(Path(modern_python_guidance.__file__).parent / 'skills' / 'modern-python-guidance')")
-ln -s "$SKILL_DIR" your-project/.claude/skills/modern-python-guidance
-```
-
-`mpg` is the short alias for `modern-python-guidance`. Both work.
+</details>
 
 ## CLI usage
 
