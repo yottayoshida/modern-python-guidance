@@ -50,6 +50,18 @@ class TestSearch:
         data = json.loads(r.stdout)
         assert all(d["category"] == "fastapi" for d in data)
 
+    def test_search_enriched_keys(self):
+        r = run_cli("search", "pydantic validator", "--format", "json")
+        assert r.returncode == 0
+        data = json.loads(r.stdout)
+        expected_keys = {
+            "id", "title", "category", "layer", "tags", "python",
+            "frequency", "score", "token_estimate", "fuzzy", "snippet",
+        }
+        assert set(data[0].keys()) == expected_keys
+        assert isinstance(data[0]["tags"], list)
+        assert "→" in data[0]["snippet"]
+
 
 class TestRetrieve:
     def test_retrieve_single(self):

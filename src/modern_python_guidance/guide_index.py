@@ -5,6 +5,7 @@ from __future__ import annotations
 import importlib.resources
 import logging
 from dataclasses import dataclass, field
+from itertools import zip_longest
 from pathlib import Path
 
 from modern_python_guidance.frontmatter import FrontmatterError, GuideMeta, parse_frontmatter
@@ -17,6 +18,7 @@ class Guide:
     meta: GuideMeta
     body: str
     source_path: str
+    snippet: str = ""
 
 
 @dataclass
@@ -68,6 +70,7 @@ def build_index(guides_dir: Path | None = None) -> GuideIndex:
                 meta=meta,
                 body=body,
                 source_path=str(md_file),
+                snippet=_extract_snippet(body),
             )
         except FrontmatterError as e:
             log.warning("Skipping %s: %s", md_file, e)
@@ -76,6 +79,42 @@ def build_index(guides_dir: Path | None = None) -> GuideIndex:
 
     log.debug("Loaded %d guides from %s", len(index), guides_dir)
     return index
+
+
+def _extract_snippet(body: str) -> str:
+    """Extract a BAD → GOOD one-liner from guide body.
+
+    Finds the first pair of lines from BAD and GOOD code blocks that differ,
+    which best conveys the transformation the guide teaches.
+    """
+    bad_lines = _code_lines(body, "## BAD")
+    good_lines = _code_lines(body, "## GOOD")
+    if not bad_lines or not good_lines:
+        return ""
+    for b, g in zip_longest(bad_lines, good_lines, fillvalue=""):
+        if b != g:
+            return f"{b} → {g}" if b and g else (b or g)
+    return f"{bad_lines[0]} → {good_lines[0]}"
+
+
+def _code_lines(body: str, heading: str) -> list[str]:
+    """Return all non-empty code lines from the first fence under a heading."""
+    parts = body.split(heading + "\n")
+    if len(parts) < 2:
+        return []
+    section = parts[1].split("\n## ")[0]
+    in_fence = False
+    lines: list[str] = []
+    for line in section.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("```"):
+            if not in_fence:
+                in_fence = True
+                continue
+            break
+        if in_fence and stripped:
+            lines.append(stripped)
+    return lines
 
 
 def _find_guides_dir() -> Path:

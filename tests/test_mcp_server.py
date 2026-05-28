@@ -99,6 +99,26 @@ class TestSearchGuides:
         assert isinstance(data, list)
         assert len(data) >= 1
 
+    def test_search_enriched_keys(self):
+        responses = _run_mcp(
+            *_init_handshake(),
+            {"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {
+                "name": "search_guides",
+                "arguments": {"query": "pydantic validator"},
+            }},
+        )
+        data = json.loads(responses[1]["result"]["content"][0]["text"])
+        expected_keys = {
+            "id", "title", "category", "layer", "tags", "python",
+            "frequency", "score", "token_estimate", "fuzzy", "snippet",
+        }
+        assert set(data[0].keys()) == expected_keys
+        assert isinstance(data[0]["tags"], list)
+        assert isinstance(data[0]["python"], str)
+        assert isinstance(data[0]["frequency"], str)
+        assert isinstance(data[0]["snippet"], str)
+        assert "→" in data[0]["snippet"]
+
     def test_search_empty_query(self):
         responses = _run_mcp(
             *_init_handshake(),

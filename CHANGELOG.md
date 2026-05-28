@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.3.0] — 2026-05-28
+
+### Changed
+
+- Search response (MCP + CLI) now includes `tags`, `python`, `frequency`, and `snippet` fields for richer agent decision-making without requiring a follow-up retrieve call
+- `dataclass-modern` guide rewritten: BAD/GOOD examples now center on immutable value objects (`frozen=True, slots=True, kw_only=True`), with decision criteria for when to use each flag; frequency upgraded to `high`
+- README benchmark highlight now specifies "via Agent Skills" to accurately reflect the delivery method used in the A/B evaluation
+
+### Added
+
+- Snippet extraction: every guide produces a one-liner BAD → GOOD transformation preview (e.g. `@dataclass → @dataclass(frozen=True, slots=True, kw_only=True)`)
+- 6 new tests: snippet non-empty invariant, exact fixture assertions, MCP/CLI enriched key validation
+
 ## [0.2.1] — 2026-05-27
 
 ### Changed
@@ -68,6 +81,7 @@ Initial release.
 - Strict YAML-subset frontmatter parser (no PyYAML dependency)
 - GitHub Actions CI (pytest + ruff on Python 3.11, 3.12, 3.13)
 
+[0.3.0]: https://github.com/yottayoshida/modern-python-guidance/releases/tag/v0.3.0
 [0.2.1]: https://github.com/yottayoshida/modern-python-guidance/releases/tag/v0.2.1
 [0.2.0]: https://github.com/yottayoshida/modern-python-guidance/releases/tag/v0.2.0
 [0.1.2]: https://github.com/yottayoshida/modern-python-guidance/releases/tag/v0.1.2

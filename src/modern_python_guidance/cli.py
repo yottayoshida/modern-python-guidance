@@ -122,9 +122,13 @@ def _cmd_search(args: argparse.Namespace) -> None:
                 "title": r.meta.title,
                 "category": r.meta.category,
                 "layer": r.meta.layer,
+                "tags": r.meta.tags,
+                "python": r.meta.python,
+                "frequency": r.meta.frequency,
                 "score": r.score,
                 "token_estimate": r.token_estimate,
                 "fuzzy": r.fuzzy,
+                "snippet": r.snippet,
             }
             for r in results
         ]
