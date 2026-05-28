@@ -2,7 +2,7 @@
 
 All notable changes to this project will be documented in this file.
 
-## [0.3.0] — 2026-05-28
+## [0.2.2] — 2026-05-28
 
 ### Changed
 
@@ -81,7 +81,7 @@ Initial release.
 - Strict YAML-subset frontmatter parser (no PyYAML dependency)
 - GitHub Actions CI (pytest + ruff on Python 3.11, 3.12, 3.13)
 
-[0.3.0]: https://github.com/yottayoshida/modern-python-guidance/releases/tag/v0.3.0
+[0.2.2]: https://github.com/yottayoshida/modern-python-guidance/releases/tag/v0.2.2
 [0.2.1]: https://github.com/yottayoshida/modern-python-guidance/releases/tag/v0.2.1
 [0.2.0]: https://github.com/yottayoshida/modern-python-guidance/releases/tag/v0.2.0
 [0.1.2]: https://github.com/yottayoshida/modern-python-guidance/releases/tag/v0.1.2
