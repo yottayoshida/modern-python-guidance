@@ -68,7 +68,7 @@ async def root(request: Request):
 
 ## Version Notes
 
-- Works on Python 3.9+ with FastAPI >= 0.93.0
+- Works on Python 3.9+ with FastAPI >= 0.94.0 (lifespan state dict requires Starlette >= 0.26.0)
 - `AsyncIterator` moved from `typing` to `collections.abc` in 3.9
 
 ## References

@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.2.3] — 2026-05-28
+
+### Fixed
+
+- `fastapi-typed-state` guide: added missing Version Notes section (closes #13)
+- `fastapi-typed-state` and `fastapi-lifespan` guides: corrected minimum version from FastAPI >= 0.93.0 to >= 0.94.0 (lifespan state dict requires Starlette >= 0.26.0, which FastAPI 0.93.0 excludes)
+
 ## [0.2.2] — 2026-05-28
 
 ### Changed
@@ -81,6 +88,7 @@ Initial release.
 - Strict YAML-subset frontmatter parser (no PyYAML dependency)
 - GitHub Actions CI (pytest + ruff on Python 3.11, 3.12, 3.13)
 
+[0.2.3]: https://github.com/yottayoshida/modern-python-guidance/releases/tag/v0.2.3
 [0.2.2]: https://github.com/yottayoshida/modern-python-guidance/releases/tag/v0.2.2
 [0.2.1]: https://github.com/yottayoshida/modern-python-guidance/releases/tag/v0.2.1
 [0.2.0]: https://github.com/yottayoshida/modern-python-guidance/releases/tag/v0.2.0

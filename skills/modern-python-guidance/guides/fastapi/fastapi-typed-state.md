@@ -70,6 +70,11 @@ async def root(request: Request):
 - `dataclass` or `TypedDict` documents the expected shape
 - Resource cleanup is guaranteed by the context manager
 
+## Version Notes
+
+- Lifespan state dict requires FastAPI >= 0.94.0 (Starlette >= 0.26.0)
+- `@dataclass(slots=True)` requires Python 3.10+; use plain `@dataclass` on 3.9
+
 ## References
 
 - [FastAPI Lifespan State](https://fastapi.tiangolo.com/advanced/events/#lifespan-state)
