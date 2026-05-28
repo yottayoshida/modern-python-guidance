@@ -2,6 +2,21 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.3.0] — 2026-05-28
+
+### Added
+
+- `mpg setup` command: one-command MCP server registration + Agent Skills symlink creation. Replaces 3-4 manual steps with `pip install modern-python-guidance && mpg setup` (closes #60)
+- CLI flags: `--mcp-only`, `--skills-only`, `--scope {user,local}`, `--project-dir`, `--dry-run`
+- Project root auto-detection (`.claude/` → `.git/` → `pyproject.toml` upward search) for correct Skills symlink placement from subdirectories
+- Idempotent operation: re-running `mpg setup` skips already-correct state, replaces stale/broken symlinks, errors on non-symlink blockers
+- Partial success handling: MCP and Skills run independently; one failure does not block the other
+- 33 new tests for setup command (V-001 through V-014 verification points)
+
+### Changed
+
+- README Quick Start: reduced from 3 code blocks to 2 lines (`pip install` + `mpg setup`). Manual setup moved to collapsible `<details>` section
+
 ## [0.2.3] — 2026-05-28
 
 ### Fixed
@@ -88,6 +103,7 @@ Initial release.
 - Strict YAML-subset frontmatter parser (no PyYAML dependency)
 - GitHub Actions CI (pytest + ruff on Python 3.11, 3.12, 3.13)
 
+[0.3.0]: https://github.com/yottayoshida/modern-python-guidance/releases/tag/v0.3.0
 [0.2.3]: https://github.com/yottayoshida/modern-python-guidance/releases/tag/v0.2.3
 [0.2.2]: https://github.com/yottayoshida/modern-python-guidance/releases/tag/v0.2.2
 [0.2.1]: https://github.com/yottayoshida/modern-python-guidance/releases/tag/v0.2.1

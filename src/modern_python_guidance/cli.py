@@ -65,6 +65,21 @@ def main(argv: list[str] | None = None) -> None:
     # mcp
     subparsers.add_parser("mcp", help="Start MCP server (JSON-RPC over stdio)")
 
+    # setup
+    p_setup = subparsers.add_parser(
+        "setup", help="Register MCP server and link Agent Skills",
+    )
+    p_setup.add_argument("--mcp-only", action="store_true", help="MCP registration only")
+    p_setup.add_argument("--skills-only", action="store_true", help="Skills symlink only")
+    p_setup.add_argument(
+        "--scope", choices=["user", "local"], default="user",
+        help="MCP scope (default: user)",
+    )
+    p_setup.add_argument(
+        "--project-dir", type=Path, help="Project directory for Skills symlink",
+    )
+    p_setup.add_argument("--dry-run", action="store_true", help="Show what would be done")
+
     args = parser.parse_args(argv)
 
     if args.command is None:
@@ -86,6 +101,8 @@ def main(argv: list[str] | None = None) -> None:
             _cmd_detect_version(args)
         elif args.command == "mcp":
             _cmd_mcp()
+        elif args.command == "setup":
+            _cmd_setup(args)
     except BrokenPipeError:
         sys.exit(0)
 
@@ -215,3 +232,16 @@ def _cmd_mcp() -> None:
     from modern_python_guidance.mcp_server import serve
 
     serve()
+
+
+def _cmd_setup(args: argparse.Namespace) -> None:
+    from modern_python_guidance.setup_cmd import run_setup
+
+    code = run_setup(
+        scope=args.scope,
+        mcp_only=args.mcp_only,
+        skills_only=args.skills_only,
+        project_dir=args.project_dir,
+        dry_run=args.dry_run,
+    )
+    sys.exit(code)
