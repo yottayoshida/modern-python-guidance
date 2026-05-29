@@ -52,6 +52,17 @@ def _find_project_root(start: Path | None = None) -> Path:
     return current
 
 
+def _skills_link_path(project_dir: Path | None = None) -> Path:
+    """Resolve the Agent Skills symlink path: ``<root>/.claude/skills/<name>``.
+
+    Single source of truth for where the skills symlink lives, shared by
+    ``setup_skills`` (creation) and ``uninstall_skills`` (removal) so the two
+    operations cannot drift in how they locate the link.
+    """
+    root = project_dir or _find_project_root()
+    return root / ".claude" / "skills" / SKILLS_LINK_NAME
+
+
 def setup_mcp(
     *,
     scope: str = "user",
@@ -106,8 +117,8 @@ def setup_skills(
         return False
 
     root = project_dir or _find_project_root()
-    skills_parent = root / ".claude" / "skills"
-    link_path = skills_parent / SKILLS_LINK_NAME
+    link_path = _skills_link_path(project_dir)
+    skills_parent = link_path.parent
 
     if dry_run:
         print(f"Would link: {link_path} -> {source}")

@@ -72,6 +72,21 @@ mpg setup --skills-only
 | `--project-dir PATH` | Target project for Skills symlink |
 | `--dry-run` | Show what would be done |
 
+**Uninstall** — reverse `mpg setup` (deregister the MCP server and unlink Agent Skills):
+```bash
+mpg uninstall            # remove both
+mpg uninstall --dry-run  # preview what would be removed
+```
+
+| Flag | Purpose |
+|------|---------|
+| `--mcp-only` | MCP deregistration only |
+| `--skills-only` | Agent Skills unlink only |
+| `--project-dir PATH` | Target project for the Skills symlink |
+| `--dry-run` | Show what would be done |
+
+`mpg uninstall` clears the MCP registration from every scope `setup` can write to (user and local), removes only the symlink mpg created (never its target or other skills), and is idempotent — running it on an already-clean state is a harmless no-op.
+
 </details>
 
 ## CLI usage
