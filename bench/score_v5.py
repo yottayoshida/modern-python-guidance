@@ -184,19 +184,17 @@ def check_AS1(files: list[ParsedFile]) -> CheckResult:
             continue
         has_outdated = False
         has_modern = False
-        # Collect all local names that resolve to asyncio.TaskGroup
-        tg_names = set()
-        for alias, canonical in pf.aliases.items():
-            if canonical == "asyncio.TaskGroup":
-                tg_names.add(alias)
+        tg_names = {a for a, c in pf.aliases.items() if c == "asyncio.TaskGroup"}
+        has_tg_import = bool(tg_names) or _has_import_of(pf, "asyncio.TaskGroup")
         for node in _iter_code_nodes(pf.tree):
             if isinstance(node, ast.Call) and _is_call_to(node, pf, "asyncio", "gather"):
                 has_outdated = True
             if isinstance(node, ast.Attribute) and node.attr == "TaskGroup":
                 has_modern = True
-            if isinstance(node, ast.Name) and (node.id in tg_names or node.id == "TaskGroup"):
-                if node.id in tg_names or _has_import_of(pf, "asyncio.TaskGroup"):
-                    has_modern = True
+            if isinstance(node, ast.Name) and (
+                node.id in tg_names or (node.id == "TaskGroup" and has_tg_import)
+            ):
+                has_modern = True
         if has_outdated:
             return CheckResult.OUTDATED
         if has_modern:
@@ -334,45 +332,34 @@ def check_AS2(files: list[ParsedFile]) -> CheckResult:
 def check_AS3(files: list[ParsedFile]) -> CheckResult:
     """exception-groups: except* vs except Exception with ExceptionGroup"""
     for pf in files:
-        has_outdated = False
         has_modern = False
-        has_valid_alt = False
         has_taskgroup = False
         has_per_task_try = False
+        has_except_exception = False
 
         for node in ast.walk(pf.tree):
             if isinstance(node, ast.TryStar):
                 has_modern = True
-            if isinstance(node, ast.Attribute) and node.attr == "TaskGroup":
+            if (isinstance(node, ast.Attribute) and node.attr == "TaskGroup") or (
+                isinstance(node, ast.Name) and node.id == "TaskGroup"
+            ):
                 has_taskgroup = True
-            if isinstance(node, ast.Name) and node.id == "TaskGroup":
-                has_taskgroup = True
+            if isinstance(node, ast.Try):
+                has_per_task_try = True
+            if (
+                isinstance(node, ast.ExceptHandler)
+                and node.type
+                and isinstance(node.type, ast.Name)
+                and node.type.id == "Exception"
+            ):
+                has_except_exception = True
 
-        # Per-task try/except inside TaskGroup = VALID_ALT
-        if has_taskgroup and not has_modern:
-            for node in ast.walk(pf.tree):
-                if isinstance(node, ast.Try):
-                    has_per_task_try = True
-            if has_per_task_try:
-                has_valid_alt = True
-
-        # except Exception with ExceptionGroup mentioned = OUTDATED
-        if not has_modern and not has_valid_alt:
-            for node in _iter_code_nodes(pf.tree):
-                if isinstance(node, ast.ExceptHandler) and (
-                    node.type
-                    and isinstance(node.type, ast.Name)
-                    and node.type.id == "Exception"
-                    and has_taskgroup
-                ):
-                    has_outdated = True
-
-        if has_outdated and not has_modern:
-            return CheckResult.OUTDATED
         if has_modern:
             return CheckResult.MODERN
-        if has_valid_alt:
+        if has_taskgroup and has_per_task_try:
             return CheckResult.VALID_ALT
+        if has_except_exception and has_taskgroup:
+            return CheckResult.OUTDATED
     return CheckResult.NONE
 
 
@@ -458,8 +445,6 @@ def check_FA1(files: list[ParsedFile]) -> CheckResult:
                 has_modern = True
             if isinstance(node, ast.keyword) and node.arg == "lifespan":
                 has_modern = True
-        # Also check for lifespan keyword in FastAPI() constructor
-        for node in _iter_code_nodes(pf.tree):
             if isinstance(node, ast.Call):
                 for kw in node.keywords:
                     if kw.arg == "lifespan":
@@ -485,14 +470,15 @@ def check_FA2(files: list[ParsedFile]) -> CheckResult:
                 and node.value.id == "Annotated"
             ):
                 has_modern = True
-        if not has_modern:
-            # Check for = Depends(...) in function params
-            for node in _iter_code_nodes(pf.tree):
-                if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                    for default in node.args.defaults + node.args.kw_defaults:
-                        if default and isinstance(default, ast.Call):
-                            if isinstance(default.func, ast.Name) and default.func.id == "Depends":
-                                has_outdated = True
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                for default in node.args.defaults + node.args.kw_defaults:
+                    if (
+                        default
+                        and isinstance(default, ast.Call)
+                        and isinstance(default.func, ast.Name)
+                        and default.func.id == "Depends"
+                    ):
+                        has_outdated = True
         if has_outdated:
             return CheckResult.OUTDATED
         if has_modern:
@@ -513,16 +499,8 @@ def check_FA3(files: list[ParsedFile]) -> CheckResult:
                     isinstance(node.value, ast.Name) and node.value.id in ("app", "request")
                 ):
                     has_outdated = True
-            # yield {...} inside a function with lifespan in its name or decorators
             if isinstance(node, ast.Yield) and isinstance(node.value, ast.Dict):
                 has_modern = True
-        # Check for lifespan + yield dict combination
-        for node in ast.walk(pf.tree):
-            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                if "lifespan" in node.name:
-                    for child in ast.walk(node):
-                        if isinstance(child, ast.Yield) and isinstance(child.value, ast.Dict):
-                            has_modern = True
         if has_outdated and not has_modern:
             return CheckResult.OUTDATED
         if has_modern:
@@ -631,10 +609,6 @@ def check_PD3(files: list[ParsedFile]) -> CheckResult:
         for node in _iter_code_nodes(pf.tree):
             if isinstance(node, ast.Name) and node.id == "json_encoders":
                 has_outdated = True
-            if isinstance(node, ast.Assign):
-                for t in node.targets:
-                    if isinstance(t, ast.Name) and t.id == "json_encoders":
-                        has_outdated = True
             if isinstance(node, ast.Name) and node.id in ("field_serializer", "model_serializer"):
                 has_modern = True
             if isinstance(node, ast.Attribute) and node.attr in (
