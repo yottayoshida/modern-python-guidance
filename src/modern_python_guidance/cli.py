@@ -80,6 +80,17 @@ def main(argv: list[str] | None = None) -> None:
     )
     p_setup.add_argument("--dry-run", action="store_true", help="Show what would be done")
 
+    # uninstall
+    p_uninstall = subparsers.add_parser(
+        "uninstall", help="Reverse 'setup': deregister MCP server and unlink Agent Skills",
+    )
+    p_uninstall.add_argument("--mcp-only", action="store_true", help="MCP deregistration only")
+    p_uninstall.add_argument("--skills-only", action="store_true", help="Skills unlink only")
+    p_uninstall.add_argument(
+        "--project-dir", type=Path, help="Project directory for Skills symlink",
+    )
+    p_uninstall.add_argument("--dry-run", action="store_true", help="Show what would be done")
+
     args = parser.parse_args(argv)
 
     if args.command is None:
@@ -103,6 +114,8 @@ def main(argv: list[str] | None = None) -> None:
             _cmd_mcp()
         elif args.command == "setup":
             _cmd_setup(args)
+        elif args.command == "uninstall":
+            _cmd_uninstall(args)
     except BrokenPipeError:
         sys.exit(0)
 
@@ -239,6 +252,18 @@ def _cmd_setup(args: argparse.Namespace) -> None:
 
     code = run_setup(
         scope=args.scope,
+        mcp_only=args.mcp_only,
+        skills_only=args.skills_only,
+        project_dir=args.project_dir,
+        dry_run=args.dry_run,
+    )
+    sys.exit(code)
+
+
+def _cmd_uninstall(args: argparse.Namespace) -> None:
+    from modern_python_guidance.uninstall_cmd import run_uninstall
+
+    code = run_uninstall(
         mcp_only=args.mcp_only,
         skills_only=args.skills_only,
         project_dir=args.project_dir,
