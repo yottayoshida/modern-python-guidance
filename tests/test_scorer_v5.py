@@ -1,4 +1,8 @@
-"""Tests for bench/score_v5.py — AST-based benchmark scorer V5."""
+"""Tests for bench/score_v5.py — AST-based benchmark scorer V5.
+
+Requires Python 3.12+. The scorer uses AST features and fixture code
+that may produce different results on 3.11.
+"""
 
 from __future__ import annotations
 
@@ -7,6 +11,9 @@ import textwrap
 from pathlib import Path
 
 import pytest
+
+if sys.version_info < (3, 12):
+    pytest.skip("scorer V5 requires Python 3.12+", allow_module_level=True)
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
