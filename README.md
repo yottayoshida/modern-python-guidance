@@ -5,12 +5,12 @@
 [![Python](https://img.shields.io/pypi/pyversions/modern-python-guidance.svg)](https://pypi.org/project/modern-python-guidance/)
 [![License](https://img.shields.io/github/license/yottayoshida/modern-python-guidance.svg)](LICENSE)
 
-Stop your AI from writing `typing.List`, `@validator`, and `setup.py`. 39 version-aware BAD/GOOD pattern guides that teach AI coding agents to write modern Python — delivered via MCP, CLI, or Agent Skills.
+Stop your AI from writing `typing.List`, `@validator`, and `setup.py`. 41 version-aware BAD/GOOD pattern guides that teach AI coding agents to write modern Python — delivered via MCP, CLI, or Agent Skills.
 
 ## Highlights
 
 - **Measurable impact**: +14.7pp overall improvement in A/B benchmark via Agent Skills (38 scored items, [details](docs/benchmark-evaluation.md)). Largest variant (FastAPI, 32 items): Control 60.4% → Treatment 82.3%
-- **39 guides** across stdlib, Pydantic, FastAPI, Django, SQLAlchemy, pytest, and toolchain
+- **41 guides** across stdlib, Pydantic, FastAPI, Django, SQLAlchemy, pytest, and toolchain
 - **Version-aware**: auto-detects your project's Python version and filters guides accordingly
 - **3 delivery methods**: MCP server, CLI, Agent Skills plugin
 - **Not Ruff**: Ruff auto-fixes syntax (`List` → `list`). mpg guides design decisions that Ruff can't touch — `TaskGroup` over `gather`, Pydantic V2 migration, SQLAlchemy 2.0 style
@@ -113,15 +113,15 @@ mpg search "typing" --format json | jq '.[0].id'
 
 ## Guide coverage
 
-39 guides across 3 layers:
+41 guides across 3 layers:
 
 | Layer | Categories | Count | Examples |
 |-------|-----------|-------|---------|
-| **1 — stdlib** | typing, async, stdlib, data-structures | 16 | `list` over `List`, `match`/`case`, `TaskGroup` |
+| **1 — stdlib** | typing, async, stdlib, data-structures | 18 | `list` over `List`, `match`/`case`, `TaskGroup`, deferred annotations, t-strings |
 | **2 — frameworks** | pydantic, fastapi, httpx, django, sqlalchemy, pytest | 18 | Pydantic V2 migration, SQLAlchemy 2.0 style, `Annotated[Depends]` |
 | **3 — toolchain** | toolchain | 5 | `uv` over `pip`, `ruff` over flake8, `pickle` avoidance |
 
-Run `mpg list` to see all 39 guides, or [browse them on GitHub](skills/modern-python-guidance/guides/).
+Run `mpg list` to see all 41 guides, or [browse them on GitHub](skills/modern-python-guidance/guides/).
 
 ## Version-aware filtering
 

@@ -55,11 +55,11 @@ Pre-generation design patterns that Ruff cannot auto-fix. Apply these transforma
 - `subprocess.run(f"cmd {arg}", shell=True)` → `subprocess.run(["cmd", arg], check=True)`
   - Caveat: `shell=True` is valid when pipes/globs are needed; use `shlex.quote()` for user input
 
-## All 39 guides by category
+## All 41 guides by category
 
-- **typing** (6): `use-builtin-generics`, `union-syntax`, `type-parameter-syntax`, `override-decorator`, `typeis-vs-typeguard`, `paramspec-decorators`
+- **typing** (7): `use-builtin-generics`, `union-syntax`, `type-parameter-syntax`, `override-decorator`, `typeis-vs-typeguard`, `paramspec-decorators`, `deferred-annotations`
 - **async** (3): `taskgroup-over-gather`, `exception-groups`, `async-timeout-context`
-- **stdlib** (4): `datetime-utc`, `pathlib-over-os-path`, `tomllib-builtin`, `removeprefix-removesuffix`
+- **stdlib** (5): `datetime-utc`, `pathlib-over-os-path`, `tomllib-builtin`, `removeprefix-removesuffix`, `template-strings`
 - **data-structures** (3): `dict-merge-operator`, `match-case-patterns`, `dataclass-modern`
 - **pydantic** (4): `pydantic-v2-validators`, `pydantic-v2-config`, `pydantic-v2-model-api`, `pydantic-v2-serialization`
 - **fastapi** (3): `fastapi-lifespan`, `fastapi-annotated-depends`, `fastapi-typed-state`
