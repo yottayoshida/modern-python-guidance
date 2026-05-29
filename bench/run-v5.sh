@@ -187,40 +187,29 @@ record_verify() {
 }
 
 # --- Cleanup generated files ---
-# Known dirs/files that belong to the repo and must NOT be moved
-REPO_DIRS="bench results skills src tests .claude .git .github .venv docs"
-REPO_FILES="CLAUDE.md CLAUDE.local.md CHANGELOG.md CONTRIBUTING.md LICENSE-APACHE LICENSE-MIT README.md pyproject.toml uv.lock .gitignore .python-version"
+# Snapshot-based: only move files that did NOT exist before the session ran.
+# This is safe regardless of what else lives in $WORKSPACE.
+
+snapshot_workspace() {
+    ls -1 "$WORKSPACE" 2>/dev/null | sort > "$1"
+}
 
 cleanup_variant() {
-    local variant="$1" dest="$2"
+    local variant="$1" dest="$2" pre_snapshot="$3"
     mkdir -p "$dest"
 
-    # Move known paths (V4 compatibility)
-    case "$variant" in
-        a)
-            [ -d "$WORKSPACE/src" ] && mv "$WORKSPACE/src" "$dest/src" || true
-            [ -f "$WORKSPACE/setup.py" ] && mv "$WORKSPACE/setup.py" "$dest/setup.py" || true
-            ;;
-        b)
-            [ -d "$WORKSPACE/myapp" ] && mv "$WORKSPACE/myapp" "$dest/myapp" || true
-            ;;
-        c)
-            [ -d "$WORKSPACE/tests" ] && mv "$WORKSPACE/tests" "$dest/tests" || true
-            ;;
-    esac
+    local post_snapshot
+    post_snapshot=$(mktemp)
+    ls -1 "$WORKSPACE" 2>/dev/null | sort > "$post_snapshot"
 
-    # Move any NEW .py files and dirs created by LLM (terse prompts create arbitrary structures)
-    for item in "$WORKSPACE"/*; do
+    # Move only NEW items (present in post but not in pre)
+    local new_items
+    new_items=$(comm -13 "$pre_snapshot" "$post_snapshot")
+    rm -f "$post_snapshot"
+
+    for base in $new_items; do
+        local item="$WORKSPACE/$base"
         [ -e "$item" ] || continue
-        local base
-        base=$(basename "$item")
-        # Skip repo-owned items
-        local skip=false
-        for known in $REPO_DIRS $REPO_FILES; do
-            if [ "$base" = "$known" ]; then skip=true; break; fi
-        done
-        $skip && continue
-        # Move anything else (LLM-generated)
         mv "$item" "$dest/$base" 2>/dev/null || true
     done
 }
@@ -284,6 +273,10 @@ run_session() {
     label_prefix="PRE-$(echo "$session_type" | tr '[:lower:]' '[:upper:]')-V5$(echo "$variant" | tr '[:lower:]' '[:upper:]')$(echo "$gran" | tr '[:lower:]' '[:upper:]')"
     record_verify "$label_prefix" "$log"
 
+    local pre_snap
+    pre_snap=$(mktemp)
+    snapshot_workspace "$pre_snap"
+
     echo "[running] claude -p ($session_type, variant $variant, $gran) ..."
     (cd "$WORKSPACE" && claude -p ${MODEL_ARGS[@]+"${MODEL_ARGS[@]}"} \
         --output-format json --max-budget-usd "$BUDGET" \
@@ -292,7 +285,8 @@ run_session() {
 
     label_prefix="POST-$(echo "$session_type" | tr '[:lower:]' '[:upper:]')-V5$(echo "$variant" | tr '[:lower:]' '[:upper:]')$(echo "$gran" | tr '[:lower:]' '[:upper:]')"
     record_verify "$label_prefix" "$log"
-    cleanup_variant "$variant" "$results_dir/${session_type}"
+    cleanup_variant "$variant" "$results_dir/${session_type}" "$pre_snap"
+    rm -f "$pre_snap"
 
     update_cost "$results_dir/session-${session_label}.json"
     check_budget
