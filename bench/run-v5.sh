@@ -260,7 +260,9 @@ run_session() {
         fi
     fi
 
-    record_verify "PRE-${session_type^^}-V5${variant^^}${gran^^}" "$log"
+    local label_prefix
+    label_prefix="PRE-$(echo "$session_type" | tr '[:lower:]' '[:upper:]')-V5$(echo "$variant" | tr '[:lower:]' '[:upper:]')$(echo "$gran" | tr '[:lower:]' '[:upper:]')"
+    record_verify "$label_prefix" "$log"
 
     echo "[running] claude -p ($session_type, variant $variant, $gran) ..."
     (cd "$WORKSPACE" && claude -p ${MODEL_ARGS[@]+"${MODEL_ARGS[@]}"} \
@@ -268,7 +270,8 @@ run_session() {
         < "$prompt" > "$results_dir/session-${session_label}.json" \
         2>"$results_dir/session-${session_label}.stderr") || true
 
-    record_verify "POST-${session_type^^}-V5${variant^^}${gran^^}" "$log"
+    label_prefix="POST-$(echo "$session_type" | tr '[:lower:]' '[:upper:]')-V5$(echo "$variant" | tr '[:lower:]' '[:upper:]')$(echo "$gran" | tr '[:lower:]' '[:upper:]')"
+    record_verify "$label_prefix" "$log"
     cleanup_variant "$variant" "$results_dir/${session_type}"
 
     update_cost "$results_dir/session-${session_label}.json"
