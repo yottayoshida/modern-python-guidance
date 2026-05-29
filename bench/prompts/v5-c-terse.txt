@@ -1,0 +1,1 @@
+Write tests for a calculator module with divide and save_result functions. Use pytest with table-driven testing, error message verification, and temporary file handling. Target Python 3.12+. Write all code with no placeholders.

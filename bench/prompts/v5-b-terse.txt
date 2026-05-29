@@ -1,0 +1,1 @@
+Build a Django application with a Product model that stores JSON data and has a price constraint. Include async views that return JSON responses. Target Python 3.12+. Write all code with no placeholders.
