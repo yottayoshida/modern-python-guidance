@@ -2,6 +2,10 @@
 set -euo pipefail
 
 # V5 Benchmark Runner: 3-variant × 3-granularity system
+#
+# Each claude -p session runs in an isolated tmpdir, NOT in ~/claude_workspace.
+# This prevents auto-backup hooks, workspace contamination, and file collisions.
+#
 # Usage:
 #   ./bench/run-v5.sh <run_id> <control|treatment|both> [options]
 #
@@ -11,10 +15,8 @@ set -euo pipefail
 #   -N <count>                (default: 1)
 #   --dry-run                 Print execution plan without running
 #   --budget <usd>            Per-session budget (default: 2.00)
-#   --max-total <usd>         Total budget ceiling (default: 40)
 
 REPO_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-WORKSPACE="$HOME/claude_workspace"
 RUN_ID="${1:?Usage: $0 <run_id> <control|treatment|both> [options]}"
 SESSION="${2:?Usage: $0 <run_id> <control|treatment|both> [options]}"
 shift 2
@@ -24,7 +26,6 @@ GRANULARITIES="normal"
 N_RUNS=1
 DRY_RUN=false
 BUDGET="2.00"
-MAX_TOTAL="40"
 MODEL="${MODEL:-}"
 MODEL_ARGS=()
 
@@ -35,7 +36,6 @@ while [[ $# -gt 0 ]]; do
         -N) N_RUNS="$2"; shift 2 ;;
         --dry-run) DRY_RUN=true; shift ;;
         --budget) BUDGET="$2"; shift 2 ;;
-        --max-total) MAX_TOTAL="$2"; shift 2 ;;
         *) echo "Unknown option: $1" >&2; exit 1 ;;
     esac
 done
@@ -75,8 +75,6 @@ for _ in "${variant_list[@]}"; do
     done
 done
 
-est_cost=$(echo "scale=2; $session_count * $BUDGET" | bc)
-
 # --- Dry run ---
 if $DRY_RUN; then
     echo "=== V5 Benchmark Dry Run ==="
@@ -87,21 +85,13 @@ if $DRY_RUN; then
     echo "N:            $N_RUNS"
     echo "Model:        ${MODEL:-<default>}"
     echo "Per-session:  \$$BUDGET"
-    echo "Max total:    \$$MAX_TOTAL"
-    echo ""
     echo "Total sessions: $session_count"
-    echo "Est. cost:      \$$est_cost"
-    echo "Est. time:      ~$((session_count * 3))min"
     echo ""
     echo "Prompt files:"
     for v in "${variant_list[@]}"; do
         for g in "${gran_list[@]}"; do
             pf="$REPO_DIR/bench/prompts/v5-${v}-${g}.txt"
-            if [ -f "$pf" ]; then
-                echo "  [OK] $pf"
-            else
-                echo "  [MISSING] $pf"
-            fi
+            if [ -f "$pf" ]; then echo "  [OK] $pf"; else echo "  [MISSING] $pf"; fi
         done
     done
     exit 0
@@ -110,139 +100,38 @@ fi
 # --- Pre-flight checks ---
 echo "=== V5 Pre-flight Checks ==="
 
-# Check Claude CLI
 if ! command -v claude &>/dev/null; then
-    echo "ERROR: claude CLI not found" >&2
-    exit 1
+    echo "ERROR: claude CLI not found" >&2; exit 1
 fi
 echo "[OK] Claude CLI found"
 
-# Check scorer
 SCORER="$REPO_DIR/bench/score_v5.py"
 if [ ! -f "$SCORER" ]; then
-    echo "ERROR: Scorer not found: $SCORER" >&2
-    exit 1
+    echo "ERROR: Scorer not found: $SCORER" >&2; exit 1
 fi
 echo "[OK] Scorer found"
 
-# Check prompt files
 for v in "${variant_list[@]}"; do
     for g in "${gran_list[@]}"; do
         pf="$REPO_DIR/bench/prompts/v5-${v}-${g}.txt"
         if [ ! -f "$pf" ]; then
-            echo "ERROR: Prompt not found: $pf" >&2
-            exit 1
+            echo "ERROR: Prompt not found: $pf" >&2; exit 1
         fi
     done
 done
 echo "[OK] All prompt files found"
 
-# Check guidance source
 RULE_SOURCE="$REPO_DIR/skills/modern-python-guidance/SKILL.md"
 if [ ! -f "$RULE_SOURCE" ]; then
-    echo "ERROR: Guidance source not found: $RULE_SOURCE" >&2
-    exit 1
+    echo "ERROR: Guidance source not found: $RULE_SOURCE" >&2; exit 1
 fi
 echo "[OK] Guidance source found"
-
-# Cost check
-if (( $(echo "$est_cost > $MAX_TOTAL" | bc -l) )); then
-    echo "ERROR: Estimated cost \$$est_cost exceeds MAX_TOTAL \$$MAX_TOTAL" >&2
-    echo "Reduce N, variants, or granularities, or increase --max-total" >&2
-    exit 1
-fi
-echo "[OK] Est. cost \$$est_cost within budget \$$MAX_TOTAL"
 echo ""
 
-# --- Guidance toggle ---
-RULE_FILE="$WORKSPACE/.claude/rules/modern-python.md"
+# --- Guidance file content (extracted once, reused per session) ---
+GUIDANCE_CONTENT=$(awk 'BEGIN{c=0} /^---$/{c++; next} c>=2{print}' "$RULE_SOURCE")
 
-disable_guidance() {
-    rm -f "$RULE_FILE"
-}
-
-enable_guidance() {
-    if [ ! -f "$RULE_FILE" ]; then
-        awk 'BEGIN{c=0} /^---$/{c++; next} c>=2{print}' "$RULE_SOURCE" > "$RULE_FILE"
-    fi
-}
-
-restore_guidance_on_exit() {
-    enable_guidance
-    echo "[cleanup] Rules file restored."
-}
-
-record_verify() {
-    local label="$1" log="$2"
-    echo "=== $label $(date -u '+%Y-%m-%dT%H:%M:%SZ') ===" >> "$log"
-    echo "RULE_FILE=$RULE_FILE" >> "$log"
-    if [ -f "$RULE_FILE" ]; then
-        echo "status: PRESENT ($(wc -c < "$RULE_FILE") bytes)" >> "$log"
-        shasum -a 256 "$RULE_FILE" >> "$log" 2>/dev/null || true
-    else
-        echo "status: ABSENT" >> "$log"
-    fi
-    echo "MODEL=${MODEL:-<default>}" >> "$log"
-    echo "" >> "$log"
-}
-
-# --- Cleanup generated files ---
-# Snapshot-based: only move files that did NOT exist before the session ran.
-# This is safe regardless of what else lives in $WORKSPACE.
-
-snapshot_workspace() {
-    ls -1 "$WORKSPACE" 2>/dev/null | sort > "$1"
-}
-
-cleanup_variant() {
-    local variant="$1" dest="$2" pre_snapshot="$3"
-    mkdir -p "$dest"
-
-    local post_snapshot
-    post_snapshot=$(mktemp)
-    ls -1 "$WORKSPACE" 2>/dev/null | sort > "$post_snapshot"
-
-    # Move only NEW items (present in post but not in pre)
-    local new_items
-    new_items=$(comm -13 "$pre_snapshot" "$post_snapshot")
-    rm -f "$post_snapshot"
-
-    for base in $new_items; do
-        local item="$WORKSPACE/$base"
-        [ -e "$item" ] || continue
-        mv "$item" "$dest/$base" 2>/dev/null || true
-    done
-}
-
-# --- Cost tracking ---
-TOTAL_SPENT="0"
-
-update_cost() {
-    local json_file="$1"
-    if [ -f "$json_file" ]; then
-        local cost
-        cost=$(python3 -c "
-import json, sys
-try:
-    d = json.load(open('$json_file'))
-    print(d.get('usage', {}).get('total_cost_usd', d.get('cost_usd', 0)) or 0)
-except: print(0)
-" 2>/dev/null)
-        TOTAL_SPENT=$(echo "$TOTAL_SPENT + $cost" | bc)
-    fi
-}
-
-check_budget() {
-    if (( $(echo "$TOTAL_SPENT > $MAX_TOTAL" | bc -l) )); then
-        echo ""
-        echo "BUDGET EXCEEDED: spent \$$TOTAL_SPENT > max \$$MAX_TOTAL"
-        echo "Stopping execution."
-        restore_guidance_on_exit
-        exit 1
-    fi
-}
-
-# --- Run a single session ---
+# --- Run a single session in isolated tmpdir ---
 run_session() {
     local variant="$1" gran="$2" session_type="$3" run_n="$4"
     local run_suffix="${RUN_ID}-${run_n}-v5${variant}${gran:0:1}"
@@ -252,52 +141,82 @@ run_session() {
 
     mkdir -p "$results_dir"
 
+    # Create isolated workspace
+    local tmpwork
+    tmpwork=$(mktemp -d "$HOME/mpg-bench-XXXXXX")
+
+    # Set up .claude/rules/ for guidance toggle
+    mkdir -p "$tmpwork/.claude/rules"
+
     local session_label
     if [ "$session_type" = "control" ]; then
         session_label="a"
-        disable_guidance
-        trap restore_guidance_on_exit EXIT
-        if [ -f "$RULE_FILE" ]; then
-            echo "ERROR: Rules file still exists after rm!" >&2; exit 1
-        fi
+        # No guidance file
     else
         session_label="b"
-        enable_guidance
-        trap - EXIT
-        if [ ! -f "$RULE_FILE" ]; then
-            echo "ERROR: Rules file not found!" >&2; exit 1
-        fi
+        echo "$GUIDANCE_CONTENT" > "$tmpwork/.claude/rules/modern-python.md"
     fi
 
-    local label_prefix
-    label_prefix="PRE-$(echo "$session_type" | tr '[:lower:]' '[:upper:]')-V5$(echo "$variant" | tr '[:lower:]' '[:upper:]')$(echo "$gran" | tr '[:lower:]' '[:upper:]')"
-    record_verify "$label_prefix" "$log"
+    # Record verification
+    local rule_file="$tmpwork/.claude/rules/modern-python.md"
+    local label_upper
+    label_upper="$(echo "${session_type}-V5${variant}${gran}" | tr '[:lower:]' '[:upper:]')"
 
-    local pre_snap
-    pre_snap=$(mktemp)
-    snapshot_workspace "$pre_snap"
+    echo "=== PRE-${label_upper} $(date -u '+%Y-%m-%dT%H:%M:%SZ') ===" >> "$log"
+    echo "TMPWORK=$tmpwork" >> "$log"
+    if [ -f "$rule_file" ]; then
+        echo "status: PRESENT ($(wc -c < "$rule_file") bytes)" >> "$log"
+        shasum -a 256 "$rule_file" >> "$log" 2>/dev/null || true
+    else
+        echo "status: ABSENT" >> "$log"
+    fi
+    echo "MODEL=${MODEL:-<default>}" >> "$log"
+    echo "" >> "$log"
 
-    echo "[running] claude -p ($session_type, variant $variant, $gran) ..."
-    (cd "$WORKSPACE" && claude -p ${MODEL_ARGS[@]+"${MODEL_ARGS[@]}"} \
+    # Run claude -p in isolated tmpdir
+    echo "[running] claude -p ($session_type, variant $variant, $gran) in $tmpwork ..."
+    (cd "$tmpwork" && claude -p ${MODEL_ARGS[@]+"${MODEL_ARGS[@]}"} \
         --output-format json --max-budget-usd "$BUDGET" \
         < "$prompt" > "$results_dir/session-${session_label}.json" \
         2>"$results_dir/session-${session_label}.stderr") || true
 
-    label_prefix="POST-$(echo "$session_type" | tr '[:lower:]' '[:upper:]')-V5$(echo "$variant" | tr '[:lower:]' '[:upper:]')$(echo "$gran" | tr '[:lower:]' '[:upper:]')"
-    record_verify "$label_prefix" "$log"
-    cleanup_variant "$variant" "$results_dir/${session_type}" "$pre_snap"
-    rm -f "$pre_snap"
+    # Post verification
+    echo "=== POST-${label_upper} $(date -u '+%Y-%m-%dT%H:%M:%SZ') ===" >> "$log"
+    if [ -f "$rule_file" ]; then
+        echo "status: PRESENT ($(wc -c < "$rule_file") bytes)" >> "$log"
+    else
+        echo "status: ABSENT" >> "$log"
+    fi
+    echo "" >> "$log"
 
-    update_cost "$results_dir/session-${session_label}.json"
-    check_budget
+    # Move generated files to results (everything except .claude/)
+    mkdir -p "$results_dir/${session_type}"
+    for item in "$tmpwork"/*; do
+        [ -e "$item" ] || continue
+        local base
+        base=$(basename "$item")
+        [ "$base" = ".claude" ] && continue
+        mv "$item" "$results_dir/${session_type}/$base" 2>/dev/null || true
+    done
+    # Also move hidden dirs that aren't .claude (e.g. .venv created by LLM)
+    for item in "$tmpwork"/.*; do
+        [ -e "$item" ] || continue
+        local base
+        base=$(basename "$item")
+        case "$base" in .|..|.claude) continue ;; esac
+        mv "$item" "$results_dir/${session_type}/$base" 2>/dev/null || true
+    done
 
-    echo "[ok] $session_type saved. Spent: \$$TOTAL_SPENT / \$$MAX_TOTAL"
+    # Remove tmpdir
+    rm -rf "$tmpwork"
+
+    echo "[ok] $session_type saved to $results_dir/${session_type}/"
 }
 
 # --- Main execution ---
 echo "=== V5 Benchmark Run $RUN_ID ==="
 echo "Variants: ${variant_list[*]}, Granularities: ${gran_list[*]}, N=$N_RUNS"
-echo "Est. cost: \$$est_cost, Max: \$$MAX_TOTAL"
+echo "Sessions: $session_count total"
 echo ""
 
 completed=0
@@ -309,18 +228,26 @@ for v in "${variant_list[@]}"; do
             if [ "$SESSION" = "control" ] || [ "$SESSION" = "both" ]; then
                 completed=$((completed + 1))
                 elapsed=$(( $(date +%s) - start_time ))
-                remaining=$(( elapsed * (session_count - completed) / (completed > 0 ? completed : 1) ))
+                if [ "$completed" -gt 1 ]; then
+                    remaining=$(( elapsed * (session_count - completed) / (completed - 1) ))
+                else
+                    remaining=0
+                fi
                 echo ""
-                echo "[$completed/$session_count] Variant $v, $g, Control, run $n — elapsed ${elapsed}s, est remaining ${remaining}s"
+                echo "[$completed/$session_count] Variant $v, $g, Control, run $n — elapsed ${elapsed}s, est ${remaining}s remaining"
                 run_session "$v" "$g" "control" "$n"
             fi
 
             if [ "$SESSION" = "treatment" ] || [ "$SESSION" = "both" ]; then
                 completed=$((completed + 1))
                 elapsed=$(( $(date +%s) - start_time ))
-                remaining=$(( elapsed * (session_count - completed) / (completed > 0 ? completed : 1) ))
+                if [ "$completed" -gt 1 ]; then
+                    remaining=$(( elapsed * (session_count - completed) / (completed - 1) ))
+                else
+                    remaining=0
+                fi
                 echo ""
-                echo "[$completed/$session_count] Variant $v, $g, Treatment, run $n — elapsed ${elapsed}s, est remaining ${remaining}s"
+                echo "[$completed/$session_count] Variant $v, $g, Treatment, run $n — elapsed ${elapsed}s, est ${remaining}s remaining"
                 run_session "$v" "$g" "treatment" "$n"
             fi
 
@@ -332,13 +259,10 @@ for v in "${variant_list[@]}"; do
     done
 done
 
-restore_guidance_on_exit
-
 total_elapsed=$(( $(date +%s) - start_time ))
 echo ""
 echo "=== V5 Benchmark Complete ==="
 echo "Total time: ${total_elapsed}s"
-echo "Total spent: \$$TOTAL_SPENT / \$$MAX_TOTAL"
 echo ""
 echo "Score individual runs:"
 for v in "${variant_list[@]}"; do
