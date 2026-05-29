@@ -10,7 +10,7 @@ tags:
   - sql
 aliases:
   - t-string
-  - "t\""
+  - 't"'
   - Template
   - string.templatelib
 python: ">=3.14"

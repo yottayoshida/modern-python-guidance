@@ -1,6 +1,6 @@
 ---
 id: deferred-annotations
-title: "Drop \"from __future__ import annotations\" on Python 3.14+"
+title: 'Drop "from __future__ import annotations" on Python 3.14+'
 category: typing
 layer: 1
 tags:

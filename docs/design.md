@@ -52,7 +52,7 @@ LLMs frequently generate outdated Python patterns: `typing.List` instead of `lis
 │  typing/ async/ stdlib/ data-structures/                │
 │  pydantic/ fastapi/ httpx/ toolchain/                   │
 │  django/ sqlalchemy/ pytest/                            │
-│  (39 guide files)                                       │
+│  (41 guide files)                                       │
 └─────────────────────────────────────────────────────────┘
 ```
 
