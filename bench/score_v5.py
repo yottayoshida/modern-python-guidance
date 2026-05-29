@@ -22,6 +22,7 @@ compile(), exec(), eval(), importlib are FORBIDDEN on LLM output.
 
 Requires Python 3.12+.
 """
+
 from __future__ import annotations
 
 import ast
@@ -51,6 +52,7 @@ class ParsedFile(NamedTuple):
 # ---------------------------------------------------------------------------
 # Parsing helpers
 # ---------------------------------------------------------------------------
+
 
 def parse_file(path: Path) -> ParsedFile | None:
     try:
@@ -98,14 +100,12 @@ def parse_all(root: Path) -> list[ParsedFile]:
 # AST query helpers
 # ---------------------------------------------------------------------------
 
+
 def file_imports_module(pf: ParsedFile, module: str) -> bool:
     if module in pf.reverse_aliases:
         return True
     # Check for sub-module imports: "from django.db import models" should match "django"
-    for key in pf.reverse_aliases:
-        if key.startswith(module + "."):
-            return True
-    return False
+    return any(key.startswith(module + ".") for key in pf.reverse_aliases)
 
 
 def _is_docstring(node: ast.AST) -> bool:
@@ -175,6 +175,7 @@ def _is_annotation_context(node: ast.AST, tree: ast.Module) -> bool:
 #
 # Convention: check OUTDATED first. If both found → OUTDATED (transitional code).
 # ---------------------------------------------------------------------------
+
 
 def check_AS1(files: list[ParsedFile]) -> CheckResult:
     """taskgroup-over-gather: TaskGroup vs asyncio.gather"""
@@ -257,10 +258,7 @@ def check_DS2(files: list[ParsedFile]) -> CheckResult:
             ):
                 has_outdated = True
             # Modern: a | b in non-annotation context
-            if (
-                isinstance(node, ast.BinOp)
-                and isinstance(node.op, ast.BitOr)
-            ):
+            if isinstance(node, ast.BinOp) and isinstance(node.op, ast.BitOr):
                 # Exclude annotation contexts (type unions: int | str)
                 # Check parent: if this BinOp appears in AnnAssign.annotation,
                 # function return annotation, or isinstance() call, skip it.
@@ -278,10 +276,21 @@ def check_DS2(files: list[ParsedFile]) -> CheckResult:
     return CheckResult.NONE
 
 
-_BUILTIN_TYPES = frozenset({
-    "int", "str", "float", "bool", "bytes", "None",
-    "list", "dict", "set", "tuple", "type",
-})
+_BUILTIN_TYPES = frozenset(
+    {
+        "int",
+        "str",
+        "float",
+        "bool",
+        "bytes",
+        "None",
+        "list",
+        "dict",
+        "set",
+        "tuple",
+        "type",
+    }
+)
 
 
 def _looks_like_type(node: ast.AST) -> bool:
@@ -301,6 +310,7 @@ def _looks_like_type(node: ast.AST) -> bool:
 # ---------------------------------------------------------------------------
 # Stub check functions (to be implemented)
 # ---------------------------------------------------------------------------
+
 
 def check_AS2(files: list[ParsedFile]) -> CheckResult:
     """async-timeout-context: asyncio.timeout vs asyncio.wait_for"""
@@ -349,10 +359,13 @@ def check_AS3(files: list[ParsedFile]) -> CheckResult:
         # except Exception with ExceptionGroup mentioned = OUTDATED
         if not has_modern and not has_valid_alt:
             for node in _iter_code_nodes(pf.tree):
-                if isinstance(node, ast.ExceptHandler):
-                    if (node.type and isinstance(node.type, ast.Name)
-                            and node.type.id == "Exception" and has_taskgroup):
-                        has_outdated = True
+                if isinstance(node, ast.ExceptHandler) and (
+                    node.type
+                    and isinstance(node.type, ast.Name)
+                    and node.type.id == "Exception"
+                    and has_taskgroup
+                ):
+                    has_outdated = True
 
         if has_outdated and not has_modern:
             return CheckResult.OUTDATED
@@ -374,16 +387,21 @@ def check_DS1(files: list[ParsedFile]) -> CheckResult:
             for dec in node.decorator_list:
                 if isinstance(dec, ast.Call):
                     func = dec.func
-                    if (isinstance(func, ast.Name) and func.id == "dataclass") or \
-                       (isinstance(func, ast.Attribute) and func.attr == "dataclass"):
+                    if (isinstance(func, ast.Name) and func.id == "dataclass") or (
+                        isinstance(func, ast.Attribute) and func.attr == "dataclass"
+                    ):
                         for kw in dec.keywords:
-                            if kw.arg == "slots" and isinstance(kw.value, ast.Constant) and kw.value.value is True:
+                            if (
+                                kw.arg == "slots"
+                                and isinstance(kw.value, ast.Constant)
+                                and kw.value.value is True
+                            ):
                                 has_modern = True
                         if not has_modern:
                             has_outdated = True
-                elif isinstance(dec, ast.Name) and dec.id == "dataclass":
-                    has_outdated = True
-                elif isinstance(dec, ast.Attribute) and dec.attr == "dataclass":
+                elif (isinstance(dec, ast.Name) and dec.id == "dataclass") or (
+                    isinstance(dec, ast.Attribute) and dec.attr == "dataclass"
+                ):
                     has_outdated = True
         if has_outdated and not has_modern:
             return CheckResult.OUTDATED
@@ -415,7 +433,11 @@ def check_DS3(files: list[ParsedFile]) -> CheckResult:
 
 
 def _is_isinstance_call(node: ast.AST) -> bool:
-    return isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == "isinstance"
+    return (
+        isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id == "isinstance"
+    )
 
 
 def check_FA1(files: list[ParsedFile]) -> CheckResult:
@@ -426,7 +448,11 @@ def check_FA1(files: list[ParsedFile]) -> CheckResult:
         has_outdated = False
         has_modern = False
         for node in _iter_code_nodes(pf.tree):
-            if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr == "on_event":
+            if (
+                isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Attribute)
+                and node.func.attr == "on_event"
+            ):
                 has_outdated = True
             if isinstance(node, ast.Name) and node.id == "lifespan":
                 has_modern = True
@@ -453,12 +479,16 @@ def check_FA2(files: list[ParsedFile]) -> CheckResult:
         has_outdated = False
         has_modern = False
         for node in _iter_code_nodes(pf.tree):
-            if isinstance(node, ast.Subscript) and isinstance(node.value, ast.Name) and node.value.id == "Annotated":
+            if (
+                isinstance(node, ast.Subscript)
+                and isinstance(node.value, ast.Name)
+                and node.value.id == "Annotated"
+            ):
                 has_modern = True
         if not has_modern:
             # Check for = Depends(...) in function params
             for node in _iter_code_nodes(pf.tree):
-                if isinstance(node, ast.FunctionDef) or isinstance(node, ast.AsyncFunctionDef):
+                if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
                     for default in node.args.defaults + node.args.kw_defaults:
                         if default and isinstance(default, ast.Call):
                             if isinstance(default.func, ast.Name) and default.func.id == "Depends":
@@ -479,9 +509,9 @@ def check_FA3(files: list[ParsedFile]) -> CheckResult:
         has_modern = False
         for node in _iter_code_nodes(pf.tree):
             if isinstance(node, ast.Attribute) and node.attr == "state":
-                if isinstance(node.value, ast.Attribute):
-                    has_outdated = True
-                elif isinstance(node.value, ast.Name) and node.value.id in ("app", "request"):
+                if isinstance(node.value, ast.Attribute) or (
+                    isinstance(node.value, ast.Name) and node.value.id in ("app", "request")
+                ):
                     has_outdated = True
             # yield {...} inside a function with lifespan in its name or decorators
             if isinstance(node, ast.Yield) and isinstance(node.value, ast.Dict):
@@ -531,7 +561,12 @@ def check_HX2(files: list[ParsedFile]) -> CheckResult:
         if not file_imports_module(pf, "httpx"):
             continue
         for node in _iter_code_nodes(pf.tree):
-            if isinstance(node, ast.Attribute) and node.attr in ("stream", "aiter_bytes", "aiter_lines", "aiter_text"):
+            if isinstance(node, ast.Attribute) and node.attr in (
+                "stream",
+                "aiter_bytes",
+                "aiter_lines",
+                "aiter_text",
+            ):
                 return CheckResult.MODERN
     return CheckResult.NONE
 
@@ -565,7 +600,13 @@ def check_PD2(files: list[ParsedFile]) -> CheckResult:
         has_outdated = False
         has_modern = False
         outdated_methods = {"parse_obj", "parse_raw", "dict", "json", "schema"}
-        modern_methods = {"model_validate", "model_dump", "model_dump_json", "model_json_schema", "model_validate_json"}
+        modern_methods = {
+            "model_validate",
+            "model_dump",
+            "model_dump_json",
+            "model_json_schema",
+            "model_validate_json",
+        }
         for node in _iter_code_nodes(pf.tree):
             # Only match method CALLS (.dict() not .dict attribute access)
             if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute):
@@ -596,7 +637,10 @@ def check_PD3(files: list[ParsedFile]) -> CheckResult:
                         has_outdated = True
             if isinstance(node, ast.Name) and node.id in ("field_serializer", "model_serializer"):
                 has_modern = True
-            if isinstance(node, ast.Attribute) and node.attr in ("field_serializer", "model_serializer"):
+            if isinstance(node, ast.Attribute) and node.attr in (
+                "field_serializer",
+                "model_serializer",
+            ):
                 has_modern = True
         if has_outdated:
             return CheckResult.OUTDATED
@@ -647,25 +691,31 @@ def check_SA1(files: list[ParsedFile]) -> CheckResult:
 
 
 def check_SA2(files: list[ParsedFile]) -> CheckResult:
-    """sqlalchemy-async-session: AsyncSession/create_async_engine vs sync (VALID_ALT for sync 2.0)"""
+    """sqlalchemy-async-session: async vs sync (VALID_ALT for sync 2.0)."""
     for pf in files:
         if not file_imports_module(pf, "sqlalchemy"):
             continue
         has_modern = False
         has_valid_alt = False
-        has_outdated = False
         for node in _iter_code_nodes(pf.tree):
-            if isinstance(node, ast.Name) and node.id in ("create_async_engine", "async_sessionmaker", "AsyncSession"):
+            if isinstance(node, ast.Name) and node.id in (
+                "create_async_engine",
+                "async_sessionmaker",
+                "AsyncSession",
+            ):
                 has_modern = True
-            if isinstance(node, ast.Attribute) and node.attr in ("create_async_engine", "async_sessionmaker", "AsyncSession"):
+            if isinstance(node, ast.Attribute) and node.attr in (
+                "create_async_engine",
+                "async_sessionmaker",
+                "AsyncSession",
+            ):
                 has_modern = True
         if not has_modern:
             for node in _iter_code_nodes(pf.tree):
-                if isinstance(node, ast.Call):
-                    if isinstance(node.func, ast.Name) and node.func.id == "create_engine":
-                        has_valid_alt = True
-                    elif _is_call_to(node, pf, "sqlalchemy", "create_engine"):
-                        has_valid_alt = True
+                if isinstance(node, ast.Call) and ((
+                    isinstance(node.func, ast.Name) and node.func.id == "create_engine"
+                ) or _is_call_to(node, pf, "sqlalchemy", "create_engine")):
+                    has_valid_alt = True
         # No engine creation at all → NONE (not OUTDATED)
         if has_modern:
             return CheckResult.MODERN
@@ -688,7 +738,11 @@ def check_SA3(files: list[ParsedFile]) -> CheckResult:
             if isinstance(node, ast.Call):
                 if isinstance(node.func, ast.Name) and node.func.id == "mapped_column":
                     has_modern = True
-            if isinstance(node, ast.Subscript) and isinstance(node.value, ast.Name) and node.value.id == "Mapped":
+            if (
+                isinstance(node, ast.Subscript)
+                and isinstance(node.value, ast.Name)
+                and node.value.id == "Mapped"
+            ):
                 has_modern = True
         if has_outdated and not has_modern:
             return CheckResult.OUTDATED
@@ -707,14 +761,22 @@ def check_SL1(files: list[ParsedFile]) -> CheckResult:
         for node in _iter_code_nodes(pf.tree):
             if isinstance(node, ast.Attribute) and node.attr in ("utcnow", "utcfromtimestamp"):
                 has_outdated = True
-            if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr == "now":
+            if (
+                isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Attribute)
+                and node.func.attr == "now"
+            ):
                 for arg in node.args:
                     if _mentions_utc(arg):
                         has_modern = True
                 for kw in node.keywords:
                     if kw.arg == "tz" and _mentions_utc(kw.value):
                         has_modern = True
-            if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr == "fromtimestamp":
+            if (
+                isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Attribute)
+                and node.func.attr == "fromtimestamp"
+            ):
                 for kw in node.keywords:
                     if kw.arg == "tz":
                         has_modern = True
@@ -728,9 +790,7 @@ def check_SL1(files: list[ParsedFile]) -> CheckResult:
 def _mentions_utc(node: ast.AST) -> bool:
     if isinstance(node, ast.Attribute) and node.attr in ("utc", "UTC"):
         return True
-    if isinstance(node, ast.Name) and node.id in ("UTC", "utc"):
-        return True
-    return False
+    return bool(isinstance(node, ast.Name) and node.id in ("UTC", "utc"))
 
 
 def check_SL2(files: list[ParsedFile]) -> CheckResult:
@@ -740,10 +800,17 @@ def check_SL2(files: list[ParsedFile]) -> CheckResult:
         has_modern = False
         for node in _iter_code_nodes(pf.tree):
             if isinstance(node, ast.Attribute) and isinstance(node.value, ast.Attribute):
-                if isinstance(node.value.value, ast.Name) and node.value.value.id == "os" and node.value.attr == "path":
-                    if node.attr in ("join", "exists", "dirname", "basename", "splitext"):
-                        has_outdated = True
-            if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == "Path":
+                if (
+                    isinstance(node.value.value, ast.Name)
+                    and node.value.value.id == "os"
+                    and node.value.attr == "path"
+                ) and node.attr in ("join", "exists", "dirname", "basename", "splitext"):
+                    has_outdated = True
+            if (
+                isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Name)
+                and node.func.id == "Path"
+            ):
                 has_modern = True
             if _has_import_of(pf, "pathlib.Path") or _has_import_of(pf, "pathlib"):
                 has_modern = True
@@ -755,7 +822,7 @@ def check_SL2(files: list[ParsedFile]) -> CheckResult:
 
 
 def check_SL3(files: list[ParsedFile]) -> CheckResult:
-    """removeprefix-removesuffix: .removeprefix()/.removesuffix() vs .lstrip()/.rstrip()/[len():]"""
+    """removeprefix/removesuffix vs lstrip/rstrip/[len():]."""
     for pf in files:
         has_outdated = False
         has_modern = False
@@ -765,7 +832,12 @@ def check_SL3(files: list[ParsedFile]) -> CheckResult:
             if isinstance(node, ast.Subscript) and isinstance(node.slice, ast.Slice):
                 # [len(prefix):] pattern
                 s = node.slice
-                if s.lower and isinstance(s.lower, ast.Call) and isinstance(s.lower.func, ast.Name) and s.lower.func.id == "len":
+                if (
+                    s.lower
+                    and isinstance(s.lower, ast.Call)
+                    and isinstance(s.lower.func, ast.Name)
+                    and s.lower.func.id == "len"
+                ):
                     has_outdated = True
             if isinstance(node, ast.Attribute) and node.attr in ("removeprefix", "removesuffix"):
                 has_modern = True
@@ -781,7 +853,11 @@ def check_SL4(files: list[ParsedFile]) -> CheckResult:
     for pf in files:
         has_outdated = False
         has_modern = False
-        if _has_import_of(pf, "toml") or file_imports_module(pf, "toml") or file_imports_module(pf, "tomli"):
+        if (
+            _has_import_of(pf, "toml")
+            or file_imports_module(pf, "toml")
+            or file_imports_module(pf, "tomli")
+        ):
             has_outdated = True
         if file_imports_module(pf, "tomllib") or _has_import_of(pf, "tomllib"):
             has_modern = True
@@ -807,7 +883,11 @@ def check_TC1(files: list[ParsedFile]) -> CheckResult:
         try:
             tree = ast.parse(setup_py.read_text(encoding="utf-8", errors="replace"))
             for node in ast.walk(tree):
-                if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == "setup":
+                if (
+                    isinstance(node, ast.Call)
+                    and isinstance(node.func, ast.Name)
+                    and node.func.id == "setup"
+                ):
                     has_outdated = True
         except SyntaxError:
             pass
@@ -815,6 +895,7 @@ def check_TC1(files: list[ParsedFile]) -> CheckResult:
     if pyproject.is_file():
         try:
             import tomllib
+
             data = tomllib.loads(pyproject.read_text(encoding="utf-8"))
             if "project" in data:
                 has_modern = True
@@ -839,6 +920,7 @@ def check_TC2(files: list[ParsedFile]) -> CheckResult:
         return CheckResult.NONE
     try:
         import tomllib
+
         data = tomllib.loads(pyproject.read_text(encoding="utf-8"))
         tool = data.get("tool", {})
         has_outdated = any(k in tool for k in ("flake8", "black", "isort"))
@@ -874,7 +956,7 @@ def check_TC5(files: list[ParsedFile]) -> CheckResult:
     if base.name == "src":
         base = base.parent
     uv_pattern = re.compile(r"uv\s+(pip|add|run|sync)")
-    for candidate in [base / "pyproject.toml", base / "Makefile"] + list(base.glob("*.sh")):
+    for candidate in [base / "pyproject.toml", base / "Makefile", *list(base.glob("*.sh"))]:
         if candidate.is_file():
             try:
                 text = candidate.read_text(encoding="utf-8", errors="replace")
@@ -893,10 +975,16 @@ def check_TY1(files: list[ParsedFile]) -> CheckResult:
         typing_generics = {"List", "Dict", "Set", "Tuple"}
         for node in _iter_code_nodes(pf.tree):
             if isinstance(node, ast.Subscript) and isinstance(node.value, ast.Attribute):
-                if isinstance(node.value.value, ast.Name) and node.value.value.id == "typing" and node.value.attr in typing_generics:
+                if (
+                    isinstance(node.value.value, ast.Name)
+                    and node.value.value.id == "typing"
+                    and node.value.attr in typing_generics
+                ):
                     has_outdated = True
             if isinstance(node, ast.Subscript) and isinstance(node.value, ast.Name):
-                if node.value.id in typing_generics and _has_import_of(pf, f"typing.{node.value.id}"):
+                if node.value.id in typing_generics and _has_import_of(
+                    pf, f"typing.{node.value.id}"
+                ):
                     has_outdated = True
                 if node.value.id in ("list", "dict", "set", "tuple"):
                     has_modern = True
@@ -933,11 +1021,17 @@ def check_TY3(files: list[ParsedFile]) -> CheckResult:
         has_outdated = False
         has_modern = False
         for node in _iter_code_nodes(pf.tree):
-            if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == "TypeVar":
+            if (
+                isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Name)
+                and node.func.id == "TypeVar"
+            ):
                 has_outdated = True
             if isinstance(node, ast.ClassDef) and getattr(node, "type_params", None):
                 has_modern = True
-            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and getattr(node, "type_params", None):
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and getattr(
+                node, "type_params", None
+            ):
                 has_modern = True
         if has_outdated and not has_modern:
             return CheckResult.OUTDATED
@@ -963,7 +1057,11 @@ def check_TY5(files: list[ParsedFile]) -> CheckResult:
         has_outdated = False
         has_modern = False
         for node in _iter_code_nodes(pf.tree):
-            if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == "ParamSpec":
+            if (
+                isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Name)
+                and node.func.id == "ParamSpec"
+            ):
                 has_modern = True
             if isinstance(node, ast.Name) and node.id == "ParamSpec":
                 has_modern = True
@@ -974,8 +1072,14 @@ def check_TY5(files: list[ParsedFile]) -> CheckResult:
                     if args.vararg and args.kwarg:
                         vararg_ann = args.vararg.annotation
                         kwarg_ann = args.kwarg.annotation
-                        if (vararg_ann and isinstance(vararg_ann, ast.Name) and vararg_ann.id == "Any"
-                                and kwarg_ann and isinstance(kwarg_ann, ast.Name) and kwarg_ann.id == "Any"):
+                        if (
+                            vararg_ann
+                            and isinstance(vararg_ann, ast.Name)
+                            and vararg_ann.id == "Any"
+                            and kwarg_ann
+                            and isinstance(kwarg_ann, ast.Name)
+                            and kwarg_ann.id == "Any"
+                        ):
                             has_outdated = True
         if has_outdated:
             return CheckResult.OUTDATED
@@ -1053,7 +1157,11 @@ def check_DJ3(files: list[ParsedFile]) -> CheckResult:
         has_sync_to_async = False
         has_native_async = False
         for node in _iter_code_nodes(pf.tree):
-            if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == "sync_to_async":
+            if (
+                isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Name)
+                and node.func.id == "sync_to_async"
+            ):
                 has_sync_to_async = True
             if isinstance(node, ast.Attribute) and node.attr in ("aget", "afirst", "acount"):
                 has_native_async = True
@@ -1084,7 +1192,11 @@ def check_PT2(files: list[ParsedFile]) -> CheckResult:
         has_modern = False
         has_bare = False
         for node in _iter_code_nodes(pf.tree):
-            if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr == "raises":
+            if (
+                isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Attribute)
+                and node.func.attr == "raises"
+            ):
                 has_match = any(kw.arg == "match" for kw in node.keywords)
                 if has_match:
                     has_modern = True
@@ -1120,45 +1232,122 @@ def check_PT3(files: list[ParsedFile]) -> CheckResult:
 # ---------------------------------------------------------------------------
 
 CHECKS: dict[str, callable] = {
-    "AS1": check_AS1, "AS2": check_AS2, "AS3": check_AS3,
-    "DS1": check_DS1, "DS2": check_DS2, "DS3": check_DS3,
-    "FA1": check_FA1, "FA2": check_FA2, "FA3": check_FA3,
-    "HX1": check_HX1, "HX2": check_HX2,
-    "PD1": check_PD1, "PD2": check_PD2, "PD3": check_PD3, "PD4": check_PD4,
-    "SA1": check_SA1, "SA2": check_SA2, "SA3": check_SA3,
-    "SL1": check_SL1, "SL2": check_SL2, "SL3": check_SL3, "SL4": check_SL4,
-    "TC1": check_TC1, "TC2": check_TC2, "TC3": check_TC3,
-    "TC4": check_TC4, "TC5": check_TC5,
-    "TY1": check_TY1, "TY2": check_TY2, "TY3": check_TY3, "TY4": check_TY4, "TY5": check_TY5, "TY6": check_TY6,
-    "DJ1": check_DJ1, "DJ2": check_DJ2, "DJ3": check_DJ3,
-    "PT1": check_PT1, "PT2": check_PT2, "PT3": check_PT3,
+    "AS1": check_AS1,
+    "AS2": check_AS2,
+    "AS3": check_AS3,
+    "DS1": check_DS1,
+    "DS2": check_DS2,
+    "DS3": check_DS3,
+    "FA1": check_FA1,
+    "FA2": check_FA2,
+    "FA3": check_FA3,
+    "HX1": check_HX1,
+    "HX2": check_HX2,
+    "PD1": check_PD1,
+    "PD2": check_PD2,
+    "PD3": check_PD3,
+    "PD4": check_PD4,
+    "SA1": check_SA1,
+    "SA2": check_SA2,
+    "SA3": check_SA3,
+    "SL1": check_SL1,
+    "SL2": check_SL2,
+    "SL3": check_SL3,
+    "SL4": check_SL4,
+    "TC1": check_TC1,
+    "TC2": check_TC2,
+    "TC3": check_TC3,
+    "TC4": check_TC4,
+    "TC5": check_TC5,
+    "TY1": check_TY1,
+    "TY2": check_TY2,
+    "TY3": check_TY3,
+    "TY4": check_TY4,
+    "TY5": check_TY5,
+    "TY6": check_TY6,
+    "DJ1": check_DJ1,
+    "DJ2": check_DJ2,
+    "DJ3": check_DJ3,
+    "PT1": check_PT1,
+    "PT2": check_PT2,
+    "PT3": check_PT3,
 }
 
 ITEM_LABELS: dict[str, str] = {
-    "AS1": "taskgroup-over-gather", "AS2": "async-timeout-context", "AS3": "exception-groups",
-    "DS1": "dataclass-modern", "DS2": "dict-merge-operator", "DS3": "match-case-patterns",
-    "FA1": "fastapi-lifespan", "FA2": "fastapi-annotated-depends", "FA3": "fastapi-typed-state",
-    "HX1": "httpx-async-client-reuse", "HX2": "httpx-streaming",
-    "PD1": "pydantic-v2-config", "PD2": "pydantic-v2-model-api",
-    "PD3": "pydantic-v2-serialization", "PD4": "pydantic-v2-validators",
-    "SA1": "sqlalchemy-2-style", "SA2": "sqlalchemy-async-session", "SA3": "sqlalchemy-mapped-column",
-    "SL1": "datetime-utc", "SL2": "pathlib-over-os-path", "SL3": "removeprefix-removesuffix", "SL4": "tomllib-builtin",
-    "TC1": "pyproject-toml-over-setup", "TC2": "ruff-over-flake8", "TC3": "safe-subprocess",
-    "TC4": "no-pickle", "TC5": "uv-over-pip",
-    "TY1": "use-builtin-generics", "TY2": "union-syntax", "TY3": "type-parameter-syntax",
-    "TY4": "override-decorator", "TY5": "paramspec-decorators", "TY6": "typeis-vs-typeguard",
-    "DJ1": "django-json-field", "DJ2": "django-check-constraints", "DJ3": "django-async-views",
-    "PT1": "pytest-parametrize", "PT2": "pytest-raises-match", "PT3": "pytest-tmp-path",
+    "AS1": "taskgroup-over-gather",
+    "AS2": "async-timeout-context",
+    "AS3": "exception-groups",
+    "DS1": "dataclass-modern",
+    "DS2": "dict-merge-operator",
+    "DS3": "match-case-patterns",
+    "FA1": "fastapi-lifespan",
+    "FA2": "fastapi-annotated-depends",
+    "FA3": "fastapi-typed-state",
+    "HX1": "httpx-async-client-reuse",
+    "HX2": "httpx-streaming",
+    "PD1": "pydantic-v2-config",
+    "PD2": "pydantic-v2-model-api",
+    "PD3": "pydantic-v2-serialization",
+    "PD4": "pydantic-v2-validators",
+    "SA1": "sqlalchemy-2-style",
+    "SA2": "sqlalchemy-async-session",
+    "SA3": "sqlalchemy-mapped-column",
+    "SL1": "datetime-utc",
+    "SL2": "pathlib-over-os-path",
+    "SL3": "removeprefix-removesuffix",
+    "SL4": "tomllib-builtin",
+    "TC1": "pyproject-toml-over-setup",
+    "TC2": "ruff-over-flake8",
+    "TC3": "safe-subprocess",
+    "TC4": "no-pickle",
+    "TC5": "uv-over-pip",
+    "TY1": "use-builtin-generics",
+    "TY2": "union-syntax",
+    "TY3": "type-parameter-syntax",
+    "TY4": "override-decorator",
+    "TY5": "paramspec-decorators",
+    "TY6": "typeis-vs-typeguard",
+    "DJ1": "django-json-field",
+    "DJ2": "django-check-constraints",
+    "DJ3": "django-async-views",
+    "PT1": "pytest-parametrize",
+    "PT2": "pytest-raises-match",
+    "PT3": "pytest-tmp-path",
 }
 
 VARIANT_A_SCORED = [
-    "AS1", "AS2", "AS3", "DS1", "DS2", "DS3",
-    "FA1", "FA2", "FA3", "HX1", "HX2",
-    "PD1", "PD2", "PD3", "PD4",
-    "SA1", "SA2", "SA3",
-    "SL1", "SL2", "SL3", "SL4",
-    "TC1", "TC2", "TC3", "TC4",
-    "TY1", "TY2", "TY3", "TY4", "TY5", "TY6",
+    "AS1",
+    "AS2",
+    "AS3",
+    "DS1",
+    "DS2",
+    "DS3",
+    "FA1",
+    "FA2",
+    "FA3",
+    "HX1",
+    "HX2",
+    "PD1",
+    "PD2",
+    "PD3",
+    "PD4",
+    "SA1",
+    "SA2",
+    "SA3",
+    "SL1",
+    "SL2",
+    "SL3",
+    "SL4",
+    "TC1",
+    "TC2",
+    "TC3",
+    "TC4",
+    "TY1",
+    "TY2",
+    "TY3",
+    "TY4",
+    "TY5",
+    "TY6",
 ]
 VARIANT_A_INFO = ["TC5"]
 
@@ -1176,6 +1365,7 @@ VARIANT_MANIFESTS = {
 # Scoring engine
 # ---------------------------------------------------------------------------
 
+
 def score_session(session_dir: Path, variant: str) -> dict:
     scored_items, info_items = VARIANT_MANIFESTS[variant]
 
@@ -1192,7 +1382,6 @@ def score_session(session_dir: Path, variant: str) -> dict:
     files = parse_all(src_dir)
 
     # For items that need pyproject.toml / setup.py, look in parent
-    parent = src_dir.parent if src_dir.name == "src" else src_dir
 
     results = {}
     for item_id in scored_items + info_items:
@@ -1240,15 +1429,20 @@ def score_session(session_dir: Path, variant: str) -> dict:
 # Output formatting
 # ---------------------------------------------------------------------------
 
+
 def print_human(session_name: str, data: dict) -> None:
     variant_labels = {"a": "A (FastAPI ecosystem)", "b": "B (Django)", "c": "C (pytest)"}
     v = data["variant"]
     print(f"  Variant: {variant_labels.get(v, v)}")
     print(f"  Score: {data['modern']} / {data['denominator']} ({data['v4_compat_score_pct']}%)")
-    print(f"  Modern: {data['modern']}  VALID_ALT: {data['valid_alt']}  "
-          f"Outdated: {data['outdated']}  None: {data['none']}  ParseError: {data['parse_error']}")
-    print(f"  Strict modern: {data['strict_modern_pct']}%  "
-          f"Inclusive: {data['inclusive_modern_pct']}%")
+    print(
+        f"  Modern: {data['modern']}  VALID_ALT: {data['valid_alt']}  "
+        f"Outdated: {data['outdated']}  None: {data['none']}  ParseError: {data['parse_error']}"
+    )
+    print(
+        f"  Strict modern: {data['strict_modern_pct']}%  "
+        f"Inclusive: {data['inclusive_modern_pct']}%"
+    )
     print()
 
     current_cat = ""
@@ -1258,8 +1452,13 @@ def print_human(session_name: str, data: dict) -> None:
             current_cat = cat
             print()
         result = item_data["result"]
-        marker = {"MODERN": "✓", "OUTDATED": "✗", "VALID_ALT": "≈",
-                   "NONE": "·", "PARSE_ERROR": "!"}
+        marker = {
+            "MODERN": "✓",
+            "OUTDATED": "✗",
+            "VALID_ALT": "≈",
+            "NONE": "·",
+            "PARSE_ERROR": "!",
+        }
         tag = "[info]" if not item_data["scored"] else ""
         print(f"  {marker.get(result, '?')} {item_id}: {result} ({item_data['label']}) {tag}")
     print()
@@ -1269,13 +1468,16 @@ def print_human(session_name: str, data: dict) -> None:
 # CLI
 # ---------------------------------------------------------------------------
 
+
 def main() -> None:
     import argparse
+
     parser = argparse.ArgumentParser(description="V5 AST-based benchmark scorer")
     parser.add_argument("run_id", help="Run ID (results directory suffix)")
     parser.add_argument("--variant", default="a", choices=["a", "b", "c"])
-    parser.add_argument("--format", default="human", choices=["human", "json"],
-                        dest="output_format")
+    parser.add_argument(
+        "--format", default="human", choices=["human", "json"], dest="output_format"
+    )
     args = parser.parse_args()
 
     repo_dir = Path(__file__).resolve().parent.parent
@@ -1284,8 +1486,13 @@ def main() -> None:
         print(f"ERROR: Results not found: {results_dir}", file=sys.stderr)
         sys.exit(1)
 
-    variant_labels = {"a": "A (FastAPI ecosystem)", "b": "B (Django)", "c": "C (pytest)"}
-    print(f"=== V5 Benchmark Scoring: Variant {variant_labels.get(args.variant, args.variant)}, Run {args.run_id} ===")
+    variant_labels = {
+        "a": "A (FastAPI ecosystem)",
+        "b": "B (Django)",
+        "c": "C (pytest)",
+    }
+    v_label = variant_labels.get(args.variant, args.variant)
+    print(f"=== V5 Scoring: Variant {v_label}, Run {args.run_id} ===")
     print()
 
     output = {}
@@ -1302,7 +1509,11 @@ def main() -> None:
             print_human(session_name, data)
 
     if args.output_format == "json":
-        print(json.dumps({"run_id": args.run_id, "variant": args.variant, "sessions": output}, indent=2))
+        print(
+            json.dumps(
+                {"run_id": args.run_id, "variant": args.variant, "sessions": output}, indent=2
+            )
+        )
 
 
 if __name__ == "__main__":
