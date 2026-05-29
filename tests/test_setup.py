@@ -131,6 +131,22 @@ class TestSetupMcp:
         assert ok is False
         assert "failed" in capsys.readouterr().err
 
+    def test_oserror_fails_gracefully(self, capsys: pytest.CaptureFixture[str]):
+        """V-036: claude on PATH but unexecutable (OSError) -> failure, no traceback."""
+        with (
+            patch(
+                "modern_python_guidance.setup_cmd.shutil.which",
+                return_value="/usr/bin/claude",
+            ),
+            patch(
+                "modern_python_guidance.setup_cmd.subprocess.run",
+                side_effect=OSError("Exec format error"),
+            ),
+        ):
+            ok = setup_mcp()
+        assert ok is False
+        assert "failed to run" in capsys.readouterr().err
+
     def test_dry_run(self, capsys: pytest.CaptureFixture[str]):
         """V-010: dry-run does not invoke subprocess."""
         with (

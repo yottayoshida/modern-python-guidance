@@ -92,6 +92,9 @@ def setup_mcp(
     except subprocess.TimeoutExpired:
         print("Error: 'claude mcp add' timed out after 30 seconds.", file=sys.stderr)
         return False
+    except OSError as e:
+        print(f"Error: failed to run 'claude mcp add': {e}", file=sys.stderr)
+        return False
 
     if result.returncode != 0:
         stderr_text = result.stderr.decode(errors="replace").strip()
