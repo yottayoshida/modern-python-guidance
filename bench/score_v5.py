@@ -82,8 +82,18 @@ def parse_file(path: Path) -> ParsedFile | None:
     return ParsedFile(path, tree, aliases, reverse)
 
 
+EXCLUDED_DIRS = {
+    ".venv", "venv", "__pycache__", ".git",
+    "node_modules", ".egg-info", "site-packages",
+}
+
+
 def discover_files(root: Path) -> list[Path]:
-    py_files = sorted(root.rglob("*.py"))
+    py_files = []
+    for p in sorted(root.rglob("*.py")):
+        if any(part in EXCLUDED_DIRS or part.endswith(".egg-info") for part in p.parts):
+            continue
+        py_files.append(p)
     return py_files
 
 
