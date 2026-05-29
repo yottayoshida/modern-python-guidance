@@ -187,13 +187,18 @@ record_verify() {
 }
 
 # --- Cleanup generated files ---
+# Known dirs/files that belong to the repo and must NOT be moved
+REPO_DIRS="bench results skills src tests .claude .git .github .venv docs"
+REPO_FILES="CLAUDE.md CLAUDE.local.md CHANGELOG.md CONTRIBUTING.md LICENSE-APACHE LICENSE-MIT README.md pyproject.toml uv.lock .gitignore .python-version"
+
 cleanup_variant() {
     local variant="$1" dest="$2"
     mkdir -p "$dest"
+
+    # Move known paths (V4 compatibility)
     case "$variant" in
         a)
             [ -d "$WORKSPACE/src" ] && mv "$WORKSPACE/src" "$dest/src" || true
-            [ -f "$WORKSPACE/pyproject.toml" ] && mv "$WORKSPACE/pyproject.toml" "$dest/pyproject.toml" || true
             [ -f "$WORKSPACE/setup.py" ] && mv "$WORKSPACE/setup.py" "$dest/setup.py" || true
             ;;
         b)
@@ -203,6 +208,21 @@ cleanup_variant() {
             [ -d "$WORKSPACE/tests" ] && mv "$WORKSPACE/tests" "$dest/tests" || true
             ;;
     esac
+
+    # Move any NEW .py files and dirs created by LLM (terse prompts create arbitrary structures)
+    for item in "$WORKSPACE"/*; do
+        [ -e "$item" ] || continue
+        local base
+        base=$(basename "$item")
+        # Skip repo-owned items
+        local skip=false
+        for known in $REPO_DIRS $REPO_FILES; do
+            if [ "$base" = "$known" ]; then skip=true; break; fi
+        done
+        $skip && continue
+        # Move anything else (LLM-generated)
+        mv "$item" "$dest/$base" 2>/dev/null || true
+    done
 }
 
 # --- Cost tracking ---
