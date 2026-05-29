@@ -2,6 +2,20 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.3.1] — 2026-05-29
+
+### Added
+
+- `mpg uninstall` command: reverses `mpg setup` by deregistering the MCP server and removing the Agent Skills symlink in one command (closes #63)
+- CLI flags: `--mcp-only`, `--skills-only`, `--project-dir`, `--dry-run` (no `--scope`; uninstall clears every scope `setup` can write to)
+- Per-scope MCP deregistration (`claude mcp remove -s local` and `-s user`): a live probe showed `claude mcp remove` without a scope removes nothing when the server is registered in multiple scopes, so uninstall enumerates scopes explicitly to avoid leaving residue
+- Symlink-only removal safety: only the symlink mpg created is removed (never its target), a non-symlink entity at the link path is refused, dangling symlinks are removed, and the parent `.claude/skills/` directory is preserved
+- 26 new tests (V-015 through V-031)
+
+### Changed
+
+- Extracted shared `_skills_link_path` helper in `setup_cmd` so `setup` and `uninstall` resolve the Skills symlink location identically (no drift)
+
 ## [0.3.0] — 2026-05-28
 
 ### Added
