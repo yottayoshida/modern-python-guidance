@@ -27,6 +27,14 @@ done
 
 BUDGET="2.00"
 
+# --- Optional model pin (opt-in via MODEL env; no-op when unset) ---
+MODEL="${MODEL:-}"
+MODEL_ARGS=()
+if [ -n "$MODEL" ]; then
+    MODEL_ARGS=(--model "$MODEL")
+    echo "[config] Pinning model: $MODEL"
+fi
+
 # --- Guidance toggle: rules/ file ---
 RULE_FILE="$WORKSPACE/.claude/rules/modern-python.md"
 RULE_SOURCE="$REPO_DIR/skills/modern-python-guidance/SKILL.md"
@@ -113,7 +121,8 @@ run_variant_session() {
         record_verify "PRE-CONTROL-V4$(echo "$variant" | tr '[:lower:]' '[:upper:]')" "$log"
 
         echo "[running] claude -p (Control, variant $variant) from $WORKSPACE ..."
-        (cd "$WORKSPACE" && claude -p --output-format json --max-budget-usd "$BUDGET" \
+        echo "MODEL=${MODEL:-<default>}" >> "$log"
+        (cd "$WORKSPACE" && claude -p ${MODEL_ARGS[@]+"${MODEL_ARGS[@]}"} --output-format json --max-budget-usd "$BUDGET" \
             < "$prompt" > "$results_dir/session-a.json" 2>"$results_dir/session-a.stderr") || true
 
         record_verify "POST-CONTROL-V4$(echo "$variant" | tr '[:lower:]' '[:upper:]')" "$log"
@@ -134,7 +143,8 @@ run_variant_session() {
         record_verify "PRE-TREATMENT-V4$(echo "$variant" | tr '[:lower:]' '[:upper:]')" "$log"
 
         echo "[running] claude -p (Treatment, variant $variant) from $WORKSPACE ..."
-        (cd "$WORKSPACE" && claude -p --output-format json --max-budget-usd "$BUDGET" \
+        echo "MODEL=${MODEL:-<default>}" >> "$log"
+        (cd "$WORKSPACE" && claude -p ${MODEL_ARGS[@]+"${MODEL_ARGS[@]}"} --output-format json --max-budget-usd "$BUDGET" \
             < "$prompt" > "$results_dir/session-b.json" 2>"$results_dir/session-b.stderr") || true
 
         record_verify "POST-TREATMENT-V4$(echo "$variant" | tr '[:lower:]' '[:upper:]')" "$log"
