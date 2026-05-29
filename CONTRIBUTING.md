@@ -15,7 +15,7 @@ src/modern_python_guidance/
 
 skills/modern-python-guidance/
 ├── SKILL.md            # Agent Skills plugin entry point
-└── guides/             # 39 guide files by category
+└── guides/             # 41 guide files by category
 ```
 
 See [docs/design.md](docs/design.md) for the full design document.
