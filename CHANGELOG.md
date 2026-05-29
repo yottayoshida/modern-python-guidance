@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.3.2] — 2026-05-29
+
+### Added
+
+- `deferred-annotations` guide (PEP 649): drop unnecessary `from __future__ import annotations` on Python 3.14+ projects where annotations are lazily evaluated by default (closes #28)
+- `template-strings` guide (PEP 750): use t-strings with processing functions for safe SQL/HTML parameterization instead of f-string interpolation (closes #28)
+- Guide count: 39 → 41. Layer 1 coverage: 16 → 18
+
+### Fixed
+
+- `setup_mcp` now catches `OSError` from `subprocess.run`, matching `uninstall_mcp` behavior — an unexecutable `claude` binary produces a clean error message instead of a traceback (closes #65)
+- MCP `retrieve_guides` schema `maxItems` and runtime guard updated from 39 to 41 to allow retrieval of all guides
+
 ## [0.3.1] — 2026-05-29
 
 ### Added
@@ -117,6 +130,8 @@ Initial release.
 - Strict YAML-subset frontmatter parser (no PyYAML dependency)
 - GitHub Actions CI (pytest + ruff on Python 3.11, 3.12, 3.13)
 
+[0.3.2]: https://github.com/yottayoshida/modern-python-guidance/releases/tag/v0.3.2
+[0.3.1]: https://github.com/yottayoshida/modern-python-guidance/releases/tag/v0.3.1
 [0.3.0]: https://github.com/yottayoshida/modern-python-guidance/releases/tag/v0.3.0
 [0.2.3]: https://github.com/yottayoshida/modern-python-guidance/releases/tag/v0.2.3
 [0.2.2]: https://github.com/yottayoshida/modern-python-guidance/releases/tag/v0.2.2
