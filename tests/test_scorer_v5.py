@@ -1,10 +1,13 @@
 """Tests for bench/score_v5.py — AST-based benchmark scorer V5."""
 from __future__ import annotations
 
+import sys
 import textwrap
 from pathlib import Path
 
 import pytest
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from bench.score_v5 import (
     CheckResult,
@@ -552,6 +555,7 @@ class TestTY:
         ''')
         assert check_TY2(files) == CheckResult.OUTDATED
 
+    @pytest.mark.skipif(sys.version_info < (3, 12), reason="type parameter syntax requires 3.12+")
     def test_ty3_modern(self, tmp_path):
         files = _make_files(tmp_path, '''
         class Stack[T]:

@@ -935,9 +935,9 @@ def check_TY3(files: list[ParsedFile]) -> CheckResult:
         for node in _iter_code_nodes(pf.tree):
             if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == "TypeVar":
                 has_outdated = True
-            if isinstance(node, ast.ClassDef) and node.type_params:
+            if isinstance(node, ast.ClassDef) and getattr(node, "type_params", None):
                 has_modern = True
-            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.type_params:
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and getattr(node, "type_params", None):
                 has_modern = True
         if has_outdated and not has_modern:
             return CheckResult.OUTDATED
