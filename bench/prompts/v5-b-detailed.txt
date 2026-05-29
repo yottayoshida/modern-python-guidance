@@ -1,0 +1,7 @@
+Write the following 3 files for a Django application. Write all code, no placeholders. Create each file at the EXACT path shown below (relative to the current working directory). Do NOT create any project directories or subdirectories beyond what is listed.
+
+1. myapp/models.py — Django models. Define a `Product` model with fields: name (CharField), price (DecimalField), metadata (use `models.JSONField` — the native Django JSONField, not the old `django.contrib.postgres.fields.JSONField`). Add a database-level constraint using `models.CheckConstraint(condition=..., name=...)` syntax (not the deprecated `check=` parameter) that ensures price is non-negative.
+
+2. myapp/views.py — Django views. Write an `async def product_list(request)` view that returns all products as JSON using native async Django ORM queries (`async for p in Product.objects.all()`, `.aget()`, `.afirst()`) — do NOT use `sync_to_async` wrappers. Write a second async view `product_detail(request, pk)` that returns a single product using `.aget()`.
+
+3. myapp/urls.py — URL configuration. Wire up the two views above with appropriate URL patterns.

@@ -1,0 +1,1 @@
+Build a FastAPI web application with an async web crawler. Use SQLAlchemy for the database, httpx for HTTP requests, Pydantic for data validation, and TOML for configuration. Include a file scanner utility with pattern matching. Target Python 3.12+. Write all code with no placeholders.
