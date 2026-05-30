@@ -2,6 +2,22 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.3.3] — 2026-05-30
+
+### Added
+
+- AST-based benchmark scorer (`bench/score_v5.py`): replaces grep-based V4 scorer with Python AST detection for structurally correct pattern matching — fixes 3 false-flag bugs on Opus 4.8 output (multiline code, docstring keywords, .venv contamination) (closes #59)
+- VALID_ALT classification for SA2 (sync SQLAlchemy 2.0), TY6 (TypeGuard), AS3 (per-task except) — tracks valid alternatives separately from recommended patterns
+- Benchmark prompt granularity testing (terse/normal/detailed) with V5 runner using isolated tmpdir for workspace safety
+- V5 benchmark results on Opus 4.8: terse prompts +19pp, normal prompts +7pp strict modern rate ([details](docs/benchmark-v5.md))
+- 83 new scorer tests (fixture parity, per-item golden tests, edge cases, import alias handling)
+- Weekly GitHub Actions workflow to detect new Python stable releases and auto-create tracking issues (closes #70)
+
+### Changed
+
+- README benchmark highlight updated from V4 (+14.7pp) to V5 (79% → 98% on vague prompts, Opus 4.8)
+- Ruff config: added per-file-ignores for `bench/*.py` (SIM102/SIM110)
+
 ## [0.3.2] — 2026-05-29
 
 ### Added
