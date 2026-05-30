@@ -1,0 +1,93 @@
+name: Check for new Python releases
+
+on:
+  schedule:
+    - cron: '0 9 * * 1'  # Every Monday at 09:00 UTC
+  workflow_dispatch:
+
+permissions:
+  issues: write
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Detect latest stable Python minor version
+        id: detect
+        run: |
+          # Fetch all releases from python.org, filter stable only via pre_release field
+          LATEST=$(curl -s 'https://www.python.org/api/v2/downloads/release/?limit=500' \
+            | jq -r '[.[] | select(.pre_release == false) | .name
+                      | capture("Python (?<v>3\\.[0-9]+)\\.[0-9]+$") | .v]
+                     | unique | sort_by(split(".") | map(tonumber)) | last')
+
+          echo "latest_minor=$LATEST"
+
+          # Find the highest minor version covered in our guides
+          KNOWN=$(grep -roh 'python: ">=3\.[0-9]*"' skills/modern-python-guidance/guides/ \
+            | grep -oP '3\.\d+' \
+            | sort -V | tail -1)
+
+          echo "known_minor=$KNOWN"
+
+          if [ -z "$LATEST" ] || [ -z "$KNOWN" ]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "Could not determine versions (latest=$LATEST, known=$KNOWN)"
+            exit 0
+          fi
+
+          LATEST_NUM=${LATEST##3.}
+          KNOWN_NUM=${KNOWN##3.}
+
+          if [ "$LATEST_NUM" -gt "$KNOWN_NUM" ]; then
+            echo "new_version=$LATEST" >> "$GITHUB_OUTPUT"
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+            echo "New Python version detected: $LATEST (guides cover up to $KNOWN)"
+          else
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "Up to date: guides cover $KNOWN, latest stable is $LATEST"
+          fi
+
+      - name: Check for existing issue
+        if: steps.detect.outputs.skip != 'true'
+        id: existing
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION="${{ steps.detect.outputs.new_version }}"
+          FOUND=$(gh issue list --search "\"Add Python ${VERSION} guides\" in:title" \
+            --state all --json number --jq '.[0].number // empty')
+          if [ -n "$FOUND" ]; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "Issue #${FOUND} already exists"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Create issue
+        if: steps.detect.outputs.skip != 'true' && steps.existing.outputs.exists != 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.detect.outputs.new_version }}
+        run: |
+          SLUG="${VERSION//.}"
+          gh issue create \
+            --title "Add Python ${VERSION} guides" \
+            --label "enhancement" \
+            --body "## Python ${VERSION} stable released
+
+          Evaluate new PEPs for BAD/GOOD pattern guides.
+
+          ### References
+          - [What's New in Python ${VERSION}](https://docs.python.org/${VERSION}/whatsnew/${VERSION}.html)
+          - [Python ${VERSION}.0 Release](https://www.python.org/downloads/release/python-${SLUG}0/)
+
+          ### Checklist
+          - [ ] Review What's New for pattern-worthy changes
+          - [ ] Check candidates against quality bar (modern + meaningful)
+          - [ ] Write guides for accepted patterns
+          - [ ] Update SKILL.md embedded patterns if high-frequency
+          - [ ] Update benchmark scorer if new items added
+          - [ ] Release new version"
