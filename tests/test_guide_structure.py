@@ -91,9 +91,7 @@ class TestGuideStructure:
         _, body = parse_frontmatter(text)
         headings = _headings_outside_fences(body)
 
-        assert len(headings) == 5, (
-            f"expected 5 ## headings, got {len(headings)}: {headings}"
-        )
+        assert len(headings) == 5, f"expected 5 ## headings, got {len(headings)}: {headings}"
         for idx, expected in REQUIRED_HEADING_ORDER.items():
             assert headings[idx] == expected, (
                 f"heading[{idx}] expected '{expected}', got '{headings[idx]}'"
