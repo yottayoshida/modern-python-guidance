@@ -36,7 +36,9 @@ def main(argv: list[str] | None = None) -> None:
     p_search.add_argument("--category", help="Filter by category")
     p_search.add_argument("--limit", type=int, default=10, help="Max results (default: 10)")
     p_search.add_argument(
-        "--format", choices=["json", "human"], default=None,
+        "--format",
+        choices=["json", "human"],
+        default=None,
         help="Output format (default: json when piped, human when TTY)",
     )
 
@@ -45,7 +47,9 @@ def main(argv: list[str] | None = None) -> None:
     p_retrieve.add_argument("ids", help="Comma-separated guide IDs")
     p_retrieve.add_argument("--python-version", help="Target Python version")
     p_retrieve.add_argument(
-        "--format", choices=["json", "human"], default=None,
+        "--format",
+        choices=["json", "human"],
+        default=None,
         help="Output format (default: json when piped, human when TTY)",
     )
 
@@ -54,7 +58,9 @@ def main(argv: list[str] | None = None) -> None:
     p_list.add_argument("--category", help="Filter by category")
     p_list.add_argument("--python-version", help="Filter by Python version")
     p_list.add_argument(
-        "--format", choices=["json", "human"], default=None,
+        "--format",
+        choices=["json", "human"],
+        default=None,
         help="Output format (default: json when piped, human when TTY)",
     )
 
@@ -67,27 +73,35 @@ def main(argv: list[str] | None = None) -> None:
 
     # setup
     p_setup = subparsers.add_parser(
-        "setup", help="Register MCP server and link Agent Skills",
+        "setup",
+        help="Register MCP server and link Agent Skills",
     )
     p_setup.add_argument("--mcp-only", action="store_true", help="MCP registration only")
     p_setup.add_argument("--skills-only", action="store_true", help="Skills symlink only")
     p_setup.add_argument(
-        "--scope", choices=["user", "local"], default="user",
+        "--scope",
+        choices=["user", "local"],
+        default="user",
         help="MCP scope (default: user)",
     )
     p_setup.add_argument(
-        "--project-dir", type=Path, help="Project directory for Skills symlink",
+        "--project-dir",
+        type=Path,
+        help="Project directory for Skills symlink",
     )
     p_setup.add_argument("--dry-run", action="store_true", help="Show what would be done")
 
     # uninstall
     p_uninstall = subparsers.add_parser(
-        "uninstall", help="Reverse 'setup': deregister MCP server and unlink Agent Skills",
+        "uninstall",
+        help="Reverse 'setup': deregister MCP server and unlink Agent Skills",
     )
     p_uninstall.add_argument("--mcp-only", action="store_true", help="MCP deregistration only")
     p_uninstall.add_argument("--skills-only", action="store_true", help="Skills unlink only")
     p_uninstall.add_argument(
-        "--project-dir", type=Path, help="Project directory for Skills symlink",
+        "--project-dir",
+        type=Path,
+        help="Project directory for Skills symlink",
     )
     p_uninstall.add_argument("--dry-run", action="store_true", help="Show what would be done")
 

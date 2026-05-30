@@ -180,17 +180,22 @@ class TestSetupMcp:
     def test_subprocess_argv(self):
         """Actual subprocess.run receives correct argv list."""
         with (
-            patch("modern_python_guidance.setup_cmd.shutil.which",
-                  return_value="/usr/bin/claude"),
+            patch("modern_python_guidance.setup_cmd.shutil.which", return_value="/usr/bin/claude"),
             patch("modern_python_guidance.setup_cmd.subprocess.run") as m,
         ):
             m.return_value = subprocess.CompletedProcess([], 0)
             setup_mcp(scope="local")
         argv = m.call_args[0][0]
         assert argv == [
-            "/usr/bin/claude", "mcp", "add",
-            "--scope", "local", "mpg",
-            "--", "mpg", "mcp",
+            "/usr/bin/claude",
+            "mcp",
+            "add",
+            "--scope",
+            "local",
+            "mpg",
+            "--",
+            "mpg",
+            "mcp",
         ]
 
 
@@ -284,7 +289,9 @@ class TestSetupSkills:
         assert "rm -rf" in err
 
     def test_non_symlink_blocker_path_quoted(
-        self, tmp_path: Path, capsys: pytest.CaptureFixture[str],
+        self,
+        tmp_path: Path,
+        capsys: pytest.CaptureFixture[str],
     ):
         """rm -rf hint uses shell-safe quoting for paths with spaces."""
         source = self._make_source(tmp_path)

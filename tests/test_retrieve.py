@@ -72,7 +72,15 @@ class TestRetrieveJSON:
         output = retrieve_json(index, ["use-builtin-generics"])
         parsed = json.loads(output)
         expected_keys = {
-            "id", "title", "category", "layer", "python",
-            "frequency", "version_match", "content", "token_estimate", "source",
+            "id",
+            "title",
+            "category",
+            "layer",
+            "python",
+            "frequency",
+            "version_match",
+            "content",
+            "token_estimate",
+            "source",
         }
         assert set(parsed[0].keys()) == expected_keys

@@ -14,9 +14,7 @@ def tmp_project(tmp_path: Path) -> Path:
 
 class TestCLIOverride:
     def test_cli_version_takes_priority(self, tmp_project: Path):
-        (tmp_project / "pyproject.toml").write_text(
-            '[project]\nrequires-python = ">=3.10"\n'
-        )
+        (tmp_project / "pyproject.toml").write_text('[project]\nrequires-python = ">=3.10"\n')
         assert detect_version(cli_version="3.12", project_dir=tmp_project) == "3.12"
 
     def test_cli_version_with_patch(self):
@@ -25,9 +23,7 @@ class TestCLIOverride:
 
 class TestPyprojectToml:
     def test_requires_python_gte(self, tmp_project: Path):
-        (tmp_project / "pyproject.toml").write_text(
-            '[project]\nrequires-python = ">=3.10"\n'
-        )
+        (tmp_project / "pyproject.toml").write_text('[project]\nrequires-python = ">=3.10"\n')
         assert detect_version(project_dir=tmp_project) == "3.10"
 
     def test_requires_python_range(self, tmp_project: Path):
@@ -37,21 +33,15 @@ class TestPyprojectToml:
         assert detect_version(project_dir=tmp_project) == "3.10"
 
     def test_requires_python_compatible(self, tmp_project: Path):
-        (tmp_project / "pyproject.toml").write_text(
-            '[project]\nrequires-python = "~=3.11"\n'
-        )
+        (tmp_project / "pyproject.toml").write_text('[project]\nrequires-python = "~=3.11"\n')
         assert detect_version(project_dir=tmp_project) == "3.11"
 
     def test_requires_python_exact(self, tmp_project: Path):
-        (tmp_project / "pyproject.toml").write_text(
-            '[project]\nrequires-python = "==3.12.*"\n'
-        )
+        (tmp_project / "pyproject.toml").write_text('[project]\nrequires-python = "==3.12.*"\n')
         assert detect_version(project_dir=tmp_project) == "3.12"
 
     def test_requires_python_patch_level(self, tmp_project: Path):
-        (tmp_project / "pyproject.toml").write_text(
-            '[project]\nrequires-python = ">=3.11.4"\n'
-        )
+        (tmp_project / "pyproject.toml").write_text('[project]\nrequires-python = ">=3.11.4"\n')
         assert detect_version(project_dir=tmp_project) == "3.11"
 
     def test_poetry_caret_warns_and_falls_through(self, tmp_project: Path, caplog):
@@ -97,9 +87,7 @@ class TestPythonVersionFile:
 
 class TestPrecedence:
     def test_pyproject_over_python_version_file(self, tmp_project: Path):
-        (tmp_project / "pyproject.toml").write_text(
-            '[project]\nrequires-python = ">=3.12"\n'
-        )
+        (tmp_project / "pyproject.toml").write_text('[project]\nrequires-python = ">=3.12"\n')
         (tmp_project / ".python-version").write_text("3.10\n")
         assert detect_version(project_dir=tmp_project) == "3.12"
 

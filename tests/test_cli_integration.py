@@ -55,8 +55,17 @@ class TestSearch:
         assert r.returncode == 0
         data = json.loads(r.stdout)
         expected_keys = {
-            "id", "title", "category", "layer", "tags", "python",
-            "frequency", "score", "token_estimate", "fuzzy", "snippet",
+            "id",
+            "title",
+            "category",
+            "layer",
+            "tags",
+            "python",
+            "frequency",
+            "score",
+            "token_estimate",
+            "fuzzy",
+            "snippet",
         }
         assert set(data[0].keys()) == expected_keys
         assert isinstance(data[0]["tags"], list)
@@ -89,14 +98,27 @@ class TestRetrieve:
         r = run_cli("retrieve", "use-builtin-generics", "--format", "json")
         data = json.loads(r.stdout)
         expected_keys = {
-            "id", "title", "category", "layer", "python",
-            "frequency", "version_match", "content", "token_estimate", "source",
+            "id",
+            "title",
+            "category",
+            "layer",
+            "python",
+            "frequency",
+            "version_match",
+            "content",
+            "token_estimate",
+            "source",
         }
         assert set(data[0].keys()) == expected_keys
 
     def test_retrieve_version_match_flag(self):
         r = run_cli(
-            "retrieve", "taskgroup-over-gather", "--python-version", "3.9", "--format", "json",
+            "retrieve",
+            "taskgroup-over-gather",
+            "--python-version",
+            "3.9",
+            "--format",
+            "json",
         )
         data = json.loads(r.stdout)
         assert data[0]["version_match"] is False

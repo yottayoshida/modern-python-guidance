@@ -40,11 +40,16 @@ def _run_mcp(*requests: dict, timeout: int = 10) -> list[dict]:
 
 def _init_handshake() -> list[dict]:
     return [
-        {"jsonrpc": "2.0", "id": 0, "method": "initialize", "params": {
-            "protocolVersion": "2024-11-05",
-            "capabilities": {},
-            "clientInfo": {"name": "test", "version": "0.0.1"},
-        }},
+        {
+            "jsonrpc": "2.0",
+            "id": 0,
+            "method": "initialize",
+            "params": {
+                "protocolVersion": "2024-11-05",
+                "capabilities": {},
+                "clientInfo": {"name": "test", "version": "0.0.1"},
+            },
+        },
         {"jsonrpc": "2.0", "method": "notifications/initialized"},
     ]
 
@@ -88,10 +93,15 @@ class TestSearchGuides:
     def test_search_returns_results(self):
         responses = _run_mcp(
             *_init_handshake(),
-            {"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {
-                "name": "search_guides",
-                "arguments": {"query": "typing list"},
-            }},
+            {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "tools/call",
+                "params": {
+                    "name": "search_guides",
+                    "arguments": {"query": "typing list"},
+                },
+            },
         )
         result = responses[1]["result"]
         assert "isError" not in result
@@ -102,15 +112,29 @@ class TestSearchGuides:
     def test_search_enriched_keys(self):
         responses = _run_mcp(
             *_init_handshake(),
-            {"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {
-                "name": "search_guides",
-                "arguments": {"query": "pydantic validator"},
-            }},
+            {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "tools/call",
+                "params": {
+                    "name": "search_guides",
+                    "arguments": {"query": "pydantic validator"},
+                },
+            },
         )
         data = json.loads(responses[1]["result"]["content"][0]["text"])
         expected_keys = {
-            "id", "title", "category", "layer", "tags", "python",
-            "frequency", "score", "token_estimate", "fuzzy", "snippet",
+            "id",
+            "title",
+            "category",
+            "layer",
+            "tags",
+            "python",
+            "frequency",
+            "score",
+            "token_estimate",
+            "fuzzy",
+            "snippet",
         }
         assert set(data[0].keys()) == expected_keys
         assert isinstance(data[0]["tags"], list)
@@ -122,10 +146,15 @@ class TestSearchGuides:
     def test_search_empty_query(self):
         responses = _run_mcp(
             *_init_handshake(),
-            {"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {
-                "name": "search_guides",
-                "arguments": {"query": ""},
-            }},
+            {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "tools/call",
+                "params": {
+                    "name": "search_guides",
+                    "arguments": {"query": ""},
+                },
+            },
         )
         result = responses[1]["result"]
         assert result["isError"] is True
@@ -133,10 +162,15 @@ class TestSearchGuides:
     def test_search_with_version_filter(self):
         responses = _run_mcp(
             *_init_handshake(),
-            {"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {
-                "name": "search_guides",
-                "arguments": {"query": "typing", "python_version": "3.12"},
-            }},
+            {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "tools/call",
+                "params": {
+                    "name": "search_guides",
+                    "arguments": {"query": "typing", "python_version": "3.12"},
+                },
+            },
         )
         result = responses[1]["result"]
         assert "isError" not in result
@@ -144,10 +178,15 @@ class TestSearchGuides:
     def test_search_invalid_version_format(self):
         responses = _run_mcp(
             *_init_handshake(),
-            {"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {
-                "name": "search_guides",
-                "arguments": {"query": "typing", "python_version": "invalid"},
-            }},
+            {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "tools/call",
+                "params": {
+                    "name": "search_guides",
+                    "arguments": {"query": "typing", "python_version": "invalid"},
+                },
+            },
         )
         result = responses[1]["result"]
         assert result["isError"] is True
@@ -155,10 +194,15 @@ class TestSearchGuides:
     def test_search_limit_clamped(self):
         responses = _run_mcp(
             *_init_handshake(),
-            {"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {
-                "name": "search_guides",
-                "arguments": {"query": "typing", "limit": 100},
-            }},
+            {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "tools/call",
+                "params": {
+                    "name": "search_guides",
+                    "arguments": {"query": "typing", "limit": 100},
+                },
+            },
         )
         result = responses[1]["result"]
         assert "isError" not in result
@@ -170,10 +214,15 @@ class TestRetrieveGuides:
     def test_retrieve_single_guide(self):
         responses = _run_mcp(
             *_init_handshake(),
-            {"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {
-                "name": "retrieve_guides",
-                "arguments": {"guide_ids": ["use-builtin-generics"]},
-            }},
+            {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "tools/call",
+                "params": {
+                    "name": "retrieve_guides",
+                    "arguments": {"guide_ids": ["use-builtin-generics"]},
+                },
+            },
         )
         result = responses[1]["result"]
         assert "isError" not in result
@@ -184,10 +233,15 @@ class TestRetrieveGuides:
     def test_retrieve_empty_ids(self):
         responses = _run_mcp(
             *_init_handshake(),
-            {"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {
-                "name": "retrieve_guides",
-                "arguments": {"guide_ids": []},
-            }},
+            {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "tools/call",
+                "params": {
+                    "name": "retrieve_guides",
+                    "arguments": {"guide_ids": []},
+                },
+            },
         )
         result = responses[1]["result"]
         assert result["isError"] is True
@@ -195,10 +249,15 @@ class TestRetrieveGuides:
     def test_retrieve_nonexistent_id(self):
         responses = _run_mcp(
             *_init_handshake(),
-            {"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {
-                "name": "retrieve_guides",
-                "arguments": {"guide_ids": ["nonexistent-guide-xyz"]},
-            }},
+            {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "tools/call",
+                "params": {
+                    "name": "retrieve_guides",
+                    "arguments": {"guide_ids": ["nonexistent-guide-xyz"]},
+                },
+            },
         )
         result = responses[1]["result"]
         assert "isError" not in result
@@ -210,10 +269,15 @@ class TestListGuides:
     def test_list_all_guides(self):
         responses = _run_mcp(
             *_init_handshake(),
-            {"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {
-                "name": "list_guides",
-                "arguments": {},
-            }},
+            {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "tools/call",
+                "params": {
+                    "name": "list_guides",
+                    "arguments": {},
+                },
+            },
         )
         result = responses[1]["result"]
         assert "isError" not in result
@@ -224,10 +288,15 @@ class TestListGuides:
     def test_list_with_category_filter(self):
         responses = _run_mcp(
             *_init_handshake(),
-            {"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {
-                "name": "list_guides",
-                "arguments": {"category": "stdlib"},
-            }},
+            {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "tools/call",
+                "params": {
+                    "name": "list_guides",
+                    "arguments": {"category": "stdlib"},
+                },
+            },
         )
         result = responses[1]["result"]
         data = json.loads(result["content"][0]["text"])
@@ -239,10 +308,15 @@ class TestDetectPythonVersion:
     def test_detect_version_default(self):
         responses = _run_mcp(
             *_init_handshake(),
-            {"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {
-                "name": "detect_python_version",
-                "arguments": {},
-            }},
+            {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "tools/call",
+                "params": {
+                    "name": "detect_python_version",
+                    "arguments": {},
+                },
+            },
         )
         result = responses[1]["result"]
         assert "isError" not in result
@@ -252,10 +326,15 @@ class TestDetectPythonVersion:
     def test_detect_version_rejects_absolute_path(self):
         responses = _run_mcp(
             *_init_handshake(),
-            {"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {
-                "name": "detect_python_version",
-                "arguments": {"project_dir": "/etc"},
-            }},
+            {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "tools/call",
+                "params": {
+                    "name": "detect_python_version",
+                    "arguments": {"project_dir": "/etc"},
+                },
+            },
         )
         result = responses[1]["result"]
         assert result["isError"] is True
@@ -264,10 +343,15 @@ class TestDetectPythonVersion:
     def test_detect_version_rejects_traversal(self):
         responses = _run_mcp(
             *_init_handshake(),
-            {"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {
-                "name": "detect_python_version",
-                "arguments": {"project_dir": "../../.."},
-            }},
+            {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "tools/call",
+                "params": {
+                    "name": "detect_python_version",
+                    "arguments": {"project_dir": "../../.."},
+                },
+            },
         )
         result = responses[1]["result"]
         assert result["isError"] is True
@@ -286,10 +370,15 @@ class TestProtocol:
     def test_unknown_tool_returns_tool_error(self):
         responses = _run_mcp(
             *_init_handshake(),
-            {"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {
-                "name": "nonexistent_tool",
-                "arguments": {},
-            }},
+            {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "tools/call",
+                "params": {
+                    "name": "nonexistent_tool",
+                    "arguments": {},
+                },
+            },
         )
         result = responses[1]["result"]
         assert result["isError"] is True
@@ -303,9 +392,7 @@ class TestStdoutPollution:
         )
         proc = subprocess.run(BIN, input=stdin_data, capture_output=True, timeout=10)
         decoded = _decode_messages(proc.stdout)
-        total_expected_bytes = sum(
-            len((json.dumps(m) + "\n").encode()) for m in decoded
-        )
+        total_expected_bytes = sum(len((json.dumps(m) + "\n").encode()) for m in decoded)
         assert len(proc.stdout) == total_expected_bytes, (
             f"stdout contains {len(proc.stdout) - total_expected_bytes} extra bytes"
         )

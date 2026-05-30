@@ -60,19 +60,25 @@ def search(
 
         if score > 0:
             score += FREQ_BOOST.get(meta.frequency, 0.0)
-            results.append(SearchResult(
-                guide_id=guide_id,
-                score=score,
-                meta=meta,
-                token_estimate=token_estimate(guide.body),
-                snippet=guide.snippet,
-            ))
+            results.append(
+                SearchResult(
+                    guide_id=guide_id,
+                    score=score,
+                    meta=meta,
+                    token_estimate=token_estimate(guide.body),
+                    snippet=guide.snippet,
+                )
+            )
 
     results.sort(key=lambda r: (-r.score, r.guide_id))
 
     if not results:
         return _fuzzy_fallback(
-            index, query, python_version=python_version, category=category, limit=limit,
+            index,
+            query,
+            python_version=python_version,
+            category=category,
+            limit=limit,
         )
 
     return results[:limit]
@@ -139,14 +145,16 @@ def _fuzzy_fallback(
                 continue
             seen.add(guide_id)
             guide = candidates[guide_id]
-            results.append(SearchResult(
-                guide_id=guide_id,
-                score=round(ratio, 3),
-                meta=guide.meta,
-                token_estimate=token_estimate(guide.body),
-                fuzzy=True,
-                snippet=guide.snippet,
-            ))
+            results.append(
+                SearchResult(
+                    guide_id=guide_id,
+                    score=round(ratio, 3),
+                    meta=guide.meta,
+                    token_estimate=token_estimate(guide.body),
+                    fuzzy=True,
+                    snippet=guide.snippet,
+                )
+            )
 
     results.sort(key=lambda r: (-r.score, r.guide_id))
-    return results[:min(limit, FUZZY_MAX)]
+    return results[: min(limit, FUZZY_MAX)]
