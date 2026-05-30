@@ -80,9 +80,7 @@ class TestV001SkillGuideSync:
 
     def test_catalog_count_matches(self, guide_index, skill_text):
         assert "41 guides" in skill_text
-        assert len(guide_index) == 41, (
-            f"SKILL.md says 41 guides but found {len(guide_index)}"
-        )
+        assert len(guide_index) == 41, f"SKILL.md says 41 guides but found {len(guide_index)}"
 
     def test_catalog_covers_all_guides(self, skill_text, guide_index):
         """Reverse check: every guide ID appears in the catalog section."""
@@ -99,9 +97,7 @@ class TestV002TokenBudget:
 
     def test_token_budget(self, skill_text):
         tokens = len(skill_text) // 4
-        assert tokens <= 1300, (
-            f"SKILL.md is {tokens} tokens (chars/4), budget is 1300"
-        )
+        assert tokens <= 1300, f"SKILL.md is {tokens} tokens (chars/4), budget is 1300"
 
 
 class TestV009EmbeddedFrequency:

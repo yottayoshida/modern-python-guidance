@@ -109,9 +109,7 @@ class TestSnippet:
                 "def process(items: list[str]) -> dict[str, int]:"
             ),
             "taskgroup-over-gather": (
-                "results = await asyncio.gather("
-                " → "
-                "async with asyncio.TaskGroup() as tg:"
+                "results = await asyncio.gather( → async with asyncio.TaskGroup() as tg:"
             ),
         }
         for guide_id, expected in fixtures.items():
@@ -124,18 +122,12 @@ class TestSnippet:
 
 class TestSnippetExtraction:
     def test_unequal_bad_longer(self):
-        body = (
-            "## BAD\n```python\nline_a\nline_b\nline_c\n```\n"
-            "## GOOD\n```python\nline_x\n```\n"
-        )
+        body = "## BAD\n```python\nline_a\nline_b\nline_c\n```\n## GOOD\n```python\nline_x\n```\n"
         snippet = _extract_snippet(body)
         assert snippet == "line_a → line_x"
 
     def test_unequal_good_longer(self):
-        body = (
-            "## BAD\n```python\nline_a\n```\n"
-            "## GOOD\n```python\nline_x\nline_y\nline_z\n```\n"
-        )
+        body = "## BAD\n```python\nline_a\n```\n## GOOD\n```python\nline_x\nline_y\nline_z\n```\n"
         snippet = _extract_snippet(body)
         assert snippet == "line_a → line_x"
 
@@ -157,26 +149,17 @@ class TestSnippetExtraction:
         assert snippet == "old_call() → new_call()"
 
     def test_trailing_only_in_bad(self):
-        body = (
-            "## BAD\n```python\nshared\nextra_bad\n```\n"
-            "## GOOD\n```python\nshared\n```\n"
-        )
+        body = "## BAD\n```python\nshared\nextra_bad\n```\n## GOOD\n```python\nshared\n```\n"
         snippet = _extract_snippet(body)
         assert snippet == "extra_bad"
 
     def test_trailing_only_in_good(self):
-        body = (
-            "## BAD\n```python\nshared\n```\n"
-            "## GOOD\n```python\nshared\nextra_good\n```\n"
-        )
+        body = "## BAD\n```python\nshared\n```\n## GOOD\n```python\nshared\nextra_good\n```\n"
         snippet = _extract_snippet(body)
         assert snippet == "extra_good"
 
     def test_all_lines_identical(self):
-        body = (
-            "## BAD\n```python\nsame\n```\n"
-            "## GOOD\n```python\nsame\n```\n"
-        )
+        body = "## BAD\n```python\nsame\n```\n## GOOD\n```python\nsame\n```\n"
         snippet = _extract_snippet(body)
         assert snippet == "same → same"
 

@@ -75,9 +75,7 @@ def _parse_raw(lines: list[str]) -> dict[str, Any]:
             if current_key is None:
                 raise FrontmatterError("list item without preceding key", line=i)
             if not isinstance(data[current_key], list):
-                raise FrontmatterError(
-                    f"list item for non-list key '{current_key}'", line=i
-                )
+                raise FrontmatterError(f"list item for non-list key '{current_key}'", line=i)
             data[current_key].append(_parse_scalar(list_match.group(1).strip()))
             continue
 

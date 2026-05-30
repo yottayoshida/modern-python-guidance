@@ -21,9 +21,7 @@ log = logging.getLogger(__name__)
 
 DEFAULT_VERSION = "3.11"
 
-_KNOWN_MINORS = [
-    Version(f"3.{minor}") for minor in range(7, 20)
-]
+_KNOWN_MINORS = [Version(f"3.{minor}") for minor in range(7, 20)]
 
 _POETRY_CARET_RE = re.compile(r"\^(\d+\.\d+)")
 
@@ -68,9 +66,7 @@ def _from_pyproject(path: Path) -> str | None:
     if requires_python:
         return _min_version_from_specifier(requires_python)
 
-    poetry_python = (
-        data.get("tool", {}).get("poetry", {}).get("dependencies", {}).get("python")
-    )
+    poetry_python = data.get("tool", {}).get("poetry", {}).get("dependencies", {}).get("python")
     if poetry_python:
         m = _POETRY_CARET_RE.search(str(poetry_python))
         if m:

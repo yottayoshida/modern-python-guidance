@@ -340,11 +340,14 @@ def _handle_request(msg: dict) -> dict | None:
         return None
 
     if method == "initialize":
-        result = _result_response(req_id, {
-            "protocolVersion": PROTOCOL_VERSION,
-            "capabilities": {"tools": {}},
-            "serverInfo": {"name": "modern-python-guidance", "version": __version__},
-        })
+        result = _result_response(
+            req_id,
+            {
+                "protocolVersion": PROTOCOL_VERSION,
+                "capabilities": {"tools": {}},
+                "serverInfo": {"name": "modern-python-guidance", "version": __version__},
+            },
+        )
         return None if is_notification else result
 
     if method == "tools/list":
