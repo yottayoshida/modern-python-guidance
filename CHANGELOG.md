@@ -2,7 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
-## [0.3.3] — 2026-05-30
+## [0.3.4] — 2026-05-30
+
+### Fixed
+
+- v0.3.3 shipped with `__version__ = "0.3.2"` in `__init__.py` (pyproject.toml was correct). This release fixes the version string
+
+## [0.3.3] — 2026-05-30 (yanked — `__version__` mismatch)
 
 ### Added
 
