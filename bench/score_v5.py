@@ -1476,14 +1476,17 @@ def main() -> None:
         "c": "C (pytest)",
     }
     v_label = variant_labels.get(args.variant, args.variant)
-    print(f"=== V5 Scoring: Variant {v_label}, Run {args.run_id} ===")
-    print()
+
+    if args.output_format == "human":
+        print(f"=== V5 Scoring: Variant {v_label}, Run {args.run_id} ===")
+        print()
 
     output = {}
     for session_name in ("control", "treatment"):
         session_dir = results_dir / session_name
         if not session_dir.is_dir():
-            print(f"  [{session_name}] Directory not found, skipping.")
+            if args.output_format == "human":
+                print(f"  [{session_name}] Directory not found, skipping.")
             continue
         data = score_session(session_dir, args.variant)
         output[session_name] = data
