@@ -2,6 +2,20 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.3.5] — 2026-05-30
+
+### Added
+
+- CI format gate: `ruff format --check src/ tests/` runs before linter, catching formatting regressions at PR time (closes #19)
+- Coverage reporting: `pytest-cov` with branch coverage and `fail_under = 59%` ratchet threshold (closes #15)
+- Guide structure validation: 248 parametrized tests validating all 41 guides — frontmatter fields, section order, code fences, H1 title, no duplicate IDs (closes #16)
+- CONTRIBUTING.md: documented CI checks, format fix command, and guide count update step
+
+### Changed
+
+- Auto-formatted 12 existing source/test files with `ruff format` (whitespace only, no logic changes)
+- CI step order: checkout → setup → install → **format check** → linter → tests (with `--cov`)
+
 ## [0.3.4] — 2026-05-30
 
 ### Fixed

@@ -37,13 +37,25 @@ See [docs/design.md](docs/design.md) for the full design document.
 | `frequency` | string | `high` (LLMs do this often), `medium`, `low` |
 
 3. Write BAD/GOOD/Why/Version Notes sections
-4. Run `pytest` to verify the guide parses correctly
+4. Update `EXPECTED_GUIDE_COUNT` in `tests/test_guide_structure.py`
+5. Run `pytest` — the guide structure tests validate frontmatter, section order, and code fences automatically
 
 ## Running tests
 
 ```bash
 uv venv && source .venv/bin/activate
 uv pip install -e ".[dev]"
-pytest
-ruff check src/ tests/
+pytest                              # 510+ tests including guide structure validation
+ruff check src/ tests/              # lint
+ruff format --check src/ tests/     # format check (CI enforced)
 ```
+
+To auto-fix formatting: `ruff format src/ tests/`
+
+## CI checks
+
+All PRs run these checks on Python 3.11, 3.12, and 3.13:
+
+1. `ruff format --check` — formatting
+2. `ruff check` — linting
+3. `pytest --cov` — tests with branch coverage (`fail_under = 59%`)
