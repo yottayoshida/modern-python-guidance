@@ -9,7 +9,7 @@ Stop your AI from writing `typing.List`, `@validator`, and `setup.py`. 41 versio
 
 ## Highlights
 
-- **Measurable impact**: +14.7pp overall improvement in A/B benchmark via Agent Skills (38 scored items, [details](docs/benchmark-evaluation.md)). Largest variant (FastAPI, 32 items): Control 60.4% → Treatment 82.3%
+- **Measurable impact**: AI writes modern Python 98% of the time with mpg, vs 79% without — even with vague prompts (Opus 4.8, [V5 benchmark details](docs/benchmark-v5.md))
 - **41 guides** across stdlib, Pydantic, FastAPI, Django, SQLAlchemy, pytest, and toolchain
 - **Version-aware**: auto-detects your project's Python version and filters guides accordingly
 - **3 delivery methods**: MCP server, CLI, Agent Skills plugin
