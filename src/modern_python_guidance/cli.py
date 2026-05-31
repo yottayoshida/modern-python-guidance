@@ -74,10 +74,12 @@ def main(argv: list[str] | None = None) -> None:
     # setup
     p_setup = subparsers.add_parser(
         "setup",
-        help="Register MCP server and link Agent Skills",
+        help="Register MCP server and link Agent Skills + Rules",
     )
     p_setup.add_argument("--mcp-only", action="store_true", help="MCP registration only")
-    p_setup.add_argument("--skills-only", action="store_true", help="Skills symlink only")
+    p_setup.add_argument(
+        "--skills-only", action="store_true", help="Project-local artifacts only (Skills + Rules)"
+    )
     p_setup.add_argument(
         "--scope",
         choices=["user", "local"],
@@ -87,21 +89,25 @@ def main(argv: list[str] | None = None) -> None:
     p_setup.add_argument(
         "--project-dir",
         type=Path,
-        help="Project directory for Skills symlink",
+        help="Project directory for Skills/Rules symlinks",
     )
     p_setup.add_argument("--dry-run", action="store_true", help="Show what would be done")
 
     # uninstall
     p_uninstall = subparsers.add_parser(
         "uninstall",
-        help="Reverse 'setup': deregister MCP server and unlink Agent Skills",
+        help="Reverse 'setup': deregister MCP server and unlink Agent Skills + Rules",
     )
     p_uninstall.add_argument("--mcp-only", action="store_true", help="MCP deregistration only")
-    p_uninstall.add_argument("--skills-only", action="store_true", help="Skills unlink only")
+    p_uninstall.add_argument(
+        "--skills-only",
+        action="store_true",
+        help="Project-local artifacts only (Skills + Rules)",
+    )
     p_uninstall.add_argument(
         "--project-dir",
         type=Path,
-        help="Project directory for Skills symlink",
+        help="Project directory for Skills/Rules symlinks",
     )
     p_uninstall.add_argument("--dry-run", action="store_true", help="Show what would be done")
 

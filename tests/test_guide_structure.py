@@ -18,6 +18,7 @@ import pytest
 
 from modern_python_guidance.frontmatter import parse_frontmatter
 from modern_python_guidance.guide_index import _find_guides_dir
+from modern_python_guidance.setup_cmd import _build_rule_text
 
 GUIDES_DIR = _find_guides_dir()
 EXPECTED_GUIDE_COUNT = 41
@@ -110,6 +111,56 @@ class TestGuideStructure:
         text = guide_file.read_text(encoding="utf-8")
         _, body = parse_frontmatter(text)
         assert body.startswith("# "), "body does not start with H1 heading"
+
+
+class TestRuleFileSync:
+    """CI sync tests: rules/modern-python.md body matches SKILL.md body."""
+
+    def _skill_body(self) -> str:
+        skill_md = (GUIDES_DIR.parent / "SKILL.md").read_text(encoding="utf-8")
+        parts = skill_md.split("---", 2)
+        return parts[2].lstrip("\n")
+
+    def _rule_path(self) -> Path:
+        return GUIDES_DIR.parent.parent.parent / "rules" / "modern-python.md"
+
+    def _rule_parts(self) -> tuple[str, str]:
+        text = self._rule_path().read_text(encoding="utf-8")
+        parts = text.split("---", 2)
+        return parts[1].strip(), parts[2].lstrip("\n")
+
+    def test_body_matches_skill(self):
+        """rules/modern-python.md body == SKILL.md body (content sync)."""
+        skill_body = self._skill_body()
+        _, rule_body = self._rule_parts()
+        assert rule_body == skill_body
+
+    def test_matches_build_rule_text(self):
+        """rules/modern-python.md == _build_rule_text() output (SoT enforcement)."""
+        actual = self._rule_path().read_text(encoding="utf-8")
+        expected = _build_rule_text()
+        assert actual == expected
+
+    def test_frontmatter_has_paths(self):
+        """rules/modern-python.md frontmatter contains expected paths patterns."""
+        fm, _ = self._rule_parts()
+        for pattern in [
+            "**/*.py",
+            "*.py",
+            "**/pyproject.toml",
+            "**/requirements*.txt",
+            "**/setup.py",
+            "**/setup.cfg",
+            "**/.python-version",
+            "**/Pipfile",
+        ]:
+            assert pattern in fm, f"missing path pattern: {pattern}"
+
+    def test_frontmatter_no_name_or_description(self):
+        """rules/modern-python.md frontmatter has NO name/description keys."""
+        fm, _ = self._rule_parts()
+        assert "name:" not in fm
+        assert "description:" not in fm
 
 
 class TestGuideInventory:

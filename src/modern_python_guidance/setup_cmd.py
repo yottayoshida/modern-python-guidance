@@ -11,7 +11,15 @@ import sys
 from pathlib import Path
 
 SKILLS_LINK_NAME = "modern-python-guidance"
+RULE_FILE_NAME = "modern-python.md"
 MCP_SERVER_NAME = "mpg"
+
+RULE_FRONTMATTER = (
+    "---\n"
+    'paths: ["**/*.py", "*.py", "**/pyproject.toml", "**/requirements*.txt",'
+    ' "**/setup.py", "**/setup.cfg", "**/.python-version", "**/Pipfile"]\n'
+    "---"
+)
 
 
 def _find_skills_dir() -> Path:
@@ -30,6 +38,25 @@ def _find_skills_dir() -> Path:
         return dev_path
 
     msg = "Cannot locate bundled skills directory"
+    raise FileNotFoundError(msg)
+
+
+def _find_rule_source() -> Path:
+    """Resolve the bundled rule file (package install or editable)."""
+    try:
+        pkg = importlib.resources.files("modern_python_guidance") / "rules"
+        rule_path = Path(str(pkg)) / RULE_FILE_NAME
+        if rule_path.is_file():
+            return rule_path
+    except (TypeError, FileNotFoundError):
+        pass
+
+    src_root = Path(__file__).resolve().parent.parent.parent
+    dev_path = src_root / "rules" / RULE_FILE_NAME
+    if dev_path.is_file():
+        return dev_path
+
+    msg = "Cannot locate bundled rule file"
     raise FileNotFoundError(msg)
 
 
@@ -63,6 +90,26 @@ def _skills_link_path(project_dir: Path | None = None) -> Path:
     return root / ".claude" / "skills" / SKILLS_LINK_NAME
 
 
+def _rules_file_path(project_dir: Path | None = None) -> Path:
+    """Resolve the rule file symlink path: ``<root>/.claude/rules/modern-python.md``."""
+    root = project_dir or _find_project_root()
+    return root / ".claude" / "rules" / RULE_FILE_NAME
+
+
+def _build_rule_text() -> str:
+    """Generate rule file content from SKILL.md body with rule-specific frontmatter.
+
+    Used by CI sync tests to verify the bundled ``rules/modern-python.md`` matches
+    what would be generated from SKILL.md. Strips SKILL.md frontmatter and prepends
+    rule-only frontmatter (no name/description keys).
+    """
+    skills_dir = _find_skills_dir()
+    skill_md = (skills_dir / "SKILL.md").read_text(encoding="utf-8")
+    parts = skill_md.split("---", 2)
+    body = parts[2].lstrip("\n")
+    return RULE_FRONTMATTER + "\n\n" + body
+
+
 def setup_mcp(
     *,
     scope: str = "user",
@@ -80,7 +127,7 @@ def setup_mcp(
         print("Error: 'claude' command not found.", file=sys.stderr)
         print("Install Claude Code: https://claude.ai/download", file=sys.stderr)
         print(
-            "Run 'mpg setup --skills-only' to set up Agent Skills without MCP.",
+            "Run 'mpg setup --skills-only' to set up project-local artifacts without MCP.",
             file=sys.stderr,
         )
         return False
@@ -156,6 +203,58 @@ def setup_skills(
     return True
 
 
+def setup_rules(
+    *,
+    project_dir: Path | None = None,
+    dry_run: bool = False,
+) -> bool:
+    """Create a rule file symlink. Returns True on success."""
+    try:
+        source = _find_rule_source()
+    except FileNotFoundError as e:
+        print(f"Error: {e}", file=sys.stderr)
+        return False
+
+    if source.is_symlink():
+        print("Error: rule source is itself a symlink (unexpected).", file=sys.stderr)
+        return False
+
+    root = project_dir or _find_project_root()
+    link_path = _rules_file_path(project_dir)
+    rules_parent = link_path.parent
+
+    if dry_run:
+        print(f"Would link: {link_path} -> {source}")
+        return True
+
+    if link_path.is_symlink():
+        current_target = Path(os.readlink(link_path))
+        if current_target == source or link_path.resolve() == source.resolve():
+            print(f"Rule already linked at {link_path.relative_to(root)}")
+            return True
+        link_path.unlink()
+    elif link_path.exists():
+        print(
+            f"Error: {link_path.relative_to(root)} exists and is not a symlink.",
+            file=sys.stderr,
+        )
+        print(
+            f"Remove it manually: rm {shlex.quote(str(link_path))}",
+            file=sys.stderr,
+        )
+        return False
+
+    try:
+        rules_parent.mkdir(parents=True, exist_ok=True)
+        os.symlink(source, link_path)
+    except OSError as e:
+        print(f"Error creating symlink: {e}", file=sys.stderr)
+        return False
+
+    print(f"Rule linked to {link_path.relative_to(root)}")
+    return True
+
+
 def run_setup(
     *,
     scope: str = "user",
@@ -171,9 +270,11 @@ def run_setup(
 
     do_mcp = not skills_only
     do_skills = not mcp_only
+    do_rules = not mcp_only
 
     mcp_ok = True
     skills_ok = True
+    rules_ok = True
 
     if do_mcp:
         mcp_ok = setup_mcp(scope=scope, dry_run=dry_run)
@@ -181,7 +282,10 @@ def run_setup(
     if do_skills:
         skills_ok = setup_skills(project_dir=project_dir, dry_run=dry_run)
 
-    if mcp_ok and skills_ok:
+    if do_rules:
+        rules_ok = setup_rules(project_dir=project_dir, dry_run=dry_run)
+
+    if mcp_ok and skills_ok and rules_ok:
         if not dry_run and do_mcp and do_skills:
             print("Ready. Start Claude Code to use mpg guides.")
         return 0

@@ -11,6 +11,7 @@ from pathlib import Path
 from modern_python_guidance.setup_cmd import (
     MCP_SERVER_NAME,
     _find_project_root,
+    _rules_file_path,
     _skills_link_path,
 )
 
@@ -48,7 +49,7 @@ def uninstall_mcp(*, dry_run: bool = False) -> bool:
         print("Error: 'claude' command not found.", file=sys.stderr)
         print("Install Claude Code: https://claude.ai/download", file=sys.stderr)
         print(
-            "Run 'mpg uninstall --skills-only' to remove Agent Skills without MCP.",
+            "Run 'mpg uninstall --skills-only' to remove project-local artifacts without MCP.",
             file=sys.stderr,
         )
         return False
@@ -139,6 +140,47 @@ def uninstall_skills(
     return True
 
 
+def uninstall_rules(
+    *,
+    project_dir: Path | None = None,
+    dry_run: bool = False,
+) -> bool:
+    """Remove the rule file symlink. Returns True on success.
+
+    Only a symlink is removed. A non-symlink entity at the path is refused.
+    Idempotent: if no symlink is present, this is a no-op success.
+    """
+    root = project_dir or _find_project_root()
+    link_path = _rules_file_path(project_dir)
+
+    if not link_path.is_symlink():
+        if link_path.exists():
+            print(
+                f"Error: {link_path.relative_to(root)} exists and is not a symlink.",
+                file=sys.stderr,
+            )
+            print(
+                f"Remove it manually: rm {shlex.quote(str(link_path))}",
+                file=sys.stderr,
+            )
+            return False
+        print(f"Rule not linked at {link_path.relative_to(root)} — nothing to remove.")
+        return True
+
+    if dry_run:
+        print(f"Would remove: {link_path}")
+        return True
+
+    try:
+        link_path.unlink()
+    except OSError as e:
+        print(f"Error removing symlink: {e}", file=sys.stderr)
+        return False
+
+    print(f"Rule unlinked from {link_path.relative_to(root)}")
+    return True
+
+
 def run_uninstall(
     *,
     mcp_only: bool = False,
@@ -153,9 +195,11 @@ def run_uninstall(
 
     do_mcp = not skills_only
     do_skills = not mcp_only
+    do_rules = not mcp_only
 
     mcp_ok = True
     skills_ok = True
+    rules_ok = True
 
     if do_mcp:
         mcp_ok = uninstall_mcp(dry_run=dry_run)
@@ -163,7 +207,10 @@ def run_uninstall(
     if do_skills:
         skills_ok = uninstall_skills(project_dir=project_dir, dry_run=dry_run)
 
-    if mcp_ok and skills_ok:
+    if do_rules:
+        rules_ok = uninstall_rules(project_dir=project_dir, dry_run=dry_run)
+
+    if mcp_ok and skills_ok and rules_ok:
         if not dry_run and do_mcp and do_skills:
             print("Done. mpg has been removed.")
         return 0

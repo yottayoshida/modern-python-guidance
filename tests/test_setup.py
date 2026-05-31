@@ -11,10 +11,13 @@ from unittest.mock import patch
 import pytest
 
 from modern_python_guidance.setup_cmd import (
+    RULE_FILE_NAME,
     _find_project_root,
+    _find_rule_source,
     _find_skills_dir,
     run_setup,
     setup_mcp,
+    setup_rules,
     setup_skills,
 )
 
@@ -320,73 +323,225 @@ class TestSetupSkills:
         assert "Would link" in capsys.readouterr().out
 
 
+# --- _find_rule_source ---
+
+
+class TestFindRuleSource:
+    def test_returns_existing_file(self):
+        result = _find_rule_source()
+        assert result.is_file()
+        assert result.name == RULE_FILE_NAME
+
+
+# --- setup_rules ---
+
+
+class TestSetupRules:
+    """V-037 through V-048: rule symlink creation tests."""
+
+    def _make_source(self, tmp_path: Path) -> Path:
+        source = tmp_path / "pkg_rules" / RULE_FILE_NAME
+        source.parent.mkdir(parents=True)
+        source.write_text("---\npaths: ['**/*.py']\n---\n# Test\n")
+        return source
+
+    def test_creates_symlink(self, tmp_path: Path, capsys: pytest.CaptureFixture[str]):
+        """V-037: creates .claude/rules/ and symlink."""
+        source = self._make_source(tmp_path)
+        project = tmp_path / "project"
+        project.mkdir()
+
+        with patch("modern_python_guidance.setup_cmd._find_rule_source", return_value=source):
+            ok = setup_rules(project_dir=project)
+
+        assert ok is True
+        link = project / ".claude" / "rules" / RULE_FILE_NAME
+        assert link.is_symlink()
+        assert "Rule linked" in capsys.readouterr().out
+
+    def test_symlink_target_resolves(self, tmp_path: Path):
+        """V-038: symlink target resolves to the bundled rule file."""
+        source = self._make_source(tmp_path)
+        project = tmp_path / "project"
+        project.mkdir()
+
+        with patch("modern_python_guidance.setup_cmd._find_rule_source", return_value=source):
+            setup_rules(project_dir=project)
+
+        link = project / ".claude" / "rules" / RULE_FILE_NAME
+        assert link.resolve() == source.resolve()
+
+    def test_creates_rules_dir(self, tmp_path: Path):
+        """V-039: creates .claude/rules/ directory if absent."""
+        source = self._make_source(tmp_path)
+        project = tmp_path / "project"
+        project.mkdir()
+        assert not (project / ".claude" / "rules").exists()
+
+        with patch("modern_python_guidance.setup_cmd._find_rule_source", return_value=source):
+            setup_rules(project_dir=project)
+
+        assert (project / ".claude" / "rules").is_dir()
+
+    def test_correct_symlink_skips(self, tmp_path: Path, capsys: pytest.CaptureFixture[str]):
+        """V-040: existing correct symlink is skipped (idempotent)."""
+        source = self._make_source(tmp_path)
+        project = tmp_path / "project"
+        link = project / ".claude" / "rules" / RULE_FILE_NAME
+        link.parent.mkdir(parents=True)
+        os.symlink(source, link)
+
+        with patch("modern_python_guidance.setup_cmd._find_rule_source", return_value=source):
+            ok = setup_rules(project_dir=project)
+
+        assert ok is True
+        assert "already linked" in capsys.readouterr().out
+
+    def test_stale_symlink_replaced(self, tmp_path: Path):
+        """V-041: stale symlink pointing to wrong target is replaced."""
+        source = self._make_source(tmp_path)
+        old = tmp_path / "old_rule.md"
+        old.touch()
+        project = tmp_path / "project"
+        link = project / ".claude" / "rules" / RULE_FILE_NAME
+        link.parent.mkdir(parents=True)
+        os.symlink(old, link)
+
+        with patch("modern_python_guidance.setup_cmd._find_rule_source", return_value=source):
+            ok = setup_rules(project_dir=project)
+
+        assert ok is True
+        assert link.resolve() == source.resolve()
+
+    def test_broken_symlink_replaced(self, tmp_path: Path):
+        """V-042: broken (dangling) symlink is replaced."""
+        source = self._make_source(tmp_path)
+        project = tmp_path / "project"
+        link = project / ".claude" / "rules" / RULE_FILE_NAME
+        link.parent.mkdir(parents=True)
+        os.symlink(tmp_path / "nonexistent", link)
+        assert link.is_symlink()
+        assert not link.exists()
+
+        with patch("modern_python_guidance.setup_cmd._find_rule_source", return_value=source):
+            ok = setup_rules(project_dir=project)
+
+        assert ok is True
+        assert link.resolve() == source.resolve()
+
+    def test_non_symlink_blocker(self, tmp_path: Path, capsys: pytest.CaptureFixture[str]):
+        """V-043: non-symlink file at path produces error."""
+        source = self._make_source(tmp_path)
+        project = tmp_path / "project"
+        blocker = project / ".claude" / "rules" / RULE_FILE_NAME
+        blocker.parent.mkdir(parents=True)
+        blocker.write_text("user content")
+
+        with patch("modern_python_guidance.setup_cmd._find_rule_source", return_value=source):
+            ok = setup_rules(project_dir=project)
+
+        assert ok is False
+        err = capsys.readouterr().err
+        assert "not a symlink" in err
+        assert "rm " in err
+
+    def test_dry_run(self, tmp_path: Path, capsys: pytest.CaptureFixture[str]):
+        """V-044: dry-run does not create symlink."""
+        source = self._make_source(tmp_path)
+        project = tmp_path / "project"
+        project.mkdir()
+
+        with patch("modern_python_guidance.setup_cmd._find_rule_source", return_value=source):
+            ok = setup_rules(project_dir=project, dry_run=True)
+
+        assert ok is True
+        link = project / ".claude" / "rules" / RULE_FILE_NAME
+        assert not link.exists()
+        assert "Would link" in capsys.readouterr().out
+
+    def test_symlink_source_refused(self, tmp_path: Path, capsys: pytest.CaptureFixture[str]):
+        """Security: source that is itself a symlink is refused."""
+        real = self._make_source(tmp_path)
+        fake_source = tmp_path / "symlink_source.md"
+        os.symlink(real, fake_source)
+        project = tmp_path / "project"
+        project.mkdir()
+
+        with patch("modern_python_guidance.setup_cmd._find_rule_source", return_value=fake_source):
+            ok = setup_rules(project_dir=project)
+
+        assert ok is False
+        assert "itself a symlink" in capsys.readouterr().err
+
+
 # --- run_setup (orchestrator) ---
 
 
 class TestRunSetup:
-    """V-012, V-013, V-014: exit codes and partial success."""
+    """V-012, V-013, V-014, V-045~V-048, V-058~V-060: exit codes and partial success."""
+
+    def _patch_all(self, mcp=True, skills=True, rules=True):
+        return (
+            patch("modern_python_guidance.setup_cmd.setup_mcp", return_value=mcp),
+            patch("modern_python_guidance.setup_cmd.setup_skills", return_value=skills),
+            patch("modern_python_guidance.setup_cmd.setup_rules", return_value=rules),
+        )
 
     def test_full_success(self):
-        """V-012: exit 0 on full success."""
-        with (
-            patch("modern_python_guidance.setup_cmd.setup_mcp", return_value=True),
-            patch("modern_python_guidance.setup_cmd.setup_skills", return_value=True),
-        ):
+        """V-012 / V-045: exit 0 on full success (MCP + Skills + Rules)."""
+        p_mcp, p_skills, p_rules = self._patch_all()
+        with p_mcp, p_skills, p_rules:
             assert run_setup() == 0
 
     def test_mcp_only(self):
-        with (
-            patch("modern_python_guidance.setup_cmd.setup_mcp", return_value=True) as m_mcp,
-            patch("modern_python_guidance.setup_cmd.setup_skills") as m_skills,
-        ):
+        """V-046: --mcp-only skips Skills and Rules."""
+        p_mcp, p_skills, p_rules = self._patch_all()
+        with p_mcp as m_mcp, p_skills as m_skills, p_rules as m_rules:
             assert run_setup(mcp_only=True) == 0
             m_mcp.assert_called_once()
             m_skills.assert_not_called()
+            m_rules.assert_not_called()
 
     def test_skills_only(self):
-        with (
-            patch("modern_python_guidance.setup_cmd.setup_mcp") as m_mcp,
-            patch("modern_python_guidance.setup_cmd.setup_skills", return_value=True) as m_skills,
-        ):
+        """V-047: --skills-only includes Rules but skips MCP."""
+        p_mcp, p_skills, p_rules = self._patch_all()
+        with p_mcp as m_mcp, p_skills as m_skills, p_rules as m_rules:
             assert run_setup(skills_only=True) == 0
             m_mcp.assert_not_called()
             m_skills.assert_called_once()
+            m_rules.assert_called_once()
 
-    def test_partial_success_mcp_fail(self):
-        """V-014: MCP fails but Skills succeeds → exit 1."""
-        with (
-            patch("modern_python_guidance.setup_cmd.setup_mcp", return_value=False),
-            patch("modern_python_guidance.setup_cmd.setup_skills", return_value=True),
-        ):
+    def test_partial_mcp_fail(self):
+        """V-014 / V-058: MCP fails but Skills+Rules succeed → exit 1."""
+        p_mcp, p_skills, p_rules = self._patch_all(mcp=False)
+        with p_mcp, p_skills, p_rules:
             assert run_setup() == 1
 
-    def test_partial_success_skills_fail(self):
-        """V-014: MCP succeeds but Skills fails → exit 1."""
-        with (
-            patch("modern_python_guidance.setup_cmd.setup_mcp", return_value=True),
-            patch("modern_python_guidance.setup_cmd.setup_skills", return_value=False),
-        ):
+    def test_partial_skills_fail(self):
+        """V-059: MCP+Rules ok, Skills fails → exit 1."""
+        p_mcp, p_skills, p_rules = self._patch_all(skills=False)
+        with p_mcp, p_skills, p_rules:
+            assert run_setup() == 1
+
+    def test_partial_rules_fail(self):
+        """V-048: MCP+Skills ok, Rules fails → exit 1."""
+        p_mcp, p_skills, p_rules = self._patch_all(rules=False)
+        with p_mcp, p_skills, p_rules:
             assert run_setup() == 1
 
     def test_full_failure(self):
-        """V-012: exit 1 on full failure."""
-        with (
-            patch("modern_python_guidance.setup_cmd.setup_mcp", return_value=False),
-            patch("modern_python_guidance.setup_cmd.setup_skills", return_value=False),
-        ):
+        """V-060: all three fail → exit 1."""
+        p_mcp, p_skills, p_rules = self._patch_all(mcp=False, skills=False, rules=False)
+        with p_mcp, p_skills, p_rules:
             assert run_setup() == 1
 
     def test_dry_run_no_ready_message(self, capsys: pytest.CaptureFixture[str]):
-        """dry-run suppresses the 'Ready' completion message."""
-        with (
-            patch("modern_python_guidance.setup_cmd.setup_mcp", return_value=True),
-            patch("modern_python_guidance.setup_cmd.setup_skills", return_value=True),
-        ):
+        p_mcp, p_skills, p_rules = self._patch_all()
+        with p_mcp, p_skills, p_rules:
             assert run_setup(dry_run=True) == 0
         assert "Ready" not in capsys.readouterr().out
 
     def test_mutual_exclusion(self, capsys: pytest.CaptureFixture[str]):
-        """--mcp-only and --skills-only together returns error."""
         code = run_setup(mcp_only=True, skills_only=True)
         assert code == 1
         assert "mutually exclusive" in capsys.readouterr().err
