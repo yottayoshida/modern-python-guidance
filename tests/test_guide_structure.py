@@ -145,8 +145,14 @@ class TestRuleFileSync:
         """rules/modern-python.md frontmatter contains expected paths patterns."""
         fm, _ = self._rule_parts()
         for pattern in [
-            "**/*.py", "*.py", "**/pyproject.toml", "**/requirements*.txt",
-            "**/setup.py", "**/setup.cfg", "**/.python-version", "**/Pipfile",
+            "**/*.py",
+            "*.py",
+            "**/pyproject.toml",
+            "**/requirements*.txt",
+            "**/setup.py",
+            "**/setup.cfg",
+            "**/.python-version",
+            "**/Pipfile",
         ]:
             assert pattern in fm, f"missing path pattern: {pattern}"
 
