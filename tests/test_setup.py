@@ -489,7 +489,8 @@ class TestRunSetup:
 
     def test_full_success(self):
         """V-012 / V-045: exit 0 on full success (MCP + Skills + Rules)."""
-        with self._patch_all()[0], self._patch_all()[1], self._patch_all()[2]:
+        p_mcp, p_skills, p_rules = self._patch_all()
+        with p_mcp, p_skills, p_rules:
             assert run_setup() == 0
 
     def test_mcp_only(self):
@@ -511,7 +512,7 @@ class TestRunSetup:
             m_rules.assert_called_once()
 
     def test_partial_mcp_fail(self):
-        """V-014: MCP fails but Skills+Rules succeed → exit 1."""
+        """V-014 / V-058: MCP fails but Skills+Rules succeed → exit 1."""
         p_mcp, p_skills, p_rules = self._patch_all(mcp=False)
         with p_mcp, p_skills, p_rules:
             assert run_setup() == 1
@@ -525,12 +526,6 @@ class TestRunSetup:
     def test_partial_rules_fail(self):
         """V-048: MCP+Skills ok, Rules fails → exit 1."""
         p_mcp, p_skills, p_rules = self._patch_all(rules=False)
-        with p_mcp, p_skills, p_rules:
-            assert run_setup() == 1
-
-    def test_mcp_fail_others_ok(self):
-        """V-058: MCP fails, Skills+Rules ok → exit 1."""
-        p_mcp, p_skills, p_rules = self._patch_all(mcp=False)
         with p_mcp, p_skills, p_rules:
             assert run_setup() == 1
 
