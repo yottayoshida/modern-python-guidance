@@ -2,6 +2,22 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.3.6] — 2026-05-31
+
+### Added
+
+- Rule-based delivery via symlink: `mpg setup` creates `.claude/rules/modern-python.md` that auto-injects modern Python guidance whenever Python-related files are touched, replacing reliance on probabilistic skill matching (closes #79)
+- `setup_rules()` / `uninstall_rules()` mirroring skills symlink pattern
+- `source.is_symlink()` security check to refuse symlink-to-symlink chains
+- CI sync test enforcing SKILL.md body == rule body consistency
+- 21 new tests (V-037 to V-060) for setup, uninstall, CI sync, and security
+
+### Changed
+
+- `--skills-only` now includes Rules (both are project-local artifacts)
+- README updated to document 4 delivery methods (was 3)
+- `--project-dir` help text updated to mention Skills/Rules symlinks
+
 ## [0.3.5] — 2026-05-30
 
 ### Added
