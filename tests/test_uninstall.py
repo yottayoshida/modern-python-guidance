@@ -13,9 +13,11 @@ from unittest.mock import patch
 
 import pytest
 
+from modern_python_guidance.setup_cmd import RULE_FILE_NAME
 from modern_python_guidance.uninstall_cmd import (
     run_uninstall,
     uninstall_mcp,
+    uninstall_rules,
     uninstall_skills,
 )
 
@@ -258,69 +260,149 @@ class TestUninstallSkills:
         assert "'" in err or '"' in err
 
 
+# --- uninstall_rules ---
+
+
+class TestUninstallRules:
+    """V-049 through V-055: rule symlink removal."""
+
+    def _make_source(self, tmp_path: Path) -> Path:
+        source = tmp_path / "pkg_rules" / RULE_FILE_NAME
+        source.parent.mkdir(parents=True)
+        source.write_text("---\npaths: ['**/*.py']\n---\n# Test\n")
+        return source
+
+    def _link(self, project: Path) -> Path:
+        return project / ".claude" / "rules" / RULE_FILE_NAME
+
+    def test_removes_symlink(self, tmp_path: Path, capsys):
+        """V-049: symlink is removed; target survives."""
+        source = self._make_source(tmp_path)
+        project = tmp_path / "project"
+        link = self._link(project)
+        link.parent.mkdir(parents=True)
+        os.symlink(source, link)
+
+        ok = uninstall_rules(project_dir=project)
+
+        assert ok is True
+        assert not link.is_symlink()
+        assert not link.exists()
+        assert source.is_file()
+        assert "unlinked" in capsys.readouterr().out
+
+    def test_absent_is_success(self, tmp_path: Path, capsys):
+        """V-050: no symlink present -> idempotent no-op success."""
+        project = tmp_path / "project"
+        project.mkdir()
+        ok = uninstall_rules(project_dir=project)
+        assert ok is True
+        assert "nothing to remove" in capsys.readouterr().out
+
+    def test_non_symlink_refused(self, tmp_path: Path, capsys):
+        """V-051: regular file at path is refused."""
+        project = tmp_path / "project"
+        blocker = self._link(project)
+        blocker.parent.mkdir(parents=True)
+        blocker.write_text("user content")
+
+        ok = uninstall_rules(project_dir=project)
+
+        assert ok is False
+        err = capsys.readouterr().err
+        assert "not a symlink" in err
+        assert blocker.read_text() == "user content"
+
+    def test_dry_run(self, tmp_path: Path, capsys):
+        """V-052: dry-run does not remove."""
+        source = self._make_source(tmp_path)
+        project = tmp_path / "project"
+        link = self._link(project)
+        link.parent.mkdir(parents=True)
+        os.symlink(source, link)
+
+        ok = uninstall_rules(project_dir=project, dry_run=True)
+
+        assert ok is True
+        assert link.is_symlink()
+        assert "Would remove" in capsys.readouterr().out
+
+    def test_broken_symlink_removed(self, tmp_path: Path):
+        """Dangling symlink (target gone) is still removed."""
+        project = tmp_path / "project"
+        link = self._link(project)
+        link.parent.mkdir(parents=True)
+        os.symlink(tmp_path / "nonexistent", link)
+
+        ok = uninstall_rules(project_dir=project)
+
+        assert ok is True
+        assert not link.is_symlink()
+
+
 # --- run_uninstall (orchestrator) ---
 
 
 class TestRunUninstall:
-    """V-026, V-027: exit codes, partial success, mutual exclusion."""
+    """V-026, V-027, V-053~V-055: exit codes, partial success, mutual exclusion."""
+
+    def _patch_all(self, mcp=True, skills=True, rules=True):
+        return (
+            patch("modern_python_guidance.uninstall_cmd.uninstall_mcp", return_value=mcp),
+            patch("modern_python_guidance.uninstall_cmd.uninstall_skills", return_value=skills),
+            patch("modern_python_guidance.uninstall_cmd.uninstall_rules", return_value=rules),
+        )
 
     def test_full_success(self):
-        with (
-            patch("modern_python_guidance.uninstall_cmd.uninstall_mcp", return_value=True),
-            patch("modern_python_guidance.uninstall_cmd.uninstall_skills", return_value=True),
-        ):
+        """V-053: exit 0 on full success (MCP + Skills + Rules)."""
+        p_mcp, p_skills, p_rules = self._patch_all()
+        with p_mcp, p_skills, p_rules:
             assert run_uninstall() == 0
 
     def test_mcp_only(self):
-        with (
-            patch(
-                "modern_python_guidance.uninstall_cmd.uninstall_mcp", return_value=True
-            ) as m_mcp,
-            patch("modern_python_guidance.uninstall_cmd.uninstall_skills") as m_skills,
-        ):
+        """V-054: --mcp-only skips Skills and Rules."""
+        p_mcp, p_skills, p_rules = self._patch_all()
+        with p_mcp as m_mcp, p_skills as m_skills, p_rules as m_rules:
             assert run_uninstall(mcp_only=True) == 0
             m_mcp.assert_called_once()
             m_skills.assert_not_called()
+            m_rules.assert_not_called()
 
     def test_skills_only(self):
-        with (
-            patch("modern_python_guidance.uninstall_cmd.uninstall_mcp") as m_mcp,
-            patch(
-                "modern_python_guidance.uninstall_cmd.uninstall_skills", return_value=True
-            ) as m_skills,
-        ):
+        """V-055: --skills-only includes Rules but skips MCP."""
+        p_mcp, p_skills, p_rules = self._patch_all()
+        with p_mcp as m_mcp, p_skills as m_skills, p_rules as m_rules:
             assert run_uninstall(skills_only=True) == 0
             m_mcp.assert_not_called()
             m_skills.assert_called_once()
+            m_rules.assert_called_once()
 
     def test_partial_mcp_fail(self):
-        """V-026: MCP fails but Skills succeeds -> exit 1."""
-        with (
-            patch("modern_python_guidance.uninstall_cmd.uninstall_mcp", return_value=False),
-            patch("modern_python_guidance.uninstall_cmd.uninstall_skills", return_value=True),
-        ):
+        """V-026: MCP fails but Skills+Rules succeed -> exit 1."""
+        p_mcp, p_skills, p_rules = self._patch_all(mcp=False)
+        with p_mcp, p_skills, p_rules:
             assert run_uninstall() == 1
 
     def test_partial_skills_fail(self):
-        """V-026: MCP succeeds but Skills fails -> exit 1."""
-        with (
-            patch("modern_python_guidance.uninstall_cmd.uninstall_mcp", return_value=True),
-            patch("modern_python_guidance.uninstall_cmd.uninstall_skills", return_value=False),
-        ):
+        """V-026: MCP+Rules ok, Skills fails -> exit 1."""
+        p_mcp, p_skills, p_rules = self._patch_all(skills=False)
+        with p_mcp, p_skills, p_rules:
+            assert run_uninstall() == 1
+
+    def test_partial_rules_fail(self):
+        """Rules fails, others ok -> exit 1."""
+        p_mcp, p_skills, p_rules = self._patch_all(rules=False)
+        with p_mcp, p_skills, p_rules:
             assert run_uninstall() == 1
 
     def test_full_failure(self):
-        with (
-            patch("modern_python_guidance.uninstall_cmd.uninstall_mcp", return_value=False),
-            patch("modern_python_guidance.uninstall_cmd.uninstall_skills", return_value=False),
-        ):
+        p_mcp, p_skills, p_rules = self._patch_all(mcp=False, skills=False, rules=False)
+        with p_mcp, p_skills, p_rules:
             assert run_uninstall() == 1
 
     def test_dry_run_no_done_message(self, capsys: pytest.CaptureFixture[str]):
-        with (
-            patch("modern_python_guidance.uninstall_cmd.uninstall_mcp", return_value=True),
-            patch("modern_python_guidance.uninstall_cmd.uninstall_skills", return_value=True),
-        ):
+        p_mcp, p_skills, p_rules = self._patch_all()
+        with p_mcp, p_skills, p_rules:
             assert run_uninstall(dry_run=True) == 0
         assert "Done" not in capsys.readouterr().out
 

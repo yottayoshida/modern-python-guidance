@@ -12,7 +12,7 @@ Stop your AI from writing `typing.List`, `@validator`, and `setup.py`. 41 versio
 - **Measurable impact**: AI writes modern Python 98% of the time with mpg, vs 79% without — even with vague prompts (Opus 4.8, [V5 benchmark details](docs/benchmark-v5.md))
 - **41 guides** across stdlib, Pydantic, FastAPI, Django, SQLAlchemy, pytest, and toolchain
 - **Version-aware**: auto-detects your project's Python version and filters guides accordingly
-- **3 delivery methods**: MCP server, CLI, Agent Skills plugin
+- **4 delivery methods**: MCP server, CLI, Agent Skills, and Rules (auto-injects on `.py` file touch)
 - **Not Ruff**: Ruff auto-fixes syntax (`List` → `list`). mpg guides design decisions that Ruff can't touch — `TaskGroup` over `gather`, Pydantic V2 migration, SQLAlchemy 2.0 style
 
 > **Note:** The tool itself requires Python 3.11+ to run. Guides cover patterns from Python 3.9 onward, and `--python-version` filters guides for your target environment.
@@ -26,7 +26,7 @@ pip install modern-python-guidance
 mpg setup
 ```
 
-This registers the MCP server and links Agent Skills in one command. Start a new Claude Code session afterwards — newly registered MCP servers and skills take effect on the next launch.
+This registers the MCP server, links Agent Skills, and creates a Rules file (`.claude/rules/modern-python.md`) in one command. The Rules file auto-injects modern Python guidance whenever you touch Python-related files. Start a new Claude Code session afterwards — newly registered MCP servers, skills, and rules take effect on the next launch.
 
 ### CLI
 
@@ -58,7 +58,7 @@ claude mcp add mpg -- mpg mcp
 }
 ```
 
-**Agent Skills symlink (Claude Code):**
+**Agent Skills + Rules only (Claude Code):**
 ```bash
 mpg setup --skills-only
 ```
@@ -67,25 +67,25 @@ mpg setup --skills-only
 | Flag | Purpose |
 |------|---------|
 | `--mcp-only` | MCP registration only |
-| `--skills-only` | Agent Skills symlink only |
+| `--skills-only` | Project-local artifacts only (Skills + Rules) |
 | `--scope {user,local}` | MCP scope (default: user) |
-| `--project-dir PATH` | Target project for Skills symlink |
+| `--project-dir PATH` | Target project for Skills/Rules symlinks |
 | `--dry-run` | Show what would be done |
 
-**Uninstall** — reverse `mpg setup` (deregister the MCP server and unlink Agent Skills):
+**Uninstall** — reverse `mpg setup` (deregister the MCP server and unlink Agent Skills + Rules):
 ```bash
-mpg uninstall            # remove both
+mpg uninstall            # remove all
 mpg uninstall --dry-run  # preview what would be removed
 ```
 
 | Flag | Purpose |
 |------|---------|
 | `--mcp-only` | MCP deregistration only |
-| `--skills-only` | Agent Skills unlink only |
-| `--project-dir PATH` | Target project for the Skills symlink |
+| `--skills-only` | Project-local artifacts only (Skills + Rules) |
+| `--project-dir PATH` | Target project for Skills/Rules symlinks |
 | `--dry-run` | Show what would be done |
 
-`mpg uninstall` clears the MCP registration from every scope `setup` can write to (user and local), removes only the symlink mpg created (never its target or other skills), and is idempotent — running it on an already-clean state is a harmless no-op.
+`mpg uninstall` clears the MCP registration from every scope `setup` can write to (user and local), removes only the symlinks mpg created (never their targets or other files), and is idempotent — running it on an already-clean state is a harmless no-op.
 
 </details>
 
