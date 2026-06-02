@@ -2,6 +2,21 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.3.7] — 2026-06-02
+
+### Fixed
+
+- `_read_message` CWE-674 recursion bug: ~1000 consecutive blank lines on MCP stdin would crash the server with `RecursionError`. Replaced recursive call with iterative `while` loop.
+
+### Added
+
+- 86 in-process unit tests for `cli.py` (33) and `mcp_server.py` (53), raising per-file coverage from 0% to 96%. Covers CLI dispatch, format auto-detection, search/retrieve/list subcommands, `_confine_path` security (8 patterns including symlink escape and CWD=/ guard), JSON-RPC framing, request handling, and serve loop recovery.
+
+### Changed
+
+- Coverage `fail_under` ratcheted from 59% to 92% (actual: 92.48%)
+- CONTRIBUTING.md coverage gate updated to match
+
 ## [0.3.6] — 2026-05-31
 
 ### Added
