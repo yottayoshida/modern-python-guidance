@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.3.8] — 2026-06-02
+
+### Added
+
+- Fuzzy suggestions on retrieve miss: when a guide ID is not found, `difflib.get_close_matches` suggests up to 3 similar IDs (cutoff=0.5, case-insensitive). CLI shows "Did you mean:" in human format; JSON format and MCP tool return an envelope `{"results": [...], "not_found": [{"id": ..., "suggestions": [...]}]}`. Bare list preserved on all-found for backward compatibility. Exit code 1 when any ID is not found. (closes #14)
+
+### Fixed
+
+- `_handle_request` crash on non-dict JSON input (list, string, number, bool): now returns JSON-RPC -32600 "Invalid Request" error instead of `AttributeError`. Server continues processing subsequent requests. (closes #82)
+
 ## [0.3.7] — 2026-06-02
 
 ### Fixed
