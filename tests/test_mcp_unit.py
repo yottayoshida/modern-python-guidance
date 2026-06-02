@@ -335,6 +335,18 @@ class TestHandleRequest:
         resp = mcp._handle_request(msg)
         assert resp is None
 
+    @pytest.mark.parametrize(
+        "msg",
+        [[1, 2, 3], "hello", 42, True],
+        ids=["list", "string", "number", "bool"],
+    )
+    def test_non_dict_returns_invalid_request(self, msg):
+        resp = mcp._handle_request(msg)
+        assert resp["jsonrpc"] == "2.0"
+        assert resp["id"] is None
+        assert resp["error"]["code"] == -32600
+        assert "expected JSON object" in resp["error"]["message"]
+
 
 # --- serve ---
 
@@ -377,3 +389,20 @@ class TestServe:
         assert len(responses) == 2
         assert responses[0]["id"] == 1
         assert responses[1]["id"] == 2
+
+    def test_non_dict_json_recovery(self):
+        lines = (
+            json.dumps([1, 2, 3])
+            + "\n"
+            + json.dumps({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}})
+            + "\n"
+        )
+        sin = io.StringIO(lines)
+        sout = io.StringIO()
+        mcp.serve(stdin=sin, stdout=sout)
+        responses = [json.loads(line) for line in sout.getvalue().strip().split("\n")]
+        assert len(responses) == 2
+        assert responses[0]["error"]["code"] == -32600
+        assert responses[0]["id"] is None
+        assert responses[1]["id"] == 1
+        assert "protocolVersion" in responses[1]["result"]
