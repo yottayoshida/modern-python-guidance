@@ -332,6 +332,8 @@ PROTOCOL_VERSION = "2024-11-05"
 
 
 def _handle_request(msg: dict) -> dict | None:
+    if not isinstance(msg, dict):
+        return _error_response(None, -32600, "Invalid Request: expected JSON object")
     method = msg.get("method", "")
     req_id = msg.get("id")
     params = msg.get("params", {})
