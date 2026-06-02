@@ -262,7 +262,9 @@ class TestRetrieveGuides:
         result = responses[1]["result"]
         assert "isError" not in result
         data = json.loads(result["content"][0]["text"])
-        assert data == []
+        assert "not_found" in data
+        assert data["results"] == []
+        assert data["not_found"][0]["id"] == "nonexistent-guide-xyz"
 
 
 class TestListGuides:

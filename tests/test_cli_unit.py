@@ -115,14 +115,56 @@ class TestCmdRetrieve:
         assert "use-builtin-generics" in ids
         assert "union-syntax" in ids
 
-    def test_no_match_exits_1(self, capsys):
+    def test_no_match_exits_1_json_envelope(self, capsys):
         with pytest.raises(SystemExit, match="1"):
             main(argv=["retrieve", "nonexistent-guide-id", "--format", "json"])
+        data = json.loads(capsys.readouterr().out)
+        assert "not_found" in data
+        assert data["results"] == []
+        assert data["not_found"][0]["id"] == "nonexistent-guide-id"
 
     def test_no_match_human_exits_1(self, capsys):
         with pytest.raises(SystemExit, match="1"):
             main(argv=["retrieve", "nonexistent-guide-id", "--format", "human"])
-        assert "No guides found" in capsys.readouterr().out
+        assert "No guide found for" in capsys.readouterr().out
+
+    def test_suggestion_human(self, capsys):
+        with pytest.raises(SystemExit, match="1"):
+            main(argv=["retrieve", "builtin-generics", "--format", "human"])
+        out = capsys.readouterr().out
+        assert "Did you mean" in out
+        assert "use-builtin-generics" in out
+
+    def test_suggestion_json(self, capsys):
+        with pytest.raises(SystemExit, match="1"):
+            main(argv=["retrieve", "builtin-generics", "--format", "json"])
+        data = json.loads(capsys.readouterr().out)
+        assert "use-builtin-generics" in data["not_found"][0]["suggestions"]
+
+    def test_mixed_valid_and_invalid(self, capsys):
+        with pytest.raises(SystemExit, match="1"):
+            main(argv=["retrieve", "use-builtin-generics,zzz-fake", "--format", "json"])
+        data = json.loads(capsys.readouterr().out)
+        assert len(data["results"]) == 1
+        assert data["results"][0]["id"] == "use-builtin-generics"
+        assert data["not_found"][0]["id"] == "zzz-fake"
+
+    def test_all_found_bare_list(self, capsys):
+        main(argv=["retrieve", "use-builtin-generics", "--format", "json"])
+        data = json.loads(capsys.readouterr().out)
+        assert isinstance(data, list)
+        assert data[0]["id"] == "use-builtin-generics"
+
+    def test_trailing_comma_ignored(self, capsys):
+        main(argv=["retrieve", "use-builtin-generics,", "--format", "json"])
+        data = json.loads(capsys.readouterr().out)
+        assert isinstance(data, list)
+        assert data[0]["id"] == "use-builtin-generics"
+
+    def test_all_commas_exits_1(self, capsys):
+        with pytest.raises(SystemExit, match="1"):
+            main(argv=["retrieve", ",,,", "--format", "human"])
+        assert "No guide IDs provided" in capsys.readouterr().out
 
     def test_version_match_yes(self, capsys):
         main(

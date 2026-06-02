@@ -12,7 +12,7 @@ from pathlib import Path
 from modern_python_guidance import __version__
 from modern_python_guidance.compat import VERSION_RE, version_compatible
 from modern_python_guidance.guide_index import build_index
-from modern_python_guidance.retrieve import retrieve
+from modern_python_guidance.retrieve import retrieve, suggest_ids
 from modern_python_guidance.search import search as do_search
 from modern_python_guidance.version_detect import detect_version
 
@@ -191,26 +191,44 @@ def _cmd_search(args: argparse.Namespace) -> None:
 
 def _cmd_retrieve(args: argparse.Namespace) -> None:
     index = build_index()
-    guide_ids = [gid.strip() for gid in args.ids.split(",")]
+    guide_ids = [gid.strip() for gid in args.ids.split(",") if gid.strip()]
+    if not guide_ids:
+        print("No guide IDs provided.")
+        sys.exit(1)
     results = retrieve(index, guide_ids, python_version=args.python_version)
+
+    found_ids = {r["id"] for r in results}
+    missing = [gid for gid in guide_ids if gid not in found_ids]
 
     fmt = _resolve_format(args)
 
-    if not results:
-        if fmt == "human":
-            print("No guides found.")
-        else:
-            print("[]")
-        sys.exit(1)
-
     if fmt == "json":
-        print(json.dumps(results, indent=2, ensure_ascii=False))
+        if missing:
+            not_found = [
+                {"id": gid, "suggestions": suggest_ids(index, gid)} for gid in missing
+            ]
+            envelope = {"results": results, "not_found": not_found}
+            print(json.dumps(envelope, indent=2, ensure_ascii=False))
+        else:
+            print(json.dumps(results, indent=2, ensure_ascii=False))
     else:
         for r in results:
             match_str = "YES" if r["version_match"] else "NO"
             print(f"--- {r['id']} (version match: {match_str}) ---")
             print(r["content"])
             print()
+        for gid in missing:
+            suggestions = suggest_ids(index, gid)
+            if suggestions:
+                print(f"No guide found for '{gid}'. Did you mean:")
+                for s in suggestions:
+                    print(f"  {s}")
+            else:
+                print(f"No guide found for '{gid}'.")
+                print("Run 'mpg list' to see available guides.")
+
+    if missing:
+        sys.exit(1)
 
 
 def _cmd_list(args: argparse.Namespace) -> None:
