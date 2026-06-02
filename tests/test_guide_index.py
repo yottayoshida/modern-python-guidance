@@ -37,7 +37,7 @@ def _make_guide_md(
         f"layer: {layer}\n"
         f"tags:\n"
         f"  - test\n"
-        f"python: \"{python}\"\n"
+        f'python: "{python}"\n'
         f"frequency: {frequency}\n"
         f"---\n"
         f"\n"
@@ -65,16 +65,26 @@ class TestGuideIndex:
 
     def test_len_with_entries(self):
         meta = GuideMeta(
-            id="a", title="A", category="c", layer=1,
-            tags=["t"], python=">=3.9", frequency="high",
+            id="a",
+            title="A",
+            category="c",
+            layer=1,
+            tags=["t"],
+            python=">=3.9",
+            frequency="high",
         )
         idx = GuideIndex(guides={"a": Guide(meta=meta, body="", source_path="a.md")})
         assert len(idx) == 1
 
     def test_get_existing(self):
         meta = GuideMeta(
-            id="a", title="A", category="c", layer=1,
-            tags=["t"], python=">=3.9", frequency="high",
+            id="a",
+            title="A",
+            category="c",
+            layer=1,
+            tags=["t"],
+            python=">=3.9",
+            frequency="high",
         )
         guide = Guide(meta=meta, body="body", source_path="a.md")
         idx = GuideIndex(guides={"a": guide})
@@ -86,8 +96,13 @@ class TestGuideIndex:
 
     def test_all_meta(self):
         meta = GuideMeta(
-            id="a", title="A", category="c", layer=1,
-            tags=["t"], python=">=3.9", frequency="high",
+            id="a",
+            title="A",
+            category="c",
+            layer=1,
+            tags=["t"],
+            python=">=3.9",
+            frequency="high",
         )
         idx = GuideIndex(guides={"a": Guide(meta=meta, body="", source_path="a.md")})
         result = idx.all_meta()
@@ -97,15 +112,22 @@ class TestGuideIndex:
     def test_categories_sorted_unique(self):
         def _meta(guide_id: str, cat: str) -> GuideMeta:
             return GuideMeta(
-                id=guide_id, title=guide_id, category=cat, layer=1,
-                tags=["t"], python=">=3.9", frequency="high",
+                id=guide_id,
+                title=guide_id,
+                category=cat,
+                layer=1,
+                tags=["t"],
+                python=">=3.9",
+                frequency="high",
             )
 
-        idx = GuideIndex(guides={
-            "b": Guide(meta=_meta("b", "zeta"), body="", source_path="b.md"),
-            "a": Guide(meta=_meta("a", "alpha"), body="", source_path="a.md"),
-            "c": Guide(meta=_meta("c", "alpha"), body="", source_path="c.md"),
-        })
+        idx = GuideIndex(
+            guides={
+                "b": Guide(meta=_meta("b", "zeta"), body="", source_path="b.md"),
+                "a": Guide(meta=_meta("a", "alpha"), body="", source_path="a.md"),
+                "c": Guide(meta=_meta("c", "alpha"), body="", source_path="c.md"),
+            }
+        )
         assert idx.categories() == ["alpha", "zeta"]
 
 
@@ -117,9 +139,7 @@ class TestGuideIndex:
 class TestBuildIndex:
     def test_happy_path(self, tmp_path: Path):
         (tmp_path / "guide-a.md").write_text(_make_guide_md(guide_id="guide-a"))
-        (tmp_path / "guide-b.md").write_text(
-            _make_guide_md(guide_id="guide-b", category="async")
-        )
+        (tmp_path / "guide-b.md").write_text(_make_guide_md(guide_id="guide-b", category="async"))
         idx = build_index(tmp_path)
         assert len(idx) == 2
         assert idx.get("guide-a") is not None
@@ -137,15 +157,9 @@ class TestBuildIndex:
         assert len(idx) == 0
 
     def test_duplicate_id_first_wins(self, tmp_path: Path, caplog):
-        (tmp_path / "aaa.md").write_text(
-            _make_guide_md(guide_id="dup", title="First")
-        )
-        (tmp_path / "bbb.md").write_text(
-            _make_guide_md(guide_id="dup", title="Second")
-        )
-        (tmp_path / "ccc.md").write_text(
-            _make_guide_md(guide_id="survivor", title="Survivor")
-        )
+        (tmp_path / "aaa.md").write_text(_make_guide_md(guide_id="dup", title="First"))
+        (tmp_path / "bbb.md").write_text(_make_guide_md(guide_id="dup", title="Second"))
+        (tmp_path / "ccc.md").write_text(_make_guide_md(guide_id="survivor", title="Survivor"))
         with caplog.at_level(logging.WARNING):
             idx = build_index(tmp_path)
         assert len(idx) == 2
@@ -180,9 +194,7 @@ class TestBuildIndex:
         assert "Unexpected error" in caplog.text
 
     def test_id_filename_mismatch(self, tmp_path: Path, caplog):
-        (tmp_path / "wrong-name.md").write_text(
-            _make_guide_md(guide_id="real-id")
-        )
+        (tmp_path / "wrong-name.md").write_text(_make_guide_md(guide_id="real-id"))
         with caplog.at_level(logging.WARNING):
             idx = build_index(tmp_path)
         assert len(idx) == 1
