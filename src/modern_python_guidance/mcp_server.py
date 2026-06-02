@@ -284,9 +284,7 @@ def _tool_retrieve(arguments: dict) -> dict:
     found_ids = {r["id"] for r in results}
     missing = [gid for gid in guide_ids if gid not in found_ids]
     if missing:
-        not_found = [
-            {"id": gid, "suggestions": suggest_ids(index, gid)} for gid in missing
-        ]
+        not_found = [{"id": gid, "suggestions": suggest_ids(index, gid)} for gid in missing]
         envelope = {"results": results, "not_found": not_found}
         return _tool_result(json.dumps(envelope, indent=2, ensure_ascii=False))
 

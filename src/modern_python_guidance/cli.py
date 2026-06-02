@@ -204,9 +204,7 @@ def _cmd_retrieve(args: argparse.Namespace) -> None:
 
     if fmt == "json":
         if missing:
-            not_found = [
-                {"id": gid, "suggestions": suggest_ids(index, gid)} for gid in missing
-            ]
+            not_found = [{"id": gid, "suggestions": suggest_ids(index, gid)} for gid in missing]
             envelope = {"results": results, "not_found": not_found}
             print(json.dumps(envelope, indent=2, ensure_ascii=False))
         else:
