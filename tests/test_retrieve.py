@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 
 from modern_python_guidance.guide_index import build_index
-from modern_python_guidance.retrieve import retrieve, retrieve_json
+from modern_python_guidance.retrieve import retrieve, retrieve_json, suggest_ids
 
 GUIDES_DIR = Path(__file__).parent.parent / "skills" / "modern-python-guidance" / "guides"
 
@@ -84,3 +84,36 @@ class TestRetrieveJSON:
             "source",
         }
         assert set(parsed[0].keys()) == expected_keys
+
+
+class TestSuggestIds:
+    def test_close_match(self, index):
+        suggestions = suggest_ids(index, "builtin-generics")
+        assert "use-builtin-generics" in suggestions
+
+    def test_no_match(self, index):
+        suggestions = suggest_ids(index, "zzz-totally-unknown")
+        assert suggestions == []
+
+    def test_max_three(self, index):
+        suggestions = suggest_ids(index, "pydantic")
+        assert len(suggestions) <= 3
+
+    def test_case_insensitive(self, index):
+        suggestions = suggest_ids(index, "USE-BUILTIN-GENERICS")
+        assert "use-builtin-generics" in suggestions
+
+    def test_long_id_truncated(self, index):
+        long_id = "use-builtin-generics" + "-x" * 200
+        suggestions = suggest_ids(index, long_id)
+        assert isinstance(suggestions, list)
+
+    def test_non_string_returns_empty(self, index):
+        assert suggest_ids(index, 123) == []
+
+    def test_empty_index(self):
+        from modern_python_guidance.guide_index import GuideIndex
+
+        empty = GuideIndex()
+        suggestions = suggest_ids(empty, "anything")
+        assert suggestions == []

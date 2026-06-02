@@ -197,10 +197,25 @@ class TestToolFunctions:
         r = mcp._tool_retrieve({"guide_ids": []})
         assert r["isError"] is True
 
-    def test_retrieve_valid(self):
+    def test_retrieve_valid_bare_list(self):
         r = mcp._tool_retrieve({"guide_ids": ["use-builtin-generics"]})
         data = json.loads(r["content"][0]["text"])
         assert isinstance(data, list)
+        assert data[0]["id"] == "use-builtin-generics"
+
+    def test_retrieve_nonexistent_envelope(self):
+        r = mcp._tool_retrieve({"guide_ids": ["builtin-generics"]})
+        data = json.loads(r["content"][0]["text"])
+        assert "not_found" in data
+        assert data["not_found"][0]["id"] == "builtin-generics"
+        assert "use-builtin-generics" in data["not_found"][0]["suggestions"]
+
+    def test_retrieve_mixed_envelope(self):
+        r = mcp._tool_retrieve({"guide_ids": ["use-builtin-generics", "zzz-fake"]})
+        data = json.loads(r["content"][0]["text"])
+        assert len(data["results"]) == 1
+        assert data["results"][0]["id"] == "use-builtin-generics"
+        assert data["not_found"][0]["id"] == "zzz-fake"
 
     def test_retrieve_exactly_41_allowed(self):
         ids = [f"fake-{i}" for i in range(41)]

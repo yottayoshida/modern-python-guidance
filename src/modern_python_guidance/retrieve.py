@@ -2,12 +2,25 @@
 
 from __future__ import annotations
 
+import difflib
 import json
 from typing import Any
 
 from modern_python_guidance import __version__
 from modern_python_guidance.compat import token_estimate, version_compatible
 from modern_python_guidance.guide_index import Guide, GuideIndex
+
+MAX_ID_LEN = 200
+_SUGGEST_CUTOFF = 0.5
+_SUGGEST_MAX = 3
+
+
+def suggest_ids(index: GuideIndex, missing_id: str) -> list[str]:
+    if not isinstance(missing_id, str):
+        return []
+    truncated = missing_id[:MAX_ID_LEN].lower()
+    all_ids = list(index.guides.keys())
+    return difflib.get_close_matches(truncated, all_ids, n=_SUGGEST_MAX, cutoff=_SUGGEST_CUTOFF)
 
 
 def retrieve(

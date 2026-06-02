@@ -10,7 +10,7 @@ from pathlib import Path
 from modern_python_guidance import __version__
 from modern_python_guidance.compat import VERSION_RE
 from modern_python_guidance.guide_index import GuideIndex, build_index
-from modern_python_guidance.retrieve import retrieve
+from modern_python_guidance.retrieve import retrieve, suggest_ids
 from modern_python_guidance.search import search
 from modern_python_guidance.version_detect import detect_version
 
@@ -280,6 +280,14 @@ def _tool_retrieve(arguments: dict) -> dict:
 
     index = _get_index()
     results = retrieve(index, guide_ids, python_version=pv)
+
+    found_ids = {r["id"] for r in results}
+    missing = [gid for gid in guide_ids if gid not in found_ids]
+    if missing:
+        not_found = [{"id": gid, "suggestions": suggest_ids(index, gid)} for gid in missing]
+        envelope = {"results": results, "not_found": not_found}
+        return _tool_result(json.dumps(envelope, indent=2, ensure_ascii=False))
+
     return _tool_result(json.dumps(results, indent=2, ensure_ascii=False))
 
 
