@@ -58,4 +58,4 @@ All PRs run these checks on Python 3.11, 3.12, and 3.13:
 
 1. `ruff format --check` — formatting
 2. `ruff check` — linting
-3. `pytest --cov` — tests with branch coverage (`fail_under = 59%`)
+3. `pytest --cov` — tests with branch coverage (`fail_under = 92%`)

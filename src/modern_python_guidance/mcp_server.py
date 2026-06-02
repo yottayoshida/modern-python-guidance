@@ -35,12 +35,13 @@ class _Skip(Exception):
 
 def _read_message(stream: object = None) -> dict | None:
     buf = stream or sys.stdin
-    line = buf.readline()
-    if not line:
-        return None
-    line = line.strip()
-    if not line:
-        return _read_message(stream)
+    while True:
+        line = buf.readline()
+        if not line:
+            return None
+        line = line.strip()
+        if line:
+            break
     try:
         return json.loads(line)
     except json.JSONDecodeError as exc:
