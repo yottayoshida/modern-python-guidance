@@ -59,13 +59,31 @@ class TestFindProjectRoot:
         sub.mkdir(parents=True)
         assert _find_project_root(sub) == tmp_path
 
-    def test_claude_takes_priority_over_git(self, tmp_path: Path):
-        """.claude/ at parent wins over .git/ at child (higher-priority marker)."""
+    def test_nearest_marker_wins(self, tmp_path: Path):
+        """Nearest ancestor with any marker wins over distant ancestor."""
         (tmp_path / ".claude").mkdir()
         child = tmp_path / "child"
         child.mkdir()
         (child / ".git").mkdir()
-        assert _find_project_root(child) == tmp_path
+        assert _find_project_root(child) == child
+
+    def test_bug_repro_home_claude_escapes(self, tmp_path: Path):
+        """V-001: .claude at home + .git at repo -> repo wins, not home."""
+        home = tmp_path / "home"
+        (home / ".claude").mkdir(parents=True)
+        repo = home / "projects" / "repo"
+        repo.mkdir(parents=True)
+        (repo / ".git").mkdir()
+        src = repo / "src"
+        src.mkdir()
+        assert _find_project_root(src) == repo
+
+    def test_git_as_file(self, tmp_path: Path):
+        """V-008: .git as a file (worktree/submodule) is detected."""
+        (tmp_path / ".git").write_text("gitdir: /some/other/path")
+        sub = tmp_path / "src"
+        sub.mkdir()
+        assert _find_project_root(sub) == tmp_path
 
     def test_falls_back_to_cwd(self, tmp_path: Path):
         bare = tmp_path / "empty"
@@ -307,6 +325,24 @@ class TestSetupSkills:
 
         err = capsys.readouterr().err
         assert "'" in err or '"' in err
+
+    def test_autodetect_avoids_home_escape(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+        """setup_skills auto-discovers repo root, not distant ~/.claude."""
+        source = self._make_source(tmp_path)
+        home = tmp_path / "home"
+        (home / ".claude").mkdir(parents=True)
+        repo = home / "projects" / "repo"
+        repo.mkdir(parents=True)
+        (repo / ".git").mkdir()
+
+        monkeypatch.chdir(repo)
+        with patch("modern_python_guidance.setup_cmd._find_skills_dir", return_value=source):
+            ok = setup_skills()
+
+        assert ok is True
+        link = repo / ".claude" / "skills" / "modern-python-guidance"
+        assert link.is_symlink()
+        assert not (home / ".claude" / "skills" / "modern-python-guidance").exists()
 
     def test_dry_run(self, tmp_path: Path, capsys: pytest.CaptureFixture[str]):
         """V-010: dry-run does not create symlink."""

@@ -248,6 +248,27 @@ class TestUninstallSkills:
         assert link.is_symlink()  # still there
         assert "Would remove" in capsys.readouterr().out
 
+    def test_resolves_correct_root_not_distant_ancestor(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ):
+        """V-009: uninstall resolves nearest project root, not distant ancestor."""
+        home = tmp_path / "home"
+        (home / ".claude" / "skills" / "modern-python-guidance").mkdir(parents=True)
+        repo = home / "projects" / "repo"
+        repo.mkdir(parents=True)
+        (repo / ".git").mkdir()
+        link = repo / ".claude" / "skills" / "modern-python-guidance"
+        link.parent.mkdir(parents=True)
+        os.symlink(tmp_path / "pkg_skills", link)
+
+        monkeypatch.chdir(repo)
+        ok = uninstall_skills()
+
+        assert ok is True
+        assert not link.is_symlink()
+        # Home-level skills dir must be untouched
+        assert (home / ".claude" / "skills" / "modern-python-guidance").is_dir()
+
     def test_non_symlink_path_quoted(self, tmp_path: Path, capsys):
         """V-028: rm hint uses shell-safe quoting for paths with spaces."""
         project = tmp_path / "my project"
