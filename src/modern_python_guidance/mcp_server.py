@@ -347,6 +347,15 @@ def _handle_request(msg: dict) -> dict | None:
     params = msg.get("params", {})
     is_notification = "id" not in msg
 
+    if not isinstance(params, dict):
+        if not is_notification:
+            return _error_response(
+                req_id,
+                -32602,
+                f"Invalid params: expected object, got {type(params).__name__}",
+            )
+        return None
+
     if method == "notifications/initialized":
         return None
 
@@ -368,6 +377,13 @@ def _handle_request(msg: dict) -> dict | None:
     if method == "tools/call":
         tool_name = params.get("name", "")
         arguments = params.get("arguments", {})
+        if not isinstance(arguments, dict):
+            result = _error_response(
+                req_id,
+                -32602,
+                f"Invalid arguments: expected object, got {type(arguments).__name__}",
+            )
+            return None if is_notification else result
         tool_result = _handle_tool_call(tool_name, arguments)
         result = _result_response(req_id, tool_result)
         return None if is_notification else result
@@ -390,7 +406,14 @@ def serve(*, stdin: object = None, stdout: object = None) -> None:
         if msg is None:
             break
 
-        response = _handle_request(msg)
+        try:
+            response = _handle_request(msg)
+        except Exception:
+            log.exception("Unexpected error handling request")
+            if isinstance(msg, dict) and "id" in msg:
+                response = _error_response(msg.get("id"), -32603, "Internal error")
+            else:
+                continue
         if response is not None:
             _write_message(response, stdout)
 
