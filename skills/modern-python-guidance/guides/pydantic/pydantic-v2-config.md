@@ -13,6 +13,8 @@ aliases:
   - ConfigDict
 python: ">=3.9"
 frequency: high
+detect-patterns:
+  - "class Config:"
 ---
 
 # Use model_config Instead of class Config

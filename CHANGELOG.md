@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.4.0] — 2026-06-03
+
+### Added
+
+- `mpg check <file>` command: scan a Python file for outdated patterns using regex matching against guide definitions. Reports matches with line numbers, guide IDs, and inline snippets. Linter exit-code convention (0=clean, 1=findings, 2=error). Supports `--python-version` filtering, `--format json|human`, and `--exit-zero`. JSON envelope includes `file`, `mpg_version`, `matches`, and `summary` with `guide_ids` for batched `mpg retrieve`. (closes #21)
+- `detect_patterns` field in guide frontmatter: 3-value semantics — curated regex list (26 guides), explicit opt-out `[]` (15 guides), or absent `None` (auto-extraction fallback for future guides). All patterns validated at parse time via `re.compile`.
+- `CheckError` exception in check module for clean library-level error handling (file not found, binary file, read errors). CLI catches and converts to exit code 2.
+- Structural tests: all 41 guides must have `detect_patterns` present, patterns must compile, must match at least one BAD line, and must NOT match any GOOD line.
+- 205 new tests (886 total). Coverage: 92%+.
+
 ## [0.3.8] — 2026-06-02
 
 ### Added

@@ -12,6 +12,7 @@ aliases:
 python: ">=3.12"
 frequency: medium
 pep: 698
+detect-patterns:
 ---
 
 # Use @override to Mark Method Overrides

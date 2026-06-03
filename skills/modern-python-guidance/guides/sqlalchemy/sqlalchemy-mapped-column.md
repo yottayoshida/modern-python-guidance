@@ -13,6 +13,9 @@ aliases:
   - declarative-base
 python: ">=3.9"
 frequency: high
+detect-patterns:
+  - "from sqlalchemy import .*\bColumn\b"
+  - "declarative_base\("
 ---
 
 # Use Mapped and mapped_column

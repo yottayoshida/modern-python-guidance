@@ -14,6 +14,10 @@ aliases:
   - model_validate
 python: ">=3.9"
 frequency: high
+detect-patterns:
+  - "\.parse_obj\("
+  - "\.parse_raw\("
+  - "\.from_orm\("
 ---
 
 # Use Pydantic V2 Model API

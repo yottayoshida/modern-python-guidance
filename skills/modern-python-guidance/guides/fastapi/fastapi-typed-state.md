@@ -13,6 +13,7 @@ aliases:
   - typed state
 python: ">=3.9"
 frequency: medium
+detect-patterns:
 ---
 
 # Use TypedDict or dataclass for App State

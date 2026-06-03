@@ -13,6 +13,8 @@ aliases:
   - os.path.exists
 python: ">=3.9"
 frequency: high
+detect-patterns:
+  - "os\.path\."
 ---
 
 # Use pathlib.Path Instead of os.path

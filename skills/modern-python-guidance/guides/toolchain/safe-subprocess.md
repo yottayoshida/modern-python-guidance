@@ -14,6 +14,9 @@ aliases:
   - subprocess.run
 python: ">=3.9"
 frequency: high
+detect-patterns:
+  - "os\.system\("
+  - "shell\s*=\s*True"
 ---
 
 # Use subprocess Safely

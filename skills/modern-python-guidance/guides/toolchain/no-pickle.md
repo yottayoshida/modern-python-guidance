@@ -14,6 +14,9 @@ aliases:
   - shelve
 python: ">=3.9"
 frequency: medium
+detect-patterns:
+  - "import pickle"
+  - "pickle\.(load|loads|dump|dumps)\("
 ---
 
 # Avoid pickle for Untrusted Data

@@ -12,6 +12,7 @@ aliases:
   - test-loop
 python: ">=3.9"
 frequency: high
+detect-patterns:
 ---
 
 # Use pytest.mark.parametrize

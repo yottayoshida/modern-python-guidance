@@ -14,6 +14,8 @@ aliases:
 python: ">=3.12"
 frequency: medium
 pep: 695
+detect-patterns:
+  - "from typing import .*\bGeneric\b"
 ---
 
 # Use PEP 695 Type Parameter Syntax

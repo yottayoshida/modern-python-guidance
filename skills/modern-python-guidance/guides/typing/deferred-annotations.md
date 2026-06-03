@@ -14,6 +14,8 @@ aliases:
 python: ">=3.14"
 frequency: high
 pep: 649
+detect-patterns:
+  - "from __future__ import annotations"
 ---
 
 # Drop `from __future__ import annotations` on Python 3.14+

@@ -12,6 +12,8 @@ aliases:
   - gather
 python: ">=3.11"
 frequency: high
+detect-patterns:
+  - "asyncio\.gather\("
 ---
 
 # Use asyncio.TaskGroup Instead of asyncio.gather

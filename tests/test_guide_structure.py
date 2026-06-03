@@ -7,6 +7,7 @@ Ensures every guide in skills/modern-python-guidance/guides/ conforms to:
 - Code fences in BAD and GOOD sections
 - Body starts with H1 title
 - No duplicate IDs across all guides
+- detect_patterns: field is present, patterns compile, match BAD, not GOOD
 """
 
 from __future__ import annotations
@@ -17,7 +18,7 @@ from pathlib import Path
 import pytest
 
 from modern_python_guidance.frontmatter import parse_frontmatter
-from modern_python_guidance.guide_index import _find_guides_dir
+from modern_python_guidance.guide_index import _code_lines, _find_guides_dir
 from modern_python_guidance.setup_cmd import _build_rule_text
 
 GUIDES_DIR = _find_guides_dir()
@@ -161,6 +162,54 @@ class TestRuleFileSync:
         fm, _ = self._rule_parts()
         assert "name:" not in fm
         assert "description:" not in fm
+
+
+class TestDetectPatterns:
+    def test_field_present(self, guide_file: Path):
+        text = guide_file.read_text(encoding="utf-8")
+        meta, _ = parse_frontmatter(text)
+        assert meta.detect_patterns is not None, (
+            f"{meta.id}: detect_patterns field is missing (must be list or empty list)"
+        )
+
+    def test_patterns_compile(self, guide_file: Path):
+        text = guide_file.read_text(encoding="utf-8")
+        meta, _ = parse_frontmatter(text)
+        if not meta.detect_patterns:
+            return
+        for pat in meta.detect_patterns:
+            try:
+                re.compile(pat)
+            except re.error as e:
+                pytest.fail(f"{meta.id}: invalid regex {pat!r}: {e}")
+
+    def test_patterns_match_bad_block(self, guide_file: Path):
+        text = guide_file.read_text(encoding="utf-8")
+        meta, body = parse_frontmatter(text)
+        if not meta.detect_patterns:
+            return
+        bad_lines = _code_lines(body, "## BAD")
+        assert bad_lines, f"{meta.id}: BAD block is empty"
+        for pat in meta.detect_patterns:
+            compiled = re.compile(pat)
+            matched = any(compiled.search(line) for line in bad_lines)
+            assert matched, (
+                f"{meta.id}: pattern {pat!r} does not match any BAD line"
+            )
+
+    def test_patterns_not_match_good_block(self, guide_file: Path):
+        text = guide_file.read_text(encoding="utf-8")
+        meta, body = parse_frontmatter(text)
+        if not meta.detect_patterns:
+            return
+        good_lines = _code_lines(body, "## GOOD")
+        assert good_lines, f"{meta.id}: GOOD block is empty"
+        for pat in meta.detect_patterns:
+            compiled = re.compile(pat)
+            for line in good_lines:
+                assert not compiled.search(line), (
+                    f"{meta.id}: pattern {pat!r} matches GOOD line: {line!r}"
+                )
 
 
 class TestGuideInventory:

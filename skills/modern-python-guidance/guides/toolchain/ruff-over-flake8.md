@@ -19,6 +19,7 @@ aliases:
   - formatter
 python: ">=3.7"
 frequency: high
+detect-patterns:
 ---
 
 # Use Ruff Instead of Flake8 + isort + Black

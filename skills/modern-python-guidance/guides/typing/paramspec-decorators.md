@@ -14,6 +14,8 @@ aliases:
 python: ">=3.10"
 frequency: medium
 pep: 612
+detect-patterns:
+  - "Callable\[\.\.\."
 ---
 
 # Use ParamSpec for Typed Decorators

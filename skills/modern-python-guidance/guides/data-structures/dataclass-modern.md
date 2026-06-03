@@ -14,6 +14,7 @@ aliases:
   - dataclasses
 python: ">=3.10"
 frequency: high
+detect-patterns:
 ---
 
 # Use Modern Dataclass Features

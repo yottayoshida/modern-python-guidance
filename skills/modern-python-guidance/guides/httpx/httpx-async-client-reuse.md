@@ -14,6 +14,8 @@ aliases:
   - requests
 python: ">=3.9"
 frequency: high
+detect-patterns:
+  - "async with httpx\.AsyncClient\(\) as"
 ---
 
 # Reuse httpx.AsyncClient

@@ -13,6 +13,8 @@ aliases:
   - dependency injection
 python: ">=3.9"
 frequency: high
+detect-patterns:
+  - "= Depends\("
 ---
 
 # Use Annotated for Dependency Injection

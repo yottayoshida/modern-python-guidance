@@ -14,6 +14,7 @@ aliases:
 python: ">=3.11"
 frequency: medium
 pep: 654
+detect-patterns:
 ---
 
 # Use except* for Exception Groups

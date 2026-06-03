@@ -16,6 +16,8 @@ aliases:
 python: ">=3.9"
 frequency: high
 pep: 585
+detect-patterns:
+  - "from typing import .*\b(List|Dict|Set|Tuple|FrozenSet|Type|Deque|DefaultDict|OrderedDict|Counter|ChainMap)\b"
 ---
 
 # Use Built-in Generic Types

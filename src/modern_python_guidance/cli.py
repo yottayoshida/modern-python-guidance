@@ -10,6 +10,7 @@ import sys
 from pathlib import Path
 
 from modern_python_guidance import __version__
+from modern_python_guidance.check import CheckError, CheckMatch, check_file, sanitize_line
 from modern_python_guidance.compat import VERSION_RE, version_compatible
 from modern_python_guidance.guide_index import build_index
 from modern_python_guidance.retrieve import retrieve, suggest_ids
@@ -111,6 +112,25 @@ def main(argv: list[str] | None = None) -> None:
     )
     p_uninstall.add_argument("--dry-run", action="store_true", help="Show what would be done")
 
+    # check
+    p_check = subparsers.add_parser(
+        "check",
+        help="Scan a Python file for outdated patterns",
+    )
+    p_check.add_argument("file", type=Path, help="Python file to check")
+    p_check.add_argument("--python-version", help="Target Python version (e.g. 3.11)")
+    p_check.add_argument(
+        "--format",
+        choices=["json", "human"],
+        default=None,
+        help="Output format (default: json when piped, human when TTY)",
+    )
+    p_check.add_argument(
+        "--exit-zero",
+        action="store_true",
+        help="Always exit 0 even when patterns are found",
+    )
+
     args = parser.parse_args(argv)
 
     if args.command is None:
@@ -136,6 +156,8 @@ def main(argv: list[str] | None = None) -> None:
             _cmd_setup(args)
         elif args.command == "uninstall":
             _cmd_uninstall(args)
+        elif args.command == "check":
+            _cmd_check(args)
     except BrokenPipeError:
         sys.exit(0)
 
@@ -306,3 +328,68 @@ def _cmd_uninstall(args: argparse.Namespace) -> None:
         dry_run=args.dry_run,
     )
     sys.exit(code)
+
+
+def _cmd_check(args: argparse.Namespace) -> None:
+    index = build_index()
+    try:
+        matches = check_file(args.file, index, python_version=args.python_version)
+    except CheckError as e:
+        print(f"error: {e}", file=sys.stderr)
+        sys.exit(2)
+    fmt = _resolve_format(args)
+
+    if fmt == "json":
+        _check_json(matches, args.file)
+    else:
+        _check_human(matches)
+
+    if matches and not args.exit_zero:
+        sys.exit(1)
+
+
+def _check_json(matches: list[CheckMatch], file_path: Path) -> None:
+    guide_ids = {m.guide_id for m in matches}
+    out = {
+        "file": str(file_path),
+        "mpg_version": __version__,
+        "matches": [
+            {
+                "line": m.line,
+                "source_line": m.source_line,
+                "guide_id": m.guide_id,
+                "guide_title": m.guide_title,
+                "category": m.category,
+                "frequency": m.frequency,
+                "snippet": m.snippet,
+            }
+            for m in matches
+        ],
+        "summary": {
+            "total_matches": len(matches),
+            "unique_guides": len(guide_ids),
+            "guide_ids": sorted(guide_ids),
+        },
+    }
+    print(json.dumps(out, indent=2, ensure_ascii=False))
+
+
+def _check_human(matches: list[CheckMatch]) -> None:
+    if not matches:
+        print("No outdated patterns found.")
+        return
+
+    for m in matches:
+        src = sanitize_line(m.source_line.strip())
+        print(f"{m.guide_id:<40} line {m.line}: {src}")
+        if m.snippet:
+            snip = sanitize_line(m.snippet)
+            print(f"{'':40}   {snip}")
+
+    guide_ids = {m.guide_id for m in matches}
+    unique = len(guide_ids)
+    ids = ", ".join(sorted(guide_ids))
+    ps = "" if len(matches) == 1 else "s"
+    gs = "" if unique == 1 else "s"
+    print(f"\n{len(matches)} outdated pattern{ps} found ({unique} guide{gs}). "
+          f"Run `mpg retrieve {ids}` for details.")
