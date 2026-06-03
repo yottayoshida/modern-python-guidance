@@ -61,20 +61,19 @@ def _find_rule_source() -> Path:
 
 
 def _find_project_root(start: Path | None = None) -> Path:
-    """Walk upward from *start* to find the project root."""
+    """Walk upward; return the nearest ancestor containing any marker."""
     current = (start or Path.cwd()).resolve()
-    markers = [".claude", ".git", "pyproject.toml"]
+    markers = [".git", "pyproject.toml", ".claude"]
 
-    for marker in markers:
-        d = current
-        while True:
-            candidate = d / marker
-            if candidate.exists():
+    d = current
+    while True:
+        for marker in markers:
+            if (d / marker).exists():
                 return d
-            parent = d.parent
-            if parent == d:
-                break
-            d = parent
+        parent = d.parent
+        if parent == d:
+            break
+        d = parent
 
     return current
 

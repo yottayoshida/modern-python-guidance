@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+### Fixed
+
+- `_find_project_root()` escaping to `$HOME` when `~/.claude/` exists but the repo has no `.claude/` directory. Marker search is now per-level (nearest ancestor with any marker wins) instead of per-marker-type. If you previously ran `mpg setup` and have stale symlinks at `~/.claude/skills/modern-python-guidance` or `~/.claude/rules/modern-python.md`, remove them manually. (closes #90)
+
 ## [0.4.1] — 2026-06-03
 
 ### Added
