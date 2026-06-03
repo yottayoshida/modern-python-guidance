@@ -260,7 +260,9 @@ class TestBodySearchSynthetic:
             meta=meta,
             body="",
             source_path="synth.md",
-            body_tokens=frozenset(["target_api", "another_api", "datetime.utcnow", "datetime", "utcnow"]),
+            body_tokens=frozenset(
+                ["target_api", "another_api", "datetime.utcnow", "datetime", "utcnow"]
+            ),
         )
         return GuideIndex(guides={"synth": guide})
 

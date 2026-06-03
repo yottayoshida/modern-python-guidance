@@ -291,8 +291,13 @@ class TestBuildIndexBodyTokens:
 
     def test_body_tokens_default_empty(self):
         meta = GuideMeta(
-            id="a", title="A", category="c", layer=1,
-            tags=["t"], python=">=3.9", frequency="high",
+            id="a",
+            title="A",
+            category="c",
+            layer=1,
+            tags=["t"],
+            python=">=3.9",
+            frequency="high",
         )
         guide = Guide(meta=meta, body="", source_path="a.md")
         assert guide.body_tokens == frozenset()
