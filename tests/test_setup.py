@@ -326,9 +326,7 @@ class TestSetupSkills:
         err = capsys.readouterr().err
         assert "'" in err or '"' in err
 
-    def test_autodetect_avoids_home_escape(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ):
+    def test_autodetect_avoids_home_escape(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
         """setup_skills auto-discovers repo root, not distant ~/.claude."""
         source = self._make_source(tmp_path)
         home = tmp_path / "home"
