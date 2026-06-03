@@ -234,7 +234,10 @@ class TestTokenizeBody:
         assert "model_validate_json" in tokens
 
     def test_url_lines_excluded(self):
-        body = "See https://docs.python.org/3/library/datetime.html for details.\nUse `utcnow` instead."
+        body = (
+            "See https://docs.python.org/3/library/datetime.html for details.\n"
+            "Use `utcnow` instead."
+        )
         tokens = _tokenize_body(body)
         assert "python" not in tokens
         assert "datetime" not in tokens
