@@ -386,6 +386,37 @@ class TestProtocol:
         assert result["isError"] is True
 
 
+class TestMalformedParams:
+    def test_non_dict_params_returns_error_and_server_continues(self):
+        responses = _run_mcp(
+            {"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": "bad"},
+            {"jsonrpc": "2.0", "id": 2, "method": "initialize", "params": {}},
+        )
+        assert len(responses) == 2
+        assert responses[0]["error"]["code"] == -32602
+        assert responses[0]["id"] == 1
+        assert "expected object" in responses[0]["error"]["message"]
+        assert "protocolVersion" in responses[1]["result"]
+
+    def test_non_dict_arguments_returns_error_and_server_continues(self):
+        responses = _run_mcp(
+            *_init_handshake(),
+            {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "tools/call",
+                "params": {"name": "search_guides", "arguments": "not-a-dict"},
+            },
+            {"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}},
+        )
+        error = responses[1].get("error")
+        assert error is not None
+        assert error["code"] == -32602
+        assert "expected object" in error["message"]
+        assert responses[2]["id"] == 2
+        assert "tools" in responses[2]["result"]
+
+
 class TestStdoutPollution:
     def test_no_non_jsonrpc_output(self):
         stdin_data = _build_session(

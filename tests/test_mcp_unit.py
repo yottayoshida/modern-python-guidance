@@ -362,6 +362,49 @@ class TestHandleRequest:
         assert resp["error"]["code"] == -32600
         assert "expected JSON object" in resp["error"]["message"]
 
+    @pytest.mark.parametrize(
+        "params",
+        [None, "hello", "", [1, 2], 42, 0, 3.14, True, False],
+        ids=["none", "string", "empty-string", "list", "int", "zero", "float", "true", "false"],
+    )
+    def test_non_dict_params_returns_invalid_params(self, params):
+        msg = {"jsonrpc": "2.0", "id": 10, "method": "initialize", "params": params}
+        resp = mcp._handle_request(msg)
+        assert resp["jsonrpc"] == "2.0"
+        assert resp["id"] == 10
+        assert resp["error"]["code"] == -32602
+        assert "expected object" in resp["error"]["message"]
+
+    def test_non_dict_params_notification_returns_none(self):
+        msg = {"jsonrpc": "2.0", "method": "initialize", "params": "bad"}
+        assert mcp._handle_request(msg) is None
+
+    def test_non_dict_arguments_returns_invalid_params(self):
+        msg = {
+            "jsonrpc": "2.0",
+            "id": 11,
+            "method": "tools/call",
+            "params": {"name": "search_guides", "arguments": "bad"},
+        }
+        resp = mcp._handle_request(msg)
+        assert resp["id"] == 11
+        assert resp["error"]["code"] == -32602
+        assert "expected object" in resp["error"]["message"]
+
+    def test_non_dict_arguments_notification_returns_none(self):
+        msg = {
+            "jsonrpc": "2.0",
+            "method": "tools/call",
+            "params": {"name": "search_guides", "arguments": [1, 2]},
+        }
+        assert mcp._handle_request(msg) is None
+
+    def test_unknown_method_with_bad_params_returns_invalid_params(self):
+        """Centralized params check runs before method dispatch."""
+        msg = {"jsonrpc": "2.0", "id": 12, "method": "nonexistent", "params": 42}
+        resp = mcp._handle_request(msg)
+        assert resp["error"]["code"] == -32602
+
 
 # --- serve ---
 
@@ -420,4 +463,73 @@ class TestServe:
         assert responses[0]["error"]["code"] == -32600
         assert responses[0]["id"] is None
         assert responses[1]["id"] == 1
+        assert "protocolVersion" in responses[1]["result"]
+
+    def test_non_dict_params_recovery(self):
+        lines = (
+            json.dumps({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": "bad"})
+            + "\n"
+            + json.dumps({"jsonrpc": "2.0", "id": 2, "method": "initialize", "params": {}})
+            + "\n"
+        )
+        sin = io.StringIO(lines)
+        sout = io.StringIO()
+        mcp.serve(stdin=sin, stdout=sout)
+        responses = [json.loads(line) for line in sout.getvalue().strip().split("\n")]
+        assert len(responses) == 2
+        assert responses[0]["error"]["code"] == -32602
+        assert responses[0]["id"] == 1
+        assert responses[1]["id"] == 2
+        assert "protocolVersion" in responses[1]["result"]
+
+    def test_catch_all_returns_internal_error(self, monkeypatch):
+        def boom(msg):
+            raise RuntimeError("unexpected")
+
+        monkeypatch.setattr(mcp, "_handle_request", boom)
+        req = {"jsonrpc": "2.0", "id": 99, "method": "initialize", "params": {}}
+        sin = io.StringIO(json.dumps(req) + "\n")
+        sout = io.StringIO()
+        mcp.serve(stdin=sin, stdout=sout)
+        resp = json.loads(sout.getvalue().strip())
+        assert resp["id"] == 99
+        assert resp["error"]["code"] == -32603
+        assert resp["error"]["message"] == "Internal error"
+
+    def test_catch_all_notification_no_response(self, monkeypatch):
+        def boom(msg):
+            raise RuntimeError("unexpected")
+
+        monkeypatch.setattr(mcp, "_handle_request", boom)
+        req = {"jsonrpc": "2.0", "method": "initialize", "params": {}}
+        sin = io.StringIO(json.dumps(req) + "\n")
+        sout = io.StringIO()
+        mcp.serve(stdin=sin, stdout=sout)
+        assert sout.getvalue() == ""
+
+    def test_catch_all_then_recovery(self, monkeypatch):
+        call_count = 0
+
+        original = mcp._handle_request
+
+        def boom_once(msg):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                raise RuntimeError("first call fails")
+            return original(msg)
+
+        monkeypatch.setattr(mcp, "_handle_request", boom_once)
+        lines = (
+            json.dumps({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}})
+            + "\n"
+            + json.dumps({"jsonrpc": "2.0", "id": 2, "method": "initialize", "params": {}})
+            + "\n"
+        )
+        sin = io.StringIO(lines)
+        sout = io.StringIO()
+        mcp.serve(stdin=sin, stdout=sout)
+        responses = [json.loads(line) for line in sout.getvalue().strip().split("\n")]
+        assert len(responses) == 2
+        assert responses[0]["error"]["code"] == -32603
         assert "protocolVersion" in responses[1]["result"]
