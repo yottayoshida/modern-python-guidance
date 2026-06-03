@@ -14,6 +14,8 @@ FREQ_RANK = {"high": 0, "medium": 1, "low": 2}
 
 class CheckError(Exception):
     """Raised for unrecoverable file-level errors (not found, binary, unreadable)."""
+
+
 _MAX_LINE_LEN = 10_240
 _BINARY_PROBE_SIZE = 8192
 _ANSI_RE = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")

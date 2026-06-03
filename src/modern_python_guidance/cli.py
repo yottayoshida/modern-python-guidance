@@ -391,5 +391,7 @@ def _check_human(matches: list[CheckMatch]) -> None:
     ids = ", ".join(sorted(guide_ids))
     ps = "" if len(matches) == 1 else "s"
     gs = "" if unique == 1 else "s"
-    print(f"\n{len(matches)} outdated pattern{ps} found ({unique} guide{gs}). "
-          f"Run `mpg retrieve {ids}` for details.")
+    print(
+        f"\n{len(matches)} outdated pattern{ps} found ({unique} guide{gs}). "
+        f"Run `mpg retrieve {ids}` for details."
+    )

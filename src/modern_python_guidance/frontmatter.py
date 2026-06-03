@@ -163,9 +163,7 @@ def _build_meta(raw: dict[str, Any]) -> GuideMeta:
             except re.error as e:
                 raise FrontmatterError(f"invalid regex in detect-patterns: {p!r}: {e}") from e
     else:
-        raise FrontmatterError(
-            f"detect-patterns must be a list, got {detect_raw!r}"
-        )
+        raise FrontmatterError(f"detect-patterns must be a list, got {detect_raw!r}")
 
     return GuideMeta(
         id=str(raw["id"]),

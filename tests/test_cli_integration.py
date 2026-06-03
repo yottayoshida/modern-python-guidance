@@ -226,8 +226,15 @@ class TestCheck:
         assert "guide_ids" in data["summary"]
         if data["matches"]:
             m = data["matches"][0]
-            for key in ("line", "source_line", "guide_id", "guide_title",
-                        "category", "frequency", "snippet"):
+            for key in (
+                "line",
+                "source_line",
+                "guide_id",
+                "guide_title",
+                "category",
+                "frequency",
+                "snippet",
+            ):
                 assert key in m
 
     def test_check_file_not_found(self, tmp_path):

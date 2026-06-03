@@ -193,9 +193,7 @@ class TestDetectPatterns:
         for pat in meta.detect_patterns:
             compiled = re.compile(pat)
             matched = any(compiled.search(line) for line in bad_lines)
-            assert matched, (
-                f"{meta.id}: pattern {pat!r} does not match any BAD line"
-            )
+            assert matched, f"{meta.id}: pattern {pat!r} does not match any BAD line"
 
     def test_patterns_not_match_good_block(self, guide_file: Path):
         text = guide_file.read_text(encoding="utf-8")
