@@ -13,6 +13,7 @@ aliases:
   - exception-match
 python: ">=3.9"
 frequency: medium
+detect-patterns:
 ---
 
 # Use pytest.raises with match

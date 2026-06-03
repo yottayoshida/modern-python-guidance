@@ -13,6 +13,8 @@ aliases:
   - async-orm
 python: ">=3.9"
 frequency: medium
+detect-patterns:
+  - "from asgiref\.sync import sync_to_async"
 ---
 
 # Use Native Async Views

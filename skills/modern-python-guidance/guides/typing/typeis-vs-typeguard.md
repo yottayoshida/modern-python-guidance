@@ -14,6 +14,8 @@ aliases:
 python: ">=3.13"
 frequency: low
 pep: 742
+detect-patterns:
+  - "-> TypeGuard\["
 ---
 
 # Use TypeIs for Precise Type Narrowing

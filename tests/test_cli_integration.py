@@ -178,6 +178,79 @@ class TestPipeOutput:
         assert isinstance(data, list)
 
 
+class TestCheck:
+    def test_check_finds_patterns(self, tmp_path):
+        p = tmp_path / "bad.py"
+        p.write_text("from typing import List\nimport pickle\n")
+        r = run_cli("check", str(p), "--format", "json")
+        assert r.returncode == 1
+        data = json.loads(r.stdout)
+        assert data["summary"]["total_matches"] >= 2
+        ids = data["summary"]["guide_ids"]
+        assert "no-pickle" in ids
+
+    def test_check_clean_file(self, tmp_path):
+        p = tmp_path / "clean.py"
+        p.write_text("x: list[str] = []\n")
+        r = run_cli("check", str(p), "--format", "json")
+        assert r.returncode == 0
+        data = json.loads(r.stdout)
+        assert data["summary"]["total_matches"] == 0
+
+    def test_check_exit_zero(self, tmp_path):
+        p = tmp_path / "bad.py"
+        p.write_text("from typing import List\n")
+        r = run_cli("check", str(p), "--exit-zero", "--format", "json")
+        assert r.returncode == 0
+        data = json.loads(r.stdout)
+        assert data["summary"]["total_matches"] >= 1
+
+    def test_check_human_format(self, tmp_path):
+        p = tmp_path / "bad.py"
+        p.write_text("from typing import List\n")
+        r = run_cli("check", str(p), "--format", "human")
+        assert r.returncode == 1
+        assert "outdated pattern" in r.stdout
+
+    def test_check_json_schema(self, tmp_path):
+        p = tmp_path / "sample.py"
+        p.write_text("import pickle\n")
+        r = run_cli("check", str(p), "--format", "json")
+        data = json.loads(r.stdout)
+        assert "file" in data
+        assert "mpg_version" in data
+        assert "matches" in data
+        assert "summary" in data
+        assert "total_matches" in data["summary"]
+        assert "unique_guides" in data["summary"]
+        assert "guide_ids" in data["summary"]
+        if data["matches"]:
+            m = data["matches"][0]
+            for key in (
+                "line",
+                "source_line",
+                "guide_id",
+                "guide_title",
+                "category",
+                "frequency",
+                "snippet",
+            ):
+                assert key in m
+
+    def test_check_file_not_found(self, tmp_path):
+        r = run_cli("check", str(tmp_path / "nonexistent.py"), "--format", "json")
+        assert r.returncode == 2
+
+    def test_check_python_version_filter(self, tmp_path):
+        p = tmp_path / "sample.py"
+        p.write_text("from __future__ import annotations\n")
+        r_all = run_cli("check", str(p), "--format", "json")
+        r_old = run_cli("check", str(p), "--python-version", "3.11", "--format", "json")
+        all_matches = json.loads(r_all.stdout)["summary"]["total_matches"]
+        old_matches = json.loads(r_old.stdout)["summary"]["total_matches"]
+        assert old_matches <= all_matches
+
+
 class TestVersion:
     def test_version_flag(self):
         r = run_cli("--version")

@@ -13,6 +13,7 @@ aliases:
   - async-sessionmaker
 python: ">=3.9"
 frequency: medium
+detect-patterns:
 ---
 
 # Use AsyncSession for Async Database Access

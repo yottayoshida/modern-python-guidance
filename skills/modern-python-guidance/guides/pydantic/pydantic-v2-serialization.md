@@ -13,6 +13,8 @@ aliases:
   - json_encoders
 python: ">=3.9"
 frequency: medium
+detect-patterns:
+  - "json_encoders"
 ---
 
 # Use field_serializer for Custom Serialization

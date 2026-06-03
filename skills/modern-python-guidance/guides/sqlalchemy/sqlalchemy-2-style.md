@@ -13,6 +13,8 @@ aliases:
   - legacy-query
 python: ">=3.9"
 frequency: high
+detect-patterns:
+  - "\.query\([A-Z]"
 ---
 
 # Use SQLAlchemy 2.0 Query Style

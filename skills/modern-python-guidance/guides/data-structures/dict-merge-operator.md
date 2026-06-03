@@ -14,6 +14,7 @@ aliases:
 python: ">=3.9"
 frequency: medium
 pep: 584
+detect-patterns:
 ---
 
 # Use | Operator for Dict Merging

@@ -15,6 +15,8 @@ aliases:
 python: ">=3.7"
 frequency: high
 pep: 621
+detect-patterns:
+  - "from setuptools import"
 ---
 
 # Use pyproject.toml Instead of setup.py

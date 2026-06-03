@@ -16,6 +16,7 @@ aliases:
   - venv
 python: ">=3.8"
 frequency: high
+detect-patterns:
 ---
 
 # Use uv Instead of pip

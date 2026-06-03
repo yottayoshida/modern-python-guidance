@@ -13,6 +13,9 @@ aliases:
   - model_validator
 python: ">=3.9"
 frequency: high
+detect-patterns:
+  - "@validator\("
+  - "@root_validator"
 ---
 
 # Use Pydantic V2 Validators

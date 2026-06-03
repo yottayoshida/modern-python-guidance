@@ -14,6 +14,8 @@ aliases:
   - shutdown
 python: ">=3.9"
 frequency: high
+detect-patterns:
+  - "\.on_event\("
 ---
 
 # Use Lifespan Context Manager

@@ -39,6 +39,7 @@ class GuideMeta:
     frequency: str
     aliases: list[str] = field(default_factory=list)
     pep: list[int] = field(default_factory=list)
+    detect_patterns: list[str] | None = None
 
 
 def parse_frontmatter(text: str) -> tuple[GuideMeta, str]:
@@ -151,6 +152,19 @@ def _build_meta(raw: dict[str, Any]) -> GuideMeta:
     if not isinstance(tags, list) or not tags:
         raise FrontmatterError("tags must be a non-empty list")
 
+    detect_raw = raw.get("detect-patterns")
+    if detect_raw is None:
+        detect_patterns = None
+    elif isinstance(detect_raw, list):
+        detect_patterns = [str(p) for p in detect_raw]
+        for p in detect_patterns:
+            try:
+                re.compile(p)
+            except re.error as e:
+                raise FrontmatterError(f"invalid regex in detect-patterns: {p!r}: {e}") from e
+    else:
+        raise FrontmatterError(f"detect-patterns must be a list, got {detect_raw!r}")
+
     return GuideMeta(
         id=str(raw["id"]),
         title=str(raw["title"]),
@@ -161,4 +175,5 @@ def _build_meta(raw: dict[str, Any]) -> GuideMeta:
         frequency=freq,
         aliases=[str(a) for a in aliases_raw],
         pep=pep,
+        detect_patterns=detect_patterns,
     )

@@ -14,6 +14,7 @@ aliases:
 python: ">=3.9"
 frequency: medium
 pep: 616
+detect-patterns:
 ---
 
 # Use str.removeprefix/removesuffix

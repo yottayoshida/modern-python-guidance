@@ -107,6 +107,11 @@ mpg detect-version
 # Filter by category
 mpg search "timeout" --category async
 
+# Scan a file for outdated patterns
+mpg check app.py
+mpg check app.py --format json | jq '.summary.guide_ids'
+mpg check app.py --exit-zero  # always exit 0
+
 # JSON output (default when piped, explicit with --format)
 mpg search "typing" --format json | jq '.[0].id'
 ```

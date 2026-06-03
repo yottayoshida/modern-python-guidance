@@ -13,6 +13,9 @@ aliases:
   - datetime.utcfromtimestamp
 python: ">=3.11"
 frequency: high
+detect-patterns:
+  - "datetime\.utcnow\("
+  - "datetime\.utcfromtimestamp\("
 ---
 
 # Use datetime.now(UTC) Instead of utcnow()

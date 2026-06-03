@@ -13,6 +13,7 @@ aliases:
   - large response
 python: ">=3.9"
 frequency: medium
+detect-patterns:
 ---
 
 # Use httpx Streaming for Large Responses

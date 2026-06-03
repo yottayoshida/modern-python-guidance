@@ -16,6 +16,7 @@ aliases:
 python: ">=3.14"
 frequency: medium
 pep: 750
+detect-patterns:
 ---
 
 # Use Template Strings for Structured String Processing

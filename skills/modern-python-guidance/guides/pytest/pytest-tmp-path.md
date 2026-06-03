@@ -13,6 +13,8 @@ aliases:
   - temp-directory
 python: ">=3.9"
 frequency: medium
+detect-patterns:
+  - "def test_.*\btmpdir\b"
 ---
 
 # Use tmp_path Instead of tmpdir

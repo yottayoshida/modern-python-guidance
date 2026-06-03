@@ -14,6 +14,7 @@ aliases:
 python: ">=3.10"
 frequency: medium
 pep: 634
+detect-patterns:
 ---
 
 # Use Structural Pattern Matching

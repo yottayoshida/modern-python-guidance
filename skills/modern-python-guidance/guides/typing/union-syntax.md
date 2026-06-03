@@ -14,6 +14,8 @@ aliases:
 python: ">=3.10"
 frequency: high
 pep: 604
+detect-patterns:
+  - "from typing import .*\b(Optional|Union)\b"
 ---
 
 # Use X | Y Union Syntax

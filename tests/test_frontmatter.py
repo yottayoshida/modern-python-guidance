@@ -276,3 +276,91 @@ pep: ٣٤٥
 """
     with pytest.raises(FrontmatterError, match="pep must be int or list"):
         parse_frontmatter(text)
+
+
+def test_detect_patterns_curated():
+    text = """\
+---
+id: test-detect
+title: Test Detect
+category: typing
+layer: 1
+tags:
+  - test
+python: ">=3.9"
+frequency: high
+detect-patterns:
+  - "from typing import .*List"
+  - "from typing import .*Dict"
+---
+
+Body.
+"""
+    meta, _ = parse_frontmatter(text)
+    assert meta.detect_patterns == ["from typing import .*List", "from typing import .*Dict"]
+
+
+def test_detect_patterns_opt_out():
+    text = """\
+---
+id: test-optout
+title: Test Optout
+category: typing
+layer: 1
+tags:
+  - test
+python: ">=3.9"
+frequency: high
+detect-patterns:
+---
+
+Body.
+"""
+    meta, _ = parse_frontmatter(text)
+    assert meta.detect_patterns == []
+
+
+def test_detect_patterns_absent():
+    meta, _ = parse_frontmatter(VALID_GUIDE)
+    assert meta.detect_patterns is None
+
+
+def test_detect_patterns_invalid_regex():
+    text = """\
+---
+id: test-bad-regex
+title: Bad Regex
+category: typing
+layer: 1
+tags:
+  - test
+python: ">=3.9"
+frequency: high
+detect-patterns:
+  - "[invalid"
+---
+
+Body.
+"""
+    with pytest.raises(FrontmatterError, match="invalid regex"):
+        parse_frontmatter(text)
+
+
+def test_detect_patterns_non_list_rejected():
+    text = """\
+---
+id: test-nonlist
+title: Non List
+category: typing
+layer: 1
+tags:
+  - test
+python: ">=3.9"
+frequency: high
+detect-patterns: notalist
+---
+
+Body.
+"""
+    with pytest.raises(FrontmatterError, match="detect-patterns must be a list"):
+        parse_frontmatter(text)

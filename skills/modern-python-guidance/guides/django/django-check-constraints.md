@@ -12,6 +12,7 @@ aliases:
   - check-constraint
 python: ">=3.9"
 frequency: low
+detect-patterns:
 ---
 
 # Use condition Instead of check in CheckConstraint

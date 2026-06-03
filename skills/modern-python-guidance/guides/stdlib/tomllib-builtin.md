@@ -14,6 +14,8 @@ aliases:
 python: ">=3.11"
 frequency: medium
 pep: 680
+detect-patterns:
+  - "import toml\b"
 ---
 
 # Use Built-in tomllib
