@@ -4,8 +4,9 @@ from pathlib import Path
 
 import pytest
 
-from modern_python_guidance.guide_index import _extract_snippet, build_index
-from modern_python_guidance.search import search
+from modern_python_guidance.frontmatter import GuideMeta
+from modern_python_guidance.guide_index import Guide, GuideIndex, _extract_snippet, build_index
+from modern_python_guidance.search import WEIGHT_BODY, search
 
 GUIDES_DIR = Path(__file__).parent.parent / "skills" / "modern-python-guidance" / "guides"
 
@@ -190,6 +191,101 @@ class TestSnippetExtraction:
         body = "## BAD\n```python\ncode\n```\n"
         snippet = _extract_snippet(body)
         assert snippet == ""
+
+
+class TestBodySearch:
+    """Body text is indexed at WEIGHT_BODY=2, discoverable but below frontmatter."""
+
+    def test_body_only_match_aiter_bytes(self, index):
+        results = search(index, "aiter_bytes")
+        assert len(results) >= 1
+        assert results[0].guide_id == "httpx-streaming"
+        assert not results[0].fuzzy
+
+    def test_body_only_match_serialize_timestamp(self, index):
+        results = search(index, "serialize_timestamp")
+        assert len(results) >= 1
+        assert results[0].guide_id == "pydantic-v2-serialization"
+
+    def test_body_only_match_from_attributes(self, index):
+        results = search(index, "from_attributes")
+        ids = [r.guide_id for r in results]
+        assert "pydantic-v2-config" in ids
+
+    def test_code_fragment_with_parens(self, index):
+        results = search(index, "aiter_bytes()")
+        assert len(results) >= 1
+        assert results[0].guide_id == "httpx-streaming"
+
+    def test_code_fragment_with_equals(self, index):
+        results = search(index, "from_attributes=True")
+        ids = [r.guide_id for r in results]
+        assert "pydantic-v2-config" in ids
+
+    def test_body_score_below_frontmatter(self, index):
+        results = search(index, "typing")
+        assert results[0].guide_id == "use-builtin-generics"
+        assert results[0].score >= 10
+
+    def test_body_match_gets_frequency_boost(self, index):
+        results = search(index, "aiter_bytes")
+        r = results[0]
+        assert r.score > 2.0
+
+    def test_metadata_ranking_preserved(self, index):
+        results = search(index, "typing")
+        assert results[0].guide_id == "use-builtin-generics"
+
+    def test_fuzzy_fallback_still_works(self, index):
+        results = search(index, "genercs")
+        assert len(results) > 0
+        assert results[0].fuzzy is True
+
+
+class TestBodySearchSynthetic:
+    """Synthetic index tests for exact score verification — no real guide dependency."""
+
+    @pytest.fixture
+    def synthetic_index(self):
+        meta = GuideMeta(
+            id="synth",
+            title="Synthetic Guide",
+            category="testing",
+            layer=1,
+            tags=["unrelated_tag"],
+            python=">=3.9",
+            frequency="low",
+        )
+        guide = Guide(
+            meta=meta,
+            body="",
+            source_path="synth.md",
+            body_tokens=frozenset(
+                ["target_api", "another_api", "datetime.utcnow", "datetime", "utcnow"]
+            ),
+        )
+        return GuideIndex(guides={"synth": guide})
+
+    def test_exact_body_only_score(self, synthetic_index):
+        results = search(synthetic_index, "target_api")
+        assert len(results) == 1
+        assert results[0].score == WEIGHT_BODY
+
+    def test_multiple_idents_score_additive(self, synthetic_index):
+        results = search(synthetic_index, "target_api another_api")
+        assert len(results) == 1
+        assert results[0].score == WEIGHT_BODY * 2
+
+    def test_dotted_query_matches_split_parts(self, synthetic_index):
+        results = search(synthetic_index, "datetime.utcnow()")
+        assert len(results) == 1
+        ids_matched = {"datetime", "utcnow"}
+        assert results[0].score == WEIGHT_BODY * len(ids_matched)
+
+    def test_body_match_suppresses_fuzzy(self, synthetic_index):
+        results = search(synthetic_index, "target_api")
+        assert len(results) >= 1
+        assert not results[0].fuzzy
 
 
 class TestEdgeCases:

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import importlib.resources
 import logging
+import re
 from dataclasses import dataclass, field
 from itertools import zip_longest
 from pathlib import Path
@@ -13,12 +14,17 @@ from modern_python_guidance.frontmatter import FrontmatterError, GuideMeta, pars
 log = logging.getLogger(__name__)
 
 
+_DOTTED_IDENT_RE = re.compile(r"[a-zA-Z_]\w+(?:\.[a-zA-Z_]\w+)*")
+_URL_RE = re.compile(r"https?://")
+
+
 @dataclass
 class Guide:
     meta: GuideMeta
     body: str
     source_path: str
     snippet: str = ""
+    body_tokens: frozenset[str] = field(default_factory=frozenset)
 
 
 @dataclass
@@ -71,6 +77,7 @@ def build_index(guides_dir: Path | None = None) -> GuideIndex:
                 body=body,
                 source_path=str(md_file),
                 snippet=_extract_snippet(body),
+                body_tokens=_tokenize_body(body),
             )
         except FrontmatterError as e:
             log.warning("Skipping %s: %s", md_file, e)
@@ -115,6 +122,24 @@ def _code_lines(body: str, heading: str) -> list[str]:
         if in_fence and stripped:
             lines.append(stripped)
     return lines
+
+
+def _tokenize_body(body: str) -> frozenset[str]:
+    """Extract lowercased identifiers from guide body for search indexing."""
+    tokens: set[str] = set()
+    for line in body.splitlines():
+        stripped = line.strip()
+        if _URL_RE.search(stripped):
+            continue
+        if stripped.startswith("```"):
+            continue
+        cleaned = stripped.replace("`", "").lstrip("#").strip()
+        for match in _DOTTED_IDENT_RE.findall(cleaned):
+            lower = match.lower()
+            tokens.add(lower)
+            if "." in lower:
+                tokens.update(lower.split("."))
+    return frozenset(tokens)
 
 
 def _find_guides_dir() -> Path:

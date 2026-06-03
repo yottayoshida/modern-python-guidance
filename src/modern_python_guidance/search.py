@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import difflib
+import re
 from dataclasses import dataclass
 
 from modern_python_guidance.compat import token_estimate, version_compatible
@@ -13,6 +14,7 @@ WEIGHT_TAG = 10
 WEIGHT_ALIAS = 8
 WEIGHT_TITLE = 5
 WEIGHT_CATEGORY = 3
+WEIGHT_BODY = 2
 
 FREQ_BOOST = {"high": 1.0, "medium": 0.5, "low": 0.0}
 
@@ -45,6 +47,8 @@ def search(
     if not tokens:
         return []
 
+    query_idents = frozenset(re.findall(r"[a-zA-Z_]\w+", query))
+
     results: list[SearchResult] = []
 
     for guide_id, guide in index.guides.items():
@@ -56,7 +60,7 @@ def search(
         if python_version and not version_compatible(meta.python, python_version):
             continue
 
-        score = _score(meta, tokens)
+        score = _score(meta, tokens, guide.body_tokens, query_idents)
 
         if score > 0:
             score += FREQ_BOOST.get(meta.frequency, 0.0)
@@ -84,7 +88,12 @@ def search(
     return results[:limit]
 
 
-def _score(meta: GuideMeta, tokens: list[str]) -> float:
+def _score(
+    meta: GuideMeta,
+    tokens: list[str],
+    body_tokens: frozenset[str],
+    query_idents: frozenset[str],
+) -> float:
     score = 0.0
     tags_lower = [t.lower() for t in meta.tags]
     aliases_lower = [a.lower() for a in meta.aliases]
@@ -101,6 +110,10 @@ def _score(meta: GuideMeta, tokens: list[str]) -> float:
             score += WEIGHT_TITLE
         if token == meta.category.lower():
             score += WEIGHT_CATEGORY
+
+    for ident in query_idents:
+        if ident in body_tokens:
+            score += WEIGHT_BODY
 
     return score
 

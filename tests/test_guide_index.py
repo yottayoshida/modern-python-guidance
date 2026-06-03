@@ -10,6 +10,7 @@ from modern_python_guidance.guide_index import (
     GuideIndex,
     _code_lines,
     _find_guides_dir,
+    _tokenize_body,
     build_index,
 )
 
@@ -214,6 +215,95 @@ class TestBuildIndex:
 # ---------------------------------------------------------------------------
 # _code_lines (boundary cases only — _extract_snippet covered by test_search.py)
 # ---------------------------------------------------------------------------
+
+
+class TestTokenizeBody:
+    def test_empty_body(self):
+        assert _tokenize_body("") == frozenset()
+
+    def test_extracts_identifiers(self):
+        body = "Use `model_dump()` instead of `.dict()`."
+        tokens = _tokenize_body(body)
+        assert "model_dump" in tokens
+        assert "dict" in tokens
+
+    def test_extracts_multi_word_identifiers(self):
+        body = "Call `field_validator` and `model_validate_json`."
+        tokens = _tokenize_body(body)
+        assert "field_validator" in tokens
+        assert "model_validate_json" in tokens
+
+    def test_url_lines_excluded(self):
+        body = (
+            "See https://docs.python.org/3/library/datetime.html for details.\n"
+            "Use `utcnow` instead."
+        )
+        tokens = _tokenize_body(body)
+        assert "python" not in tokens
+        assert "datetime" not in tokens
+        assert "utcnow" in tokens
+
+    def test_fence_markers_excluded_code_preserved(self):
+        body = "```python\naiter_bytes = True\n```\n"
+        tokens = _tokenize_body(body)
+        assert "aiter_bytes" in tokens
+        assert "python" not in tokens
+
+    def test_dot_split_qualified_names(self):
+        body = "Replace `datetime.utcnow` with `datetime.now(tz=UTC)`."
+        tokens = _tokenize_body(body)
+        assert "datetime.utcnow" in tokens
+        assert "datetime" in tokens
+        assert "utcnow" in tokens
+
+    def test_heading_markers_stripped(self):
+        body = "## Migration Guide\nUse `new_api` now."
+        tokens = _tokenize_body(body)
+        assert "migration" in tokens
+        assert "new_api" in tokens
+
+    def test_backticks_stripped(self):
+        body = "Use `AsyncClient` with `base_url`."
+        tokens = _tokenize_body(body)
+        assert "asyncclient" in tokens
+        assert "base_url" in tokens
+
+    def test_returns_frozenset(self):
+        result = _tokenize_body("some text")
+        assert isinstance(result, frozenset)
+
+    def test_single_char_identifiers_excluded(self):
+        body = "x = a + b"
+        tokens = _tokenize_body(body)
+        assert "x" not in tokens
+        assert "a" not in tokens
+        assert "b" not in tokens
+
+
+class TestBuildIndexBodyTokens:
+    def test_body_tokens_populated(self, tmp_path: Path):
+        (tmp_path / "guide-a.md").write_text(
+            _make_guide_md(guide_id="guide-a", bad_code="old_api()", good_code="new_api()")
+        )
+        idx = build_index(tmp_path)
+        guide = idx.get("guide-a")
+        assert guide is not None
+        assert isinstance(guide.body_tokens, frozenset)
+        assert "old_api" in guide.body_tokens
+        assert "new_api" in guide.body_tokens
+
+    def test_body_tokens_default_empty(self):
+        meta = GuideMeta(
+            id="a",
+            title="A",
+            category="c",
+            layer=1,
+            tags=["t"],
+            python=">=3.9",
+            frequency="high",
+        )
+        guide = Guide(meta=meta, body="", source_path="a.md")
+        assert guide.body_tokens == frozenset()
 
 
 class TestCodeLines:

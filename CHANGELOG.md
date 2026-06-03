@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.4.1] — 2026-06-03
+
+### Added
+
+- Body text search indexing: API names and identifiers appearing only in guide body text (e.g. `aiter_bytes`, `from_attributes`, `serialize_timestamp`) are now discoverable via `mpg search`. Body matches score at `WEIGHT_BODY=2`, below all frontmatter weights (TAG=10, ALIAS=8, TITLE=5, CATEGORY=3), preserving existing metadata-dominant ranking. Two-tier query tokenization handles code fragments like `aiter_bytes()` and `from_attributes=True`. (closes #22)
+- 25 new tests (911 total).
+
 ## [0.4.0] — 2026-06-03
 
 ### Added
