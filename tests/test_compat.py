@@ -33,6 +33,18 @@ class TestVersionCompatible:
     def test_patch_level_target(self):
         assert version_compatible(">=3.9", "3.11.1") is True
 
+    def test_unexpected_error_propagates(self, monkeypatch):
+        def _boom(self, *a, **kw):
+            raise RuntimeError("unexpected")
+
+        fake = type("Boom", (), {"__init__": _boom, "__contains__": _boom})
+        monkeypatch.setattr(
+            "modern_python_guidance.compat.SpecifierSet",
+            fake,
+        )
+        with pytest.raises(RuntimeError, match="unexpected"):
+            version_compatible(">=3.9", "3.12")
+
 
 class TestTokenEstimate:
     def test_empty_string(self):

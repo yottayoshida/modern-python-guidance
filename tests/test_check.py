@@ -276,6 +276,52 @@ class TestEdgeCases:
         assert len(patterns) == 0
 
 
+class TestStringLineFiltering:
+    def test_docstring_not_matched(self, tmp_path: Path, index: GuideIndex):
+        p = tmp_path / "docstring.py"
+        p.write_text(
+            "def example():\n"
+            '    """Use datetime.utcnow() for timestamps.\n'
+            "\n"
+            "    Also from typing import List is common.\n"
+            '    """\n'
+            "    return 1\n",
+            encoding="utf-8",
+        )
+        matches = check_file(p, index)
+        assert matches == []
+
+    def test_inline_string_on_code_line_still_matched(self, tmp_path: Path, index: GuideIndex):
+        p = tmp_path / "inline.py"
+        p.write_text(
+            'from typing import List\nx = "some string"\n',
+            encoding="utf-8",
+        )
+        matches = check_file(p, index)
+        ids = {m.guide_id for m in matches}
+        assert "use-builtin-generics" in ids
+
+    def test_tokenize_failure_falls_back(self, tmp_path: Path, index: GuideIndex):
+        p = tmp_path / "broken.py"
+        p.write_text(
+            'from typing import List\nx = """unterminated\n',
+            encoding="utf-8",
+        )
+        matches = check_file(p, index)
+        ids = {m.guide_id for m in matches}
+        assert "use-builtin-generics" in ids
+
+    def test_single_line_string_not_skipped(self, tmp_path: Path, index: GuideIndex):
+        p = tmp_path / "singleline.py"
+        p.write_text(
+            "from typing import List  # 'example'\n",
+            encoding="utf-8",
+        )
+        matches = check_file(p, index)
+        ids = {m.guide_id for m in matches}
+        assert "use-builtin-generics" in ids
+
+
 class TestFreqRank:
     def test_all_frequencies_covered(self):
         assert "high" in FREQ_RANK

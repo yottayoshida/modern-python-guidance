@@ -346,6 +346,49 @@ Body.
         parse_frontmatter(text)
 
 
+def test_invalid_python_specifier_rejected():
+    text = """\
+---
+id: bad-spec
+title: Bad Specifier
+category: typing
+layer: 1
+tags:
+  - test
+python: "not-a-valid-specifier"
+frequency: high
+---
+
+Body.
+"""
+    with pytest.raises(FrontmatterError, match="invalid python specifier"):
+        parse_frontmatter(text)
+
+
+@pytest.mark.parametrize(
+    "specifier",
+    [">=3.9", ">=3.11", ">=3.9,<3.13", ">=3.11,<3.14", ""],
+    ids=["ge39", "ge311", "range39_13", "range311_14", "empty"],
+)
+def test_valid_python_specifiers_accepted(specifier: str):
+    text = f"""\
+---
+id: valid-spec
+title: Valid Specifier
+category: typing
+layer: 1
+tags:
+  - test
+python: "{specifier}"
+frequency: high
+---
+
+Body.
+"""
+    meta, _ = parse_frontmatter(text)
+    assert meta.python == specifier
+
+
 def test_detect_patterns_non_list_rejected():
     text = """\
 ---

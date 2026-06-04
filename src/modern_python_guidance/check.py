@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import io
 import re
+import tokenize as _tokenize
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -33,6 +35,23 @@ class CheckMatch:
     snippet: str
 
 
+def _string_lines(text: str) -> frozenset[int]:
+    """Line numbers belonging to multi-line STRING tokens (docstrings etc.)."""
+    skip: set[int] = set()
+    try:
+        tokens = _tokenize.generate_tokens(io.StringIO(text).readline)
+        string_types = {_tokenize.STRING}
+        fstring_mid = getattr(_tokenize, "FSTRING_MIDDLE", None)
+        if fstring_mid is not None:
+            string_types.add(fstring_mid)
+        for tok in tokens:
+            if tok.type in string_types and tok.end[0] > tok.start[0]:
+                skip.update(range(tok.start[0], tok.end[0] + 1))
+    except _tokenize.TokenError:
+        return frozenset()
+    return frozenset(skip)
+
+
 def check_file(
     path: Path,
     index: GuideIndex,
@@ -48,8 +67,11 @@ def check_file(
     if not patterns:
         return []
 
+    skip = _string_lines(text)
     matches: list[CheckMatch] = []
     for lineno, line in enumerate(text.splitlines(), 1):
+        if lineno in skip:
+            continue
         stripped = line.strip()
         if not stripped or stripped.startswith("#"):
             continue
