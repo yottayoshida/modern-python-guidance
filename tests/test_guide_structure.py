@@ -210,6 +210,15 @@ class TestDetectPatterns:
                 )
 
 
+class TestPythonSpecifiers:
+    def test_all_guides_have_valid_specifiers(self, guide_file: Path):
+        from packaging.specifiers import SpecifierSet
+
+        text = guide_file.read_text(encoding="utf-8")
+        meta, _ = parse_frontmatter(text)
+        SpecifierSet(meta.python)
+
+
 class TestGuideInventory:
     def test_no_duplicate_ids(self):
         seen: dict[str, Path] = {}

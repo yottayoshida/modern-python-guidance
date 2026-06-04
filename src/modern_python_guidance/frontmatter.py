@@ -13,6 +13,8 @@ import re
 from dataclasses import dataclass, field
 from typing import Any
 
+from packaging.specifiers import InvalidSpecifier, SpecifierSet
+
 _KEY_RE = re.compile(r"^([a-z][a-z0-9_-]*)\s*:\s*(.*)")
 _LIST_ITEM_RE = re.compile(r"^  - (.+)")
 _FENCE = "---"
@@ -123,6 +125,12 @@ def _build_meta(raw: dict[str, Any]) -> GuideMeta:
         if isinstance(raw[str_field], list):
             raise FrontmatterError(f"'{str_field}' must be a scalar value, not a list")
 
+    python_value = str(raw["python"])
+    try:
+        SpecifierSet(python_value)
+    except InvalidSpecifier as e:
+        raise FrontmatterError(f"invalid python specifier '{python_value}': {e}") from e
+
     freq = raw["frequency"]
     if freq not in VALID_FREQUENCIES:
         raise FrontmatterError(f"invalid frequency '{freq}', must be one of {VALID_FREQUENCIES}")
@@ -171,7 +179,7 @@ def _build_meta(raw: dict[str, Any]) -> GuideMeta:
         category=str(raw["category"]),
         layer=layer,
         tags=[str(t) for t in tags],
-        python=str(raw["python"]),
+        python=python_value,
         frequency=freq,
         aliases=[str(a) for a in aliases_raw],
         pep=pep,
