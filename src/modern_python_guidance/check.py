@@ -47,7 +47,7 @@ def _string_lines(text: str) -> frozenset[int]:
         for tok in tokens:
             if tok.type in string_types and tok.end[0] > tok.start[0]:
                 skip.update(range(tok.start[0], tok.end[0] + 1))
-    except _tokenize.TokenError:
+    except (_tokenize.TokenError, SyntaxError):
         return frozenset()
     return frozenset(skip)
 

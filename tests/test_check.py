@@ -311,6 +311,16 @@ class TestStringLineFiltering:
         ids = {m.guide_id for m in matches}
         assert "use-builtin-generics" in ids
 
+    def test_indentation_error_falls_back(self, tmp_path: Path, index: GuideIndex):
+        p = tmp_path / "indent.py"
+        p.write_text(
+            "from typing import List\nif True:\n    x = 1\n  y = 2\n",
+            encoding="utf-8",
+        )
+        matches = check_file(p, index)
+        ids = {m.guide_id for m in matches}
+        assert "use-builtin-generics" in ids
+
     def test_single_line_string_not_skipped(self, tmp_path: Path, index: GuideIndex):
         p = tmp_path / "singleline.py"
         p.write_text(
