@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.4.3] — 2026-06-04
+
+### Fixed
+
+- MCP server crash on malformed `params` and `arguments`: non-dict values now return JSON-RPC -32602 instead of `TypeError`. `serve()` catch-all returns -32603 on unexpected errors. Notification messages (no `id`) are silently dropped per JSON-RPC 2.0 spec. (closes #91)
+- `mpg check` false positives in multi-line docstrings: `check_file()` now uses `tokenize` to identify multi-line string token ranges and skips those lines. Single-line strings on code lines are still scanned. Tokenize failure (syntax errors, indentation errors) falls back to scanning all lines. (closes #92)
+- Invalid PEP 440 specifiers in guide `python:` field silently treated as all-version compatible: `_build_meta()` now validates with `SpecifierSet` at parse time, raising `FrontmatterError`. Runtime `version_compatible()` narrows except from `(InvalidSpecifier, Exception)` to `(InvalidSpecifier, InvalidVersion)`. (closes #93)
+
+### Added
+
+- 53 new tests (987 total).
+
 ## [0.4.2] — 2026-06-04
 
 ### Fixed
