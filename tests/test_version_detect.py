@@ -98,7 +98,7 @@ class TestPyprojectToml:
 
     def test_poetry_dict_no_version_key(self, tmp_project: Path, caplog):
         (tmp_project / "pyproject.toml").write_text(
-            '[tool.poetry.dependencies.python]\noptional = true\n'
+            "[tool.poetry.dependencies.python]\noptional = true\n"
         )
         assert detect_version(project_dir=tmp_project) == DEFAULT_VERSION
         assert "no 'version' key" in caplog.text
@@ -111,16 +111,12 @@ class TestPyprojectToml:
         assert "union constraint" in caplog.text
 
     def test_poetry_unsupported_warns(self, tmp_project: Path, caplog):
-        (tmp_project / "pyproject.toml").write_text(
-            '[tool.poetry.dependencies]\npython = "*"\n'
-        )
+        (tmp_project / "pyproject.toml").write_text('[tool.poetry.dependencies]\npython = "*"\n')
         assert detect_version(project_dir=tmp_project) == DEFAULT_VERSION
         assert "not supported" in caplog.text
 
     def test_poetry_major_only_warns(self, tmp_project: Path, caplog):
-        (tmp_project / "pyproject.toml").write_text(
-            '[tool.poetry.dependencies]\npython = "^3"\n'
-        )
+        (tmp_project / "pyproject.toml").write_text('[tool.poetry.dependencies]\npython = "^3"\n')
         assert detect_version(project_dir=tmp_project) == DEFAULT_VERSION
         assert "not supported" in caplog.text
 
@@ -178,9 +174,7 @@ class TestPrecedence:
         assert detect_version(project_dir=tmp_project) == "3.10"
 
     def test_poetry_unsupported_falls_to_python_version_file(self, tmp_project: Path):
-        (tmp_project / "pyproject.toml").write_text(
-            '[tool.poetry.dependencies]\npython = "*"\n'
-        )
+        (tmp_project / "pyproject.toml").write_text('[tool.poetry.dependencies]\npython = "*"\n')
         (tmp_project / ".python-version").write_text("3.12\n")
         assert detect_version(project_dir=tmp_project) == "3.12"
 
