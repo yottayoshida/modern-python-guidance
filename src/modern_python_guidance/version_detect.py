@@ -3,8 +3,9 @@
 Precedence chain:
   1. CLI --python-version flag (explicit override)
   2. pyproject.toml [project].requires-python (PEP 621)
-  3. .python-version file (pyenv/asdf)
-  4. Default: 3.11
+  3. pyproject.toml [tool.poetry.dependencies].python (caret/tilde/PEP 440)
+  4. .python-version file (pyenv/asdf)
+  5. Default: 3.11
 """
 
 from __future__ import annotations
@@ -24,6 +25,7 @@ DEFAULT_VERSION = "3.11"
 _KNOWN_MINORS = [Version(f"3.{minor}") for minor in range(7, 20)]
 
 _POETRY_CARET_RE = re.compile(r"\^(\d+\.\d+)")
+_POETRY_TILDE_RE = re.compile(r"~(\d+\.\d+)")
 
 
 def detect_version(
@@ -68,21 +70,54 @@ def _from_pyproject(path: Path) -> str | None:
 
     poetry_python = data.get("tool", {}).get("poetry", {}).get("dependencies", {}).get("python")
     if poetry_python:
-        m = _POETRY_CARET_RE.search(str(poetry_python))
-        if m:
-            log.warning(
-                "Poetry caret version '%s' is not PEP 440 — cannot parse precisely. "
-                "Use --python-version or add [project].requires-python to pyproject.toml.",
-                poetry_python,
-            )
-        else:
-            log.warning(
-                "Poetry python constraint '%s' detected but not supported. "
-                "Use --python-version or add [project].requires-python.",
-                poetry_python,
-            )
+        result = _parse_poetry_python(poetry_python)
+        if result is not None:
+            return result
+
+    return None
+
+
+def _parse_poetry_python(value: str | dict) -> str | None:
+    if isinstance(value, dict):
+        value = value.get("version")
+        if not value:
+            log.warning("Poetry python constraint has no 'version' key")
+            return None
+
+    if not isinstance(value, str):
+        log.warning("Poetry python constraint has unexpected type %s", type(value).__name__)
         return None
 
+    poetry_str = value
+
+    if "||" in poetry_str:
+        log.warning(
+            "Poetry union constraint '%s' is not supported. "
+            "Use --python-version or add [project].requires-python.",
+            poetry_str,
+        )
+        return None
+
+    m = _POETRY_CARET_RE.search(poetry_str)
+    if m:
+        log.info("Parsed Poetry caret constraint '%s' → %s", poetry_str, m.group(1))
+        return m.group(1)
+
+    m = _POETRY_TILDE_RE.search(poetry_str)
+    if m:
+        log.info("Parsed Poetry tilde constraint '%s' → %s", poetry_str, m.group(1))
+        return m.group(1)
+
+    result = _min_version_from_specifier(poetry_str)
+    if result is not None:
+        log.info("Parsed Poetry PEP 440 constraint '%s' → %s", poetry_str, result)
+        return result
+
+    log.warning(
+        "Poetry python constraint '%s' detected but not supported. "
+        "Use --python-version or add [project].requires-python.",
+        poetry_str,
+    )
     return None
 
 
