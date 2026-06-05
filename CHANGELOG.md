@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.4.4] — 2026-06-05
+
+### Added
+
+- Poetry constraint parsing: `detect_version()` now extracts the minimum Python version from `[tool.poetry.dependencies].python` instead of only logging a warning. Supported forms: caret (`^3.10`), tilde (`~3.11`), PEP 440 (`>=3.10,<3.14`), and dict-form (`{version = "^3.10"}`). Union operators (`||`) and unsupported formats warn and fall through to `.python-version` / default. (closes #95)
+- Python 3.14 added to CI test matrix as a regular (non-allowed-failure) entry. Python 3.14 has been GA since 2025-10-07; pyproject.toml classifiers already declared support. (closes #94)
+- 12 new tests (999 total).
+
 ## [0.4.3] — 2026-06-04
 
 ### Fixed
