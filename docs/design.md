@@ -150,10 +150,9 @@ Fuzzy results are marked with `fuzzy: true` in the output.
 
 1. `--python-version` CLI flag (explicit override)
 2. `pyproject.toml` `[project].requires-python` (PEP 621)
-3. `.python-version` file (pyenv/asdf convention)
-4. Default: `3.11`
-
-Poetry's caret syntax (`^3.11`) is detected but not parsed — the tool logs a warning and suggests using `--python-version` or adding `[project].requires-python`.
+3. `pyproject.toml` `[tool.poetry.dependencies].python` — caret (`^3.10`), tilde (`~3.11`), and PEP 440 (`>=3.10,<3.14`) constraints are parsed to extract the minimum version. Dict-form (`{version = "^3.10"}`) is also supported. Union operators (`||`) are not supported and fall through with a warning.
+4. `.python-version` file (pyenv/asdf convention)
+5. Default: `3.11`
 
 ## Output format
 

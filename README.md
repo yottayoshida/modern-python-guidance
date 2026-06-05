@@ -134,8 +134,9 @@ Guides specify their minimum Python version. The CLI auto-detects your project's
 
 1. `--python-version` flag
 2. `pyproject.toml` `requires-python`
-3. `.python-version` file
-4. Default: 3.11
+3. `pyproject.toml` Poetry `python` constraint (`^3.10`, `~3.11`, `>=3.10,<3.14`)
+4. `.python-version` file
+5. Default: 3.11
 
 ```bash
 # Only shows guides compatible with Python 3.9
