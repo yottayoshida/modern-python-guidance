@@ -153,8 +153,13 @@ Add a [PostToolUse hook](https://docs.anthropic.com/en/docs/claude-code/hooks) t
   "hooks": {
     "PostToolUse": [
       {
-        "matcher": "Edit|Write|MultiEdit",
-        "command": "mpg hook claude-post-tool-use"
+        "matcher": "tool == \"Edit\" || tool == \"Write\" || tool == \"MultiEdit\"",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "mpg hook claude-post-tool-use"
+          }
+        ]
       }
     ]
   }
