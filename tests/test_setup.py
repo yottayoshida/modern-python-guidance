@@ -577,6 +577,21 @@ class TestRunSetup:
             assert run_setup(dry_run=True) == 0
         assert "Ready" not in capsys.readouterr().out
 
+    def test_success_shows_hook_hint(self, capsys: pytest.CaptureFixture[str]):
+        p_mcp, p_skills, p_rules = self._patch_all()
+        with p_mcp, p_skills, p_rules:
+            assert run_setup() == 0
+        out = capsys.readouterr().out
+        assert "PostToolUse" in out
+
+    def test_skills_only_shows_hook_hint(self, capsys: pytest.CaptureFixture[str]):
+        p_mcp, p_skills, p_rules = self._patch_all()
+        with p_mcp, p_skills, p_rules:
+            assert run_setup(skills_only=True) == 0
+        out = capsys.readouterr().out
+        assert "PostToolUse" in out
+        assert "Ready" not in out
+
     def test_mutual_exclusion(self, capsys: pytest.CaptureFixture[str]):
         code = run_setup(mcp_only=True, skills_only=True)
         assert code == 1

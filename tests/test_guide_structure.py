@@ -18,7 +18,7 @@ from pathlib import Path
 import pytest
 
 from modern_python_guidance.frontmatter import parse_frontmatter
-from modern_python_guidance.guide_index import _code_lines, _find_guides_dir
+from modern_python_guidance.guide_index import _code_lines, _find_guides_dir, build_index
 from modern_python_guidance.setup_cmd import _build_rule_text
 
 GUIDES_DIR = _find_guides_dir()
@@ -115,12 +115,7 @@ class TestGuideStructure:
 
 
 class TestRuleFileSync:
-    """CI sync tests: rules/modern-python.md body matches SKILL.md body."""
-
-    def _skill_body(self) -> str:
-        skill_md = (GUIDES_DIR.parent / "SKILL.md").read_text(encoding="utf-8")
-        parts = skill_md.split("---", 2)
-        return parts[2].lstrip("\n")
+    """CI sync tests: rules/modern-python.md is thin and matches _build_rule_text()."""
 
     def _rule_path(self) -> Path:
         return GUIDES_DIR.parent.parent.parent / "rules" / "modern-python.md"
@@ -129,12 +124,6 @@ class TestRuleFileSync:
         text = self._rule_path().read_text(encoding="utf-8")
         parts = text.split("---", 2)
         return parts[1].strip(), parts[2].lstrip("\n")
-
-    def test_body_matches_skill(self):
-        """rules/modern-python.md body == SKILL.md body (content sync)."""
-        skill_body = self._skill_body()
-        _, rule_body = self._rule_parts()
-        assert rule_body == skill_body
 
     def test_matches_build_rule_text(self):
         """rules/modern-python.md == _build_rule_text() output (SoT enforcement)."""
@@ -162,6 +151,23 @@ class TestRuleFileSync:
         fm, _ = self._rule_parts()
         assert "name:" not in fm
         assert "description:" not in fm
+
+    def test_thin_rule_has_guide_count(self):
+        """Thin Rules body contains correct guide count."""
+        _, body = self._rule_parts()
+        assert f"All {EXPECTED_GUIDE_COUNT} guides" in body
+
+    def test_thin_rule_has_mcp_pointer(self):
+        """Thin Rules body references MCP tool or CLI retrieve."""
+        _, body = self._rule_parts()
+        assert "retrieve_guides" in body or "mpg retrieve" in body
+
+    def test_thin_rule_has_all_guide_ids(self):
+        """Every guide ID from the registry appears in thin Rules category index."""
+        _, body = self._rule_parts()
+        index = build_index()
+        for guide_id in index.guides:
+            assert f"`{guide_id}`" in body, f"guide ID missing from thin Rules: {guide_id}"
 
 
 class TestDetectPatterns:

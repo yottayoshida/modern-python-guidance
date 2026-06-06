@@ -250,6 +250,89 @@ class TestCheck:
         old_matches = json.loads(r_old.stdout)["summary"]["total_matches"]
         assert old_matches <= all_matches
 
+    def test_check_quiet_clean_file(self, tmp_path):
+        p = tmp_path / "clean.py"
+        p.write_text("x: list[str] = []\n")
+        r = run_cli("check", str(p), "--quiet", "--format", "human")
+        assert r.returncode == 0
+        assert r.stdout == ""
+        assert r.stderr == ""
+
+    def test_check_quiet_with_matches(self, tmp_path):
+        p = tmp_path / "bad.py"
+        p.write_text("from typing import List\n")
+        r = run_cli("check", str(p), "--quiet", "--format", "human")
+        assert r.returncode == 1
+        assert "outdated pattern" in r.stdout
+
+
+class TestHook:
+    def _run_hook(self, stdin_data: str) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(
+            [*BIN, "hook", "claude-post-tool-use"],
+            input=stdin_data,
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+
+    def test_hook_py_with_matches(self, tmp_path):
+        p = tmp_path / "bad.py"
+        p.write_text("from typing import List\n")
+        stdin = json.dumps({"tool_input": {"file_path": str(p)}})
+        r = self._run_hook(stdin)
+        assert r.returncode == 2
+        assert "mpg:" in r.stderr
+        assert r.stdout == ""
+
+    def test_hook_py_clean(self, tmp_path):
+        p = tmp_path / "clean.py"
+        p.write_text("x: list[str] = []\n")
+        stdin = json.dumps({"tool_input": {"file_path": str(p)}})
+        r = self._run_hook(stdin)
+        assert r.returncode == 0
+        assert r.stdout == ""
+        assert r.stderr == ""
+
+    def test_hook_non_py(self, tmp_path):
+        p = tmp_path / "file.js"
+        p.write_text("const x = 1;\n")
+        stdin = json.dumps({"tool_input": {"file_path": str(p)}})
+        r = self._run_hook(stdin)
+        assert r.returncode == 0
+
+    def test_hook_missing_file(self):
+        stdin = json.dumps({"tool_input": {"file_path": "/nonexistent/test.py"}})
+        r = self._run_hook(stdin)
+        assert r.returncode == 0
+
+    def test_hook_malformed_json(self):
+        r = self._run_hook("{bad json")
+        assert r.returncode == 0
+
+    def test_hook_missing_keys(self):
+        r = self._run_hook(json.dumps({"other": "data"}))
+        assert r.returncode == 0
+
+    def test_hook_uppercase_py(self, tmp_path):
+        p = tmp_path / "bad.PY"
+        p.write_text("from typing import List\n")
+        stdin = json.dumps({"tool_input": {"file_path": str(p)}})
+        r = self._run_hook(stdin)
+        assert r.returncode == 2
+        assert "mpg:" in r.stderr
+
+    def test_hook_bare_no_subcommand(self):
+        r = subprocess.run(
+            [*BIN, "hook"],
+            input="",
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        assert r.returncode == 2
+        assert "available hooks" in r.stderr
+
 
 class TestVersion:
     def test_version_flag(self):

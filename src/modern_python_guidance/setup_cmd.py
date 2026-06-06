@@ -95,18 +95,40 @@ def _rules_file_path(project_dir: Path | None = None) -> Path:
     return root / ".claude" / "rules" / RULE_FILE_NAME
 
 
-def _build_rule_text() -> str:
-    """Generate rule file content from SKILL.md body with rule-specific frontmatter.
+_THIN_RULE_BODY = """\
+# Modern Python Guidance
 
-    Used by CI sync tests to verify the bundled ``rules/modern-python.md`` matches
-    what would be generated from SKILL.md. Strips SKILL.md frontmatter and prepends
-    rule-only frontmatter (no name/description keys).
-    """
-    skills_dir = _find_skills_dir()
-    skill_md = (skills_dir / "SKILL.md").read_text(encoding="utf-8")
-    parts = skill_md.split("---", 2)
-    body = parts[2].lstrip("\n")
-    return RULE_FRONTMATTER + "\n\n" + body
+Pre-generation design patterns that Ruff cannot auto-fix. Apply these transformations when writing or reviewing Python code.
+
+## Embedded patterns (high-frequency, Ruff-uncovered)
+
+- `from typing import List, Dict` → `list[str]`, `dict[str, int]` (>=3.9)
+- `@validator("f")` → `@field_validator("f")` (Pydantic V2)
+- `datetime.utcnow()` → `datetime.now(UTC)` (>=3.11)
+- `session.query(User).filter()` → `session.execute(select(User).where())` (SQLAlchemy 2.0)
+- `subprocess.run(f"cmd {arg}", shell=True)` → `subprocess.run(["cmd", arg], check=True)`
+
+## All 41 guides by category
+
+- **async** (3): `async-timeout-context`, `exception-groups`, `taskgroup-over-gather`
+- **data-structures** (3): `dataclass-modern`, `dict-merge-operator`, `match-case-patterns`
+- **django** (3): `django-async-views`, `django-check-constraints`, `django-json-field`
+- **fastapi** (3): `fastapi-annotated-depends`, `fastapi-lifespan`, `fastapi-typed-state`
+- **httpx** (2): `httpx-async-client-reuse`, `httpx-streaming`
+- **pydantic** (4): `pydantic-v2-config`, `pydantic-v2-model-api`, `pydantic-v2-serialization`, `pydantic-v2-validators`
+- **pytest** (3): `pytest-parametrize`, `pytest-raises-match`, `pytest-tmp-path`
+- **sqlalchemy** (3): `sqlalchemy-2-style`, `sqlalchemy-async-session`, `sqlalchemy-mapped-column`
+- **stdlib** (5): `datetime-utc`, `pathlib-over-os-path`, `removeprefix-removesuffix`, `template-strings`, `tomllib-builtin`
+- **toolchain** (5): `no-pickle`, `pyproject-toml-over-setup`, `ruff-over-flake8`, `safe-subprocess`, `uv-over-pip`
+- **typing** (7): `deferred-annotations`, `override-decorator`, `paramspec-decorators`, `type-parameter-syntax`, `typeis-vs-typeguard`, `union-syntax`, `use-builtin-generics`
+
+For full code examples, use `mpg retrieve <guide-id>` or MCP tool `retrieve_guides`.
+"""
+
+
+def _build_rule_text() -> str:
+    """Generate thin rule file content with category index and MCP pointer."""
+    return RULE_FRONTMATTER + "\n\n" + _THIN_RULE_BODY
 
 
 def setup_mcp(
@@ -285,8 +307,14 @@ def run_setup(
         rules_ok = setup_rules(project_dir=project_dir, dry_run=dry_run)
 
     if mcp_ok and skills_ok and rules_ok:
-        if not dry_run and do_mcp and do_skills:
-            print("Ready. Start Claude Code to use mpg guides.")
+        if not dry_run:
+            if do_mcp and do_skills:
+                print("Ready. Start Claude Code to use mpg guides.")
+            print("Tip: Add a PostToolUse hook to auto-check Python files.")
+            print(
+                "See: https://github.com/yottayoshida/modern-python-guidance"
+                "#recommended-hooks"
+            )
         return 0
 
     return 1
