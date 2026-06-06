@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.4.5] — 2026-06-06
+
+### Fixed
+
+- MCP `retrieve_guides` maxItems hardcoded to 41: replaced with `_guide_limit()` that derives the limit from actual guide count at runtime. `_get_tools()` dynamically injects `maxItems` and description into the `tools/list` schema. Adding new guides no longer requires updating `mcp_server.py`. (closes #98)
+- `docs/design.md` out of sync with v0.4.4 implementation: consolidated overlapping non-goals, added `check`/`setup`/`uninstall` to CLI architecture diagram, added `check.py`, `setup_cmd.py`, `uninstall_cmd.py`, `mcp_server.py` to module responsibility table, fixed Layer 1 guide count from 16 to 18. (closes #99)
+
+### Added
+
+- 1 new test (1000 total).
+
 ## [0.4.4] — 2026-06-05
 
 ### Added

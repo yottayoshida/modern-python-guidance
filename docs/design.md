@@ -14,16 +14,16 @@ LLMs frequently generate outdated Python patterns: `typing.List` instead of `lis
 
 ## Non-goals
 
-- Automated code transformation (this is a reference tool, not a codemod)
+- Automated code transformation / codemod (the `check` command scans for outdated patterns via regex + tokenize, but does not rewrite code)
 - Language Server Protocol integration
-- Pattern detection in source code (no AST analysis)
 
 ## Architecture
 
 ```
 ┌─────────────────────────────────────────────────────────┐
 │ CLI (cli.py)                                            │
-│  search │ retrieve │ list │ detect-version              │
+│  search │ retrieve │ list │ detect-version │ check      │
+│  setup │ uninstall                                      │
 ├─────────┴──────────┴──────┴─────────────────────────────┤
 │                                                         │
 │  ┌──────────────┐  ┌──────────────┐  ┌───────────────┐  │
@@ -67,6 +67,10 @@ LLMs frequently generate outdated Python patterns: `typing.List` instead of `lis
 | `retrieve.py` | Renders guide content as JSON with version-match flag and token estimate |
 | `version_detect.py` | Detects target Python version from `--python-version` flag, `pyproject.toml` (`requires-python`), `.python-version` file, or default (3.11) |
 | `compat.py` | `version_compatible()` using `packaging.specifiers` and `token_estimate()` (chars / 4) |
+| `check.py` | Scan a Python file for outdated patterns against guide definitions (regex + tokenize, not AST) |
+| `setup_cmd.py` | Automate MCP server registration and Agent Skills symlink creation |
+| `uninstall_cmd.py` | Reverse `mpg setup`: deregister the MCP server and remove the Skills symlink |
+| `mcp_server.py` | MCP server — JSON-RPC 2.0 over stdio, zero external dependencies |
 
 ## Guide format
 
@@ -197,7 +201,7 @@ The CLI defaults to JSON when piped and human-readable when attached to a TTY. T
 
 | Layer | Scope | Categories | Count |
 |-------|-------|-----------|-------|
-| 1 — stdlib | Python standard library | typing, async, stdlib, data-structures | 16 |
+| 1 — stdlib | Python standard library | typing, async, stdlib, data-structures | 18 |
 | 2 — frameworks | Third-party frameworks | pydantic, fastapi, httpx, django, sqlalchemy, pytest | 18 |
 | 3 — toolchain | Development tools | toolchain | 5 |
 

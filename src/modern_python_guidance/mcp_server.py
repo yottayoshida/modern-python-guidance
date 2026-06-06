@@ -26,6 +26,30 @@ def _get_index() -> GuideIndex:
     return _index
 
 
+def _guide_limit() -> int:
+    return len(_get_index())
+
+
+def _get_tools() -> list[dict]:
+    n = _guide_limit()
+    tools = list(TOOLS)
+    tools[1] = {
+        **TOOLS[1],
+        "inputSchema": {
+            **TOOLS[1]["inputSchema"],
+            "properties": {
+                **TOOLS[1]["inputSchema"]["properties"],
+                "guide_ids": {
+                    **TOOLS[1]["inputSchema"]["properties"]["guide_ids"],
+                    "maxItems": n,
+                    "description": f"Guide IDs to retrieve (max {n})",
+                },
+            },
+        },
+    }
+    return tools
+
+
 # --- JSON-RPC framing (newline-delimited JSON) ---
 
 
@@ -122,8 +146,7 @@ TOOLS = [
                 "guide_ids": {
                     "type": "array",
                     "items": {"type": "string"},
-                    "description": "Guide IDs to retrieve (max 41)",
-                    "maxItems": 41,
+                    "description": "Guide IDs to retrieve",
                 },
                 "python_version": {
                     "type": "string",
@@ -270,8 +293,9 @@ def _tool_retrieve(arguments: dict) -> dict:
     guide_ids = arguments.get("guide_ids", [])
     if not guide_ids:
         return _tool_result("guide_ids is required and must not be empty", is_error=True)
-    if len(guide_ids) > 41:
-        return _tool_result("guide_ids exceeds maximum of 41", is_error=True)
+    limit = _guide_limit()
+    if len(guide_ids) > limit:
+        return _tool_result(f"guide_ids exceeds maximum of {limit}", is_error=True)
 
     pv = arguments.get("python_version")
     err = _validate_python_version(pv)
@@ -371,7 +395,7 @@ def _handle_request(msg: dict) -> dict | None:
         return None if is_notification else result
 
     if method == "tools/list":
-        result = _result_response(req_id, {"tools": TOOLS})
+        result = _result_response(req_id, {"tools": _get_tools()})
         return None if is_notification else result
 
     if method == "tools/call":
