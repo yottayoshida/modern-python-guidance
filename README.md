@@ -144,6 +144,34 @@ mpg list --python-version 3.9
 # Excludes: TaskGroup (3.11+), match/case (3.10+), etc.
 ```
 
+## Recommended hooks
+
+Add a [PostToolUse hook](https://docs.anthropic.com/en/docs/claude-code/hooks) to auto-check Python files whenever Claude edits them. Create or update `.claude/settings.json` in your project:
+
+```json
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "tool == \"Edit\" || tool == \"Write\" || tool == \"MultiEdit\"",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "mpg hook claude-post-tool-use"
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+The hook reads stdin from Claude Code, checks any `.py` file for outdated patterns, and surfaces findings as inline feedback. Non-Python files and clean files produce no output.
+
+Verify with `/hooks` in Claude Code to confirm the hook is active.
+
+For manual CLI use, `mpg check --quiet <file>` provides the same check without the "no patterns found" message.
+
 ## Development
 
 ```bash

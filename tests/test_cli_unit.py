@@ -223,6 +223,110 @@ class TestCmdDetectVersion:
         assert out  # should return some version string
 
 
+class TestCmdCheck:
+    def test_json_output(self, tmp_path, capsys):
+        p = tmp_path / "bad.py"
+        p.write_text("from typing import List\n")
+        with pytest.raises(SystemExit, match="1"):
+            main(argv=["check", str(p), "--format", "json"])
+        data = json.loads(capsys.readouterr().out)
+        assert data["summary"]["total_matches"] >= 1
+
+    def test_human_output(self, tmp_path, capsys):
+        p = tmp_path / "bad.py"
+        p.write_text("from typing import List\n")
+        with pytest.raises(SystemExit, match="1"):
+            main(argv=["check", str(p), "--format", "human"])
+        assert "outdated pattern" in capsys.readouterr().out
+
+    def test_clean_file(self, tmp_path, capsys):
+        p = tmp_path / "clean.py"
+        p.write_text("x: list[str] = []\n")
+        main(argv=["check", str(p), "--format", "human"])
+        assert "No outdated patterns" in capsys.readouterr().out
+
+    def test_file_not_found(self, tmp_path, capsys):
+        with pytest.raises(SystemExit, match="2"):
+            main(argv=["check", str(tmp_path / "gone.py"), "--format", "json"])
+
+    def test_quiet_suppresses_clean(self, tmp_path, capsys):
+        p = tmp_path / "clean.py"
+        p.write_text("x: list[str] = []\n")
+        main(argv=["check", str(p), "--quiet", "--format", "human"])
+        captured = capsys.readouterr()
+        assert captured.out == ""
+
+    def test_exit_zero(self, tmp_path, capsys):
+        p = tmp_path / "bad.py"
+        p.write_text("from typing import List\n")
+        main(argv=["check", str(p), "--exit-zero", "--format", "json"])
+        data = json.loads(capsys.readouterr().out)
+        assert data["summary"]["total_matches"] >= 1
+
+
+class TestCmdHook:
+    def test_bare_hook_exits_2(self, capsys):
+        with pytest.raises(SystemExit, match="2"):
+            main(argv=["hook"])
+        assert "available hooks" in capsys.readouterr().err
+
+    def test_unknown_hook_exits_2(self, capsys):
+        with pytest.raises(SystemExit, match="2"):
+            main(argv=["hook", "nonexistent"])
+        assert "invalid choice" in capsys.readouterr().err
+
+    def test_post_tool_use_py_match(self, tmp_path, capsys, monkeypatch):
+        p = tmp_path / "bad.py"
+        p.write_text("from typing import List\n")
+        import io
+
+        stdin_data = json.dumps({"tool_input": {"file_path": str(p)}})
+        monkeypatch.setattr("sys.stdin", io.StringIO(stdin_data))
+        with pytest.raises(SystemExit, match="2"):
+            main(argv=["hook", "claude-post-tool-use"])
+        assert "mpg:" in capsys.readouterr().err
+
+    def test_post_tool_use_py_clean(self, tmp_path, monkeypatch):
+        p = tmp_path / "clean.py"
+        p.write_text("x: list[str] = []\n")
+        import io
+
+        stdin_data = json.dumps({"tool_input": {"file_path": str(p)}})
+        monkeypatch.setattr("sys.stdin", io.StringIO(stdin_data))
+        with pytest.raises(SystemExit, match="0"):
+            main(argv=["hook", "claude-post-tool-use"])
+
+    def test_post_tool_use_non_py(self, monkeypatch):
+        import io
+
+        stdin_data = json.dumps({"tool_input": {"file_path": "/tmp/x.js"}})
+        monkeypatch.setattr("sys.stdin", io.StringIO(stdin_data))
+        with pytest.raises(SystemExit, match="0"):
+            main(argv=["hook", "claude-post-tool-use"])
+
+    def test_post_tool_use_malformed(self, monkeypatch):
+        import io
+
+        monkeypatch.setattr("sys.stdin", io.StringIO("{bad"))
+        with pytest.raises(SystemExit, match="0"):
+            main(argv=["hook", "claude-post-tool-use"])
+
+    def test_post_tool_use_missing_keys(self, monkeypatch):
+        import io
+
+        monkeypatch.setattr("sys.stdin", io.StringIO(json.dumps({"x": 1})))
+        with pytest.raises(SystemExit, match="0"):
+            main(argv=["hook", "claude-post-tool-use"])
+
+    def test_post_tool_use_missing_file(self, monkeypatch):
+        import io
+
+        stdin_data = json.dumps({"tool_input": {"file_path": "/nonexistent/z.py"}})
+        monkeypatch.setattr("sys.stdin", io.StringIO(stdin_data))
+        with pytest.raises(SystemExit, match="0"):
+            main(argv=["hook", "claude-post-tool-use"])
+
+
 class TestCmdSetupUninstall:
     def test_setup_dispatch(self):
         with patch("modern_python_guidance.setup_cmd.run_setup", return_value=0) as mock:

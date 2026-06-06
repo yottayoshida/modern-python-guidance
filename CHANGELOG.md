@@ -2,6 +2,20 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.0] — 2026-06-06
+
+### Changed
+
+- Rules file (`rules/modern-python.md`) rewritten from full content (70 lines) to thin format (~30 lines): category index with all 41 guide IDs, top-5 high-frequency one-liner patterns, and MCP/CLI call-to-action. When the Rules file freezes as a static copy in git-tracked workspaces (symlink-to-file degradation), the thin format causes minimal stale-content damage — guide IDs rarely change. Run `mpg setup` to update the Rules file. (closes #109)
+
+### Added
+
+- `mpg hook claude-post-tool-use` subcommand: PostToolUse hook that reads stdin JSON from Claude Code, checks `.py` files for outdated patterns via `check_file()`, and surfaces findings as stderr feedback (exit 2). Non-Python files, missing files, and clean files produce no output (exit 0). No jq or shell wrapper required.
+- `mpg check --quiet` flag: suppresses "No outdated patterns found." output on clean files in human format. JSON format is unaffected.
+- `mpg setup` now prints a PostToolUse hook hint after successful setup.
+- README: new "Recommended hooks" section with copy-pasteable `.claude/settings.json` example.
+- 29 new tests (1028 total).
+
 ## [0.4.5] — 2026-06-06
 
 ### Fixed

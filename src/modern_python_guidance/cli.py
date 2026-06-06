@@ -130,6 +130,22 @@ def main(argv: list[str] | None = None) -> None:
         action="store_true",
         help="Always exit 0 even when patterns are found",
     )
+    p_check.add_argument(
+        "--quiet",
+        action="store_true",
+        help="Suppress output when no patterns are found (human format only)",
+    )
+
+    # hook
+    p_hook = subparsers.add_parser(
+        "hook",
+        help="Claude Code hook subcommands",
+    )
+    hook_sub = p_hook.add_subparsers(dest="hook_name")
+    hook_sub.add_parser(
+        "claude-post-tool-use",
+        help="PostToolUse hook: check .py files from stdin JSON",
+    )
 
     args = parser.parse_args(argv)
 
@@ -158,6 +174,8 @@ def main(argv: list[str] | None = None) -> None:
             _cmd_uninstall(args)
         elif args.command == "check":
             _cmd_check(args)
+        elif args.command == "hook":
+            _cmd_hook(args)
     except BrokenPipeError:
         sys.exit(0)
 
@@ -341,7 +359,7 @@ def _cmd_check(args: argparse.Namespace) -> None:
 
     if fmt == "json":
         _check_json(matches, args.file)
-    else:
+    elif not (args.quiet and not matches):
         _check_human(matches)
 
     if matches and not args.exit_zero:
@@ -395,3 +413,58 @@ def _check_human(matches: list[CheckMatch]) -> None:
         f"\n{len(matches)} outdated pattern{ps} found ({unique} guide{gs}). "
         f"Run `mpg retrieve {ids}` for details."
     )
+
+
+def _cmd_hook(args: argparse.Namespace) -> None:
+    if not args.hook_name:
+        print("usage: modern-python-guidance hook <name>", file=sys.stderr)
+        print("available hooks: claude-post-tool-use", file=sys.stderr)
+        sys.exit(2)
+    if args.hook_name == "claude-post-tool-use":
+        _hook_post_tool_use()
+    else:
+        print(f"unknown hook: {args.hook_name}", file=sys.stderr)
+        print("available hooks: claude-post-tool-use", file=sys.stderr)
+        sys.exit(2)
+
+
+def _hook_post_tool_use() -> None:
+    try:
+        data = json.load(sys.stdin)
+    except (json.JSONDecodeError, ValueError):
+        sys.exit(0)
+
+    try:
+        file_path = data["tool_input"]["file_path"]
+    except (KeyError, TypeError):
+        sys.exit(0)
+
+    if not isinstance(file_path, str) or not file_path.lower().endswith(".py"):
+        sys.exit(0)
+
+    path = Path(file_path)
+    if not path.is_file():
+        sys.exit(0)
+
+    index = build_index()
+    try:
+        matches = check_file(path, index)
+    except CheckError:
+        sys.exit(0)
+
+    if not matches:
+        sys.exit(0)
+
+    for m in matches:
+        src = sanitize_line(m.source_line.strip())
+        print(
+            f"mpg: {m.guide_id} (line {m.line}): {src}",
+            file=sys.stderr,
+        )
+    guide_ids = sorted({m.guide_id for m in matches})
+    print(
+        f"mpg: {len(matches)} outdated pattern(s). "
+        f"Run `mpg retrieve {','.join(guide_ids)}` for modern alternatives.",
+        file=sys.stderr,
+    )
+    sys.exit(2)
