@@ -14,7 +14,7 @@ All notable changes to this project will be documented in this file.
 - `mpg check --quiet` flag: suppresses "No outdated patterns found." output on clean files in human format. JSON format is unaffected.
 - `mpg setup` now prints a PostToolUse hook hint after successful setup.
 - README: new "Recommended hooks" section with copy-pasteable `.claude/settings.json` example.
-- 15 new tests (1014 total).
+- 29 new tests (1028 total).
 
 ## [0.4.5] — 2026-06-06
 
