@@ -217,16 +217,18 @@ class TestToolFunctions:
         assert data["results"][0]["id"] == "use-builtin-generics"
         assert data["not_found"][0]["id"] == "zzz-fake"
 
-    def test_retrieve_exactly_41_allowed(self):
-        ids = [f"fake-{i}" for i in range(41)]
+    def test_retrieve_at_limit_allowed(self):
+        limit = len(mcp._get_index())
+        ids = [f"fake-{i}" for i in range(limit)]
         r = mcp._tool_retrieve({"guide_ids": ids})
         assert r.get("isError") is not True
 
-    def test_retrieve_42_rejected(self):
-        ids = [f"fake-{i}" for i in range(42)]
+    def test_retrieve_over_limit_rejected(self):
+        limit = len(mcp._get_index())
+        ids = [f"fake-{i}" for i in range(limit + 1)]
         r = mcp._tool_retrieve({"guide_ids": ids})
         assert r["isError"] is True
-        assert "41" in r["content"][0]["text"]
+        assert str(limit) in r["content"][0]["text"]
 
     def test_retrieve_invalid_version(self):
         r = mcp._tool_retrieve({"guide_ids": ["use-builtin-generics"], "python_version": "x"})
@@ -317,6 +319,14 @@ class TestHandleRequest:
         assert resp is not None
         assert "tools" in resp["result"]
         assert len(resp["result"]["tools"]) == 4
+
+    def test_tools_list_dynamic_max_items(self):
+        expected = len(mcp._get_index())
+        tools = mcp._get_tools()
+        retrieve = tools[1]
+        schema = retrieve["inputSchema"]["properties"]["guide_ids"]
+        assert schema["maxItems"] == expected
+        assert str(expected) in schema["description"]
 
     def test_tools_call(self):
         msg = {
