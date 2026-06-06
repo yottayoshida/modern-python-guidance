@@ -311,10 +311,7 @@ def run_setup(
             if do_mcp and do_skills:
                 print("Ready. Start Claude Code to use mpg guides.")
             print("Tip: Add a PostToolUse hook to auto-check Python files.")
-            print(
-                "See: https://github.com/yottayoshida/modern-python-guidance"
-                "#recommended-hooks"
-            )
+            print("See: https://github.com/yottayoshida/modern-python-guidance#recommended-hooks")
         return 0
 
     return 1
