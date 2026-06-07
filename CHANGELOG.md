@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.1] — 2026-06-07
+
+### Fixed
+
+- `mpg setup --project-dir /nonexistent` now emits a stderr warning ("directory does not exist and will be created") before proceeding. No warning when `--mcp-only` is used or when the directory exists. `--dry-run` also warns (typo detection). (closes #96)
+- `check-python-release.yml`: curl now uses `-f` (fail on HTTP errors), `--retry 2`, `--connect-timeout 10`, `--max-time 30`. jq uses `capture()?` (try operator for non-matching release names) and `last // empty` (prevents `"null"` string on empty array). Pipeline errors are caught by `if !` wrapper instead of relying on `set -e` with bare assignment. (closes #97)
+
+### Added
+
+- 4 new tests (1032 total).
+
 ## [0.5.0] — 2026-06-06
 
 ### Changed
