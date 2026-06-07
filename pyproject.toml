@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "modern-python-guidance"
-version = "0.5.0"
+version = "0.5.1"
 description = "Version-aware BAD/GOOD pattern guides that help AI coding agents generate modern Python"
 readme = "README.md"
 license = "Apache-2.0 OR MIT"
