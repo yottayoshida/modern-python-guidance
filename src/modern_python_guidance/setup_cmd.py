@@ -295,8 +295,7 @@ def run_setup(
 
     if project_dir is not None and (do_skills or do_rules) and not project_dir.exists():
         print(
-            f"Warning: directory '{project_dir}' does not exist"
-            " and will be created.",
+            f"Warning: directory '{project_dir}' does not exist and will be created.",
             file=sys.stderr,
         )
 

@@ -631,9 +631,7 @@ class TestRunSetup:
         assert code == 0
         assert "Warning" not in capsys.readouterr().err
 
-    def test_dry_run_nonexistent_warns(
-        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
-    ):
+    def test_dry_run_nonexistent_warns(self, tmp_path: Path, capsys: pytest.CaptureFixture[str]):
         """#96: --dry-run still warns about non-existent dir (typo detection)."""
         nonexistent = tmp_path / "does_not_exist"
         p_mcp, p_skills, p_rules = self._patch_all()
