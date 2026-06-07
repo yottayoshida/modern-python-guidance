@@ -18,10 +18,15 @@ jobs:
         id: detect
         run: |
           # Fetch all releases from python.org, filter stable only via pre_release field
-          LATEST=$(curl -s 'https://www.python.org/api/v2/downloads/release/?limit=500' \
+          if ! LATEST=$(curl -fsSL --connect-timeout 10 --max-time 30 --retry 2 \
+            'https://www.python.org/api/v2/downloads/release/?limit=500' \
             | jq -r '[.[] | select(.pre_release == false) | .name
-                      | capture("Python (?<v>3\\.[0-9]+)\\.[0-9]+$") | .v]
-                     | unique | sort_by(split(".") | map(tonumber)) | last')
+                      | capture("Python (?<v>3\\.[0-9]+)\\.[0-9]+$")? | .v]
+                     | unique | sort_by(split(".") | map(tonumber)) | last // empty'); then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "Could not fetch or parse latest Python release"
+            exit 0
+          fi
 
           echo "latest_minor=$LATEST"
 

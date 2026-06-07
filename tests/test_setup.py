@@ -597,6 +597,51 @@ class TestRunSetup:
         assert code == 1
         assert "mutually exclusive" in capsys.readouterr().err
 
+    def test_nonexistent_project_dir_warns(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ):
+        """#96: non-existent --project-dir emits stderr warning, still succeeds."""
+        nonexistent = tmp_path / "does_not_exist"
+        p_mcp, p_skills, p_rules = self._patch_all()
+        with p_mcp, p_skills as m_skills, p_rules as m_rules:
+            code = run_setup(project_dir=nonexistent)
+        assert code == 0
+        assert "Warning" in capsys.readouterr().err
+        m_skills.assert_called_once()
+        m_rules.assert_called_once()
+
+    def test_existing_project_dir_no_warning(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ):
+        """#96: existing --project-dir produces no warning."""
+        p_mcp, p_skills, p_rules = self._patch_all()
+        with p_mcp, p_skills, p_rules:
+            code = run_setup(project_dir=tmp_path)
+        assert code == 0
+        assert "Warning" not in capsys.readouterr().err
+
+    def test_mcp_only_nonexistent_no_warning(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ):
+        """#96: --mcp-only skips skills/rules, so no warning for non-existent dir."""
+        nonexistent = tmp_path / "does_not_exist"
+        p_mcp, p_skills, p_rules = self._patch_all()
+        with p_mcp, p_skills, p_rules:
+            code = run_setup(mcp_only=True, project_dir=nonexistent)
+        assert code == 0
+        assert "Warning" not in capsys.readouterr().err
+
+    def test_dry_run_nonexistent_warns(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ):
+        """#96: --dry-run still warns about non-existent dir (typo detection)."""
+        nonexistent = tmp_path / "does_not_exist"
+        p_mcp, p_skills, p_rules = self._patch_all()
+        with p_mcp, p_skills, p_rules:
+            code = run_setup(project_dir=nonexistent, dry_run=True)
+        assert code == 0
+        assert "Warning" in capsys.readouterr().err
+
 
 # --- CLI integration ---
 

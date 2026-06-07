@@ -293,6 +293,13 @@ def run_setup(
     do_skills = not mcp_only
     do_rules = not mcp_only
 
+    if project_dir is not None and (do_skills or do_rules) and not project_dir.exists():
+        print(
+            f"Warning: directory '{project_dir}' does not exist"
+            " and will be created.",
+            file=sys.stderr,
+        )
+
     mcp_ok = True
     skills_ok = True
     rules_ok = True
