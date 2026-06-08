@@ -447,8 +447,9 @@ def _hook_post_tool_use() -> None:
         sys.exit(0)
 
     index = build_index()
+    python_version = detect_version(project_dir=_project_dir_for_path(path))
     try:
-        matches = check_file(path, index)
+        matches = check_file(path, index, python_version=python_version)
     except CheckError:
         sys.exit(0)
 
@@ -468,3 +469,11 @@ def _hook_post_tool_use() -> None:
         file=sys.stderr,
     )
     sys.exit(2)
+
+
+def _project_dir_for_path(path: Path) -> Path:
+    current = path.resolve().parent
+    for candidate in (current, *current.parents):
+        if (candidate / "pyproject.toml").is_file() or (candidate / ".python-version").is_file():
+            return candidate
+    return current

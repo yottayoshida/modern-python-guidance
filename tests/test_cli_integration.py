@@ -285,6 +285,21 @@ class TestHook:
         assert "mpg:" in r.stderr
         assert r.stdout == ""
 
+    def test_hook_respects_detected_project_python_version(self, tmp_path):
+        (tmp_path / "pyproject.toml").write_text(
+            '[project]\nrequires-python = ">=3.8,<3.10"\n',
+            encoding="utf-8",
+        )
+        p = tmp_path / "legacy.py"
+        p.write_text("from typing import Union\n")
+        stdin = json.dumps({"tool_input": {"file_path": str(p)}})
+
+        r = self._run_hook(stdin)
+
+        assert r.returncode == 0
+        assert r.stdout == ""
+        assert r.stderr == ""
+
     def test_hook_py_clean(self, tmp_path):
         p = tmp_path / "clean.py"
         p.write_text("x: list[str] = []\n")
