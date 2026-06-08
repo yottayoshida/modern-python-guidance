@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.2] — 2026-06-08
+
+### Changed
+
+- SKILL.md trigger keywords narrowed to reduce false activations: standalone generic terms ("Python", "typing", "upgrade", "deprecated", "modernize") replaced with compound triggers ("modernize Python", "Python upgrade", etc.) and Python-specific additions ("pyproject.toml", "setup.py", "ruff"). Trigger count 13 → 15. Run `mpg setup` to update. (closes #32)
+
+### Added
+
+- Structural test V-011 guarding trigger keyword set against accidental drift (1034 total tests).
+
 ## [0.5.1] — 2026-06-07
 
 ### Fixed
