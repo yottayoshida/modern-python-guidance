@@ -1,6 +1,6 @@
 ---
 name: modern-python-guidance
-description: Version-aware BAD/GOOD pattern guides for modern Python. Use when writing, reviewing, or refactoring Python code to avoid outdated patterns (e.g. typing.List → list, @validator → @field_validator, setup.py → pyproject.toml). Triggers on "Python", "modernize", "upgrade", "deprecated", "pydantic", "fastapi", "httpx", "typing", "dataclass", "asyncio", "django", "sqlalchemy", "pytest".
+description: Version-aware BAD/GOOD pattern guides for modern Python. Use when writing, reviewing, or refactoring Python code to avoid outdated patterns (e.g. typing.List → list, @validator → @field_validator, setup.py → pyproject.toml). Triggers on "modernize Python", "modern Python", "Python upgrade", "deprecated Python", "pydantic", "fastapi", "httpx", "dataclass", "asyncio", "django", "sqlalchemy", "pytest", "pyproject.toml", "setup.py", "ruff".
 paths: ["**/*.py", "*.py"]
 ---
 
