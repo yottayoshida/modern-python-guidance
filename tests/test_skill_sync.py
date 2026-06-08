@@ -5,6 +5,7 @@ Verification IDs from /plan QA shift-left:
   V-002  SKILL.md token count <= 1300 (chars/4)
   V-009  All embedded guide IDs have frequency: high
   V-010  README Quick start guide IDs reference existing guide files
+  V-011  SKILL.md trigger keywords match expected set (#32)
 """
 
 from __future__ import annotations
@@ -122,3 +123,53 @@ class TestV010ReadmeGuideIds:
             assert guide_index.get(guide_id) is not None, (
                 f"README references guide '{guide_id}' which doesn't exist"
             )
+
+
+EXPECTED_TRIGGERS = {
+    "modernize Python",
+    "modern Python",
+    "Python upgrade",
+    "deprecated Python",
+    "pydantic",
+    "fastapi",
+    "httpx",
+    "dataclass",
+    "asyncio",
+    "django",
+    "sqlalchemy",
+    "pytest",
+    "pyproject.toml",
+    "setup.py",
+    "ruff",
+}
+
+DENIED_STANDALONE_TRIGGERS = {"Python", "typing", "upgrade", "deprecated", "modernize"}
+
+
+def _extract_trigger_items(description: str) -> set[str]:
+    """Extract quoted trigger items from 'Triggers on ...' in the description."""
+    match = re.search(r"Triggers on\s+(.*)", description)
+    assert match, "No 'Triggers on' section found in description"
+    return set(re.findall(r'"([^"]+)"', match.group(1)))
+
+
+class TestV011TriggerKeywords:
+    """V-011: SKILL.md trigger keywords match expected set (#32)."""
+
+    @pytest.fixture(scope="class")
+    def triggers(self, skill_text):
+        frontmatter = skill_text.split("---")[1]
+        desc_match = re.search(r"description:\s*(.*)", frontmatter)
+        assert desc_match, "No description field in SKILL.md frontmatter"
+        return _extract_trigger_items(desc_match.group(1))
+
+    def test_trigger_set_matches(self, triggers):
+        assert triggers == EXPECTED_TRIGGERS, (
+            f"Trigger mismatch.\n"
+            f"  Extra: {triggers - EXPECTED_TRIGGERS}\n"
+            f"  Missing: {EXPECTED_TRIGGERS - triggers}"
+        )
+
+    def test_denied_triggers_absent(self, triggers):
+        found = triggers & DENIED_STANDALONE_TRIGGERS
+        assert not found, f"Denied standalone triggers found: {found}"
