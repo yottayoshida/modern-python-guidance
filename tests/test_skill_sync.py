@@ -148,7 +148,7 @@ DENIED_STANDALONE_TRIGGERS = {"Python", "typing", "upgrade", "deprecated", "mode
 
 def _extract_trigger_items(description: str) -> set[str]:
     """Extract quoted trigger items from 'Triggers on ...' in the description."""
-    match = re.search(r'Triggers on\s+(.*)', description)
+    match = re.search(r"Triggers on\s+(.*)", description)
     assert match, "No 'Triggers on' section found in description"
     return set(re.findall(r'"([^"]+)"', match.group(1)))
 
@@ -172,6 +172,4 @@ class TestV011TriggerKeywords:
 
     def test_denied_triggers_absent(self, triggers):
         found = triggers & DENIED_STANDALONE_TRIGGERS
-        assert not found, (
-            f"Denied standalone triggers found: {found}"
-        )
+        assert not found, f"Denied standalone triggers found: {found}"
