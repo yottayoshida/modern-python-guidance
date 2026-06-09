@@ -94,6 +94,36 @@ class TestCmdSearch:
         data = json.loads(capsys.readouterr().out)
         assert len(data) <= 2
 
+    def test_limit_zero_rejected(self, capsys):
+        with pytest.raises(SystemExit, match="2"):
+            main(argv=["search", "typing", "--limit", "0"])
+
+    def test_limit_negative_rejected(self, capsys):
+        with pytest.raises(SystemExit, match="2"):
+            main(argv=["search", "typing", "--limit", "-1"])
+
+    def test_limit_over_max_rejected(self, capsys):
+        with pytest.raises(SystemExit, match="2"):
+            main(argv=["search", "typing", "--limit", "51"])
+
+    def test_limit_non_integer_rejected(self, capsys):
+        with pytest.raises(SystemExit, match="2"):
+            main(argv=["search", "typing", "--limit", "abc"])
+
+    def test_limit_float_rejected(self, capsys):
+        with pytest.raises(SystemExit, match="2"):
+            main(argv=["search", "typing", "--limit", "1.5"])
+
+    def test_limit_boundary_1(self, capsys):
+        main(argv=["search", "python", "--limit", "1", "--format", "json"])
+        data = json.loads(capsys.readouterr().out)
+        assert len(data) <= 1
+
+    def test_limit_boundary_50(self, capsys):
+        main(argv=["search", "python", "--limit", "50", "--format", "json"])
+        data = json.loads(capsys.readouterr().out)
+        assert isinstance(data, list)
+
 
 class TestCmdRetrieve:
     def test_json_output(self, capsys):

@@ -300,3 +300,11 @@ class TestEdgeCases:
     def test_limit(self, index):
         results = search(index, "python", limit=2)
         assert len(results) <= 2
+
+    def test_limit_negative_clamps_to_1(self, index):
+        results = search(index, "typing", limit=-1)
+        assert len(results) == 1
+
+    def test_limit_zero_clamps_to_1(self, index):
+        results = search(index, "typing", limit=0)
+        assert len(results) == 1

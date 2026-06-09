@@ -210,6 +210,42 @@ class TestSearchGuides:
         assert len(data) <= 50
 
 
+class TestTypeValidationSubprocess:
+    def test_search_query_wrong_type(self):
+        responses = _run_mcp(
+            *_init_handshake(),
+            {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "tools/call",
+                "params": {
+                    "name": "search_guides",
+                    "arguments": {"query": 42},
+                },
+            },
+        )
+        result = responses[1]["result"]
+        assert result["isError"] is True
+        assert "query must be a string" in result["content"][0]["text"]
+
+    def test_retrieve_guide_ids_string(self):
+        responses = _run_mcp(
+            *_init_handshake(),
+            {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "tools/call",
+                "params": {
+                    "name": "retrieve_guides",
+                    "arguments": {"guide_ids": "use-builtin-generics"},
+                },
+            },
+        )
+        result = responses[1]["result"]
+        assert result["isError"] is True
+        assert "guide_ids must be an array" in result["content"][0]["text"]
+
+
 class TestRetrieveGuides:
     def test_retrieve_single_guide(self):
         responses = _run_mcp(
