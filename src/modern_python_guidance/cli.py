@@ -18,6 +18,16 @@ from modern_python_guidance.search import search as do_search
 from modern_python_guidance.version_detect import detect_version
 
 
+def _limit_type(value: str) -> int:
+    try:
+        n = int(value)
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"must be an integer, got '{value}'") from None
+    if n < 1 or n > 50:
+        raise argparse.ArgumentTypeError(f"must be between 1 and 50, got {n}")
+    return n
+
+
 def main(argv: list[str] | None = None) -> None:
     with contextlib.suppress(AttributeError, OSError):
         signal.signal(signal.SIGPIPE, signal.SIG_DFL)
@@ -35,7 +45,9 @@ def main(argv: list[str] | None = None) -> None:
     p_search.add_argument("query", help="Search query")
     p_search.add_argument("--python-version", help="Target Python version (e.g. 3.11)")
     p_search.add_argument("--category", help="Filter by category")
-    p_search.add_argument("--limit", type=int, default=10, help="Max results (default: 10)")
+    p_search.add_argument(
+        "--limit", type=_limit_type, default=10, help="Max results, 1-50 (default: 10)"
+    )
     p_search.add_argument(
         "--format",
         choices=["json", "human"],

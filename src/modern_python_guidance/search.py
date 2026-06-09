@@ -41,6 +41,7 @@ def search(
     category: str | None = None,
     limit: int = 10,
 ) -> list[SearchResult]:
+    limit = max(1, limit)
     query = query[:MAX_QUERY_LEN].lower()
     tokens = query.split()
 

@@ -254,18 +254,54 @@ def _validate_python_version(pv: str | None) -> str | None:
     return None
 
 
+_JSON_TYPE_LABELS: dict[type, str] = {
+    str: "a string",
+    int: "an integer",
+    list: "an array",
+}
+
+
+def _validate_type(
+    value: object, name: str, expected: type, *, optional: bool = False
+) -> str | None:
+    if optional and value is None:
+        return None
+    if expected is int and isinstance(value, bool):
+        return f"{name} must be an integer, got bool"
+    if not isinstance(value, expected):
+        label = _JSON_TYPE_LABELS.get(expected, expected.__name__)
+        return f"{name} must be {label}, got {type(value).__name__}"
+    return None
+
+
 def _tool_search(arguments: dict) -> dict:
     query = arguments.get("query", "")
+    err = _validate_type(query, "query", str)
+    if err:
+        return _tool_result(err, is_error=True)
     if not query:
         return _tool_result("query is required", is_error=True)
 
     pv = arguments.get("python_version")
+    err = _validate_type(pv, "python_version", str, optional=True)
+    if err:
+        return _tool_result(err, is_error=True)
     err = _validate_python_version(pv)
     if err:
         return _tool_result(err, is_error=True)
 
-    limit = max(1, min(50, arguments.get("limit", 10)))
+    raw_limit = arguments.get("limit")
+    if raw_limit is None:
+        raw_limit = 10
+    err = _validate_type(raw_limit, "limit", int)
+    if err:
+        return _tool_result(err, is_error=True)
+    limit = max(1, min(50, raw_limit))
+
     category = arguments.get("category")
+    err = _validate_type(category, "category", str, optional=True)
+    if err:
+        return _tool_result(err, is_error=True)
 
     index = _get_index()
     results = search(index, query, python_version=pv, category=category, limit=limit)
@@ -291,13 +327,21 @@ def _tool_search(arguments: dict) -> dict:
 
 def _tool_retrieve(arguments: dict) -> dict:
     guide_ids = arguments.get("guide_ids", [])
+    err = _validate_type(guide_ids, "guide_ids", list)
+    if err:
+        return _tool_result(err, is_error=True)
     if not guide_ids:
         return _tool_result("guide_ids is required and must not be empty", is_error=True)
+    if any(not isinstance(gid, str) for gid in guide_ids):
+        return _tool_result("guide_ids elements must be strings", is_error=True)
     limit = _guide_limit()
     if len(guide_ids) > limit:
         return _tool_result(f"guide_ids exceeds maximum of {limit}", is_error=True)
 
     pv = arguments.get("python_version")
+    err = _validate_type(pv, "python_version", str, optional=True)
+    if err:
+        return _tool_result(err, is_error=True)
     err = _validate_python_version(pv)
     if err:
         return _tool_result(err, is_error=True)
@@ -317,11 +361,17 @@ def _tool_retrieve(arguments: dict) -> dict:
 
 def _tool_list(arguments: dict) -> dict:
     pv = arguments.get("python_version")
+    err = _validate_type(pv, "python_version", str, optional=True)
+    if err:
+        return _tool_result(err, is_error=True)
     err = _validate_python_version(pv)
     if err:
         return _tool_result(err, is_error=True)
 
     category = arguments.get("category")
+    err = _validate_type(category, "category", str, optional=True)
+    if err:
+        return _tool_result(err, is_error=True)
     index = _get_index()
     metas = index.all_meta()
 
@@ -350,6 +400,9 @@ def _tool_list(arguments: dict) -> dict:
 
 def _tool_detect_version(arguments: dict) -> dict:
     project_dir_str = arguments.get("project_dir")
+    err = _validate_type(project_dir_str, "project_dir", str, optional=True)
+    if err:
+        return _tool_result(err, is_error=True)
     result = _confine_path(project_dir_str)
     if isinstance(result, str):
         return _tool_result(result, is_error=True)

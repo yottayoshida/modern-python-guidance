@@ -270,6 +270,78 @@ class TestToolFunctions:
         assert r["isError"] is True
 
 
+# --- Type validation ---
+
+
+class TestTypeValidation:
+    def test_search_query_wrong_type(self):
+        r = mcp._tool_search({"query": 123})
+        assert r["isError"] is True
+        assert "query must be a string" in r["content"][0]["text"]
+        assert "got int" in r["content"][0]["text"]
+
+    def test_search_limit_wrong_type(self):
+        r = mcp._tool_search({"query": "typing", "limit": "five"})
+        assert r["isError"] is True
+        assert "limit must be an integer" in r["content"][0]["text"]
+
+    def test_search_limit_float(self):
+        r = mcp._tool_search({"query": "typing", "limit": 5.5})
+        assert r["isError"] is True
+        assert "limit must be an integer" in r["content"][0]["text"]
+
+    def test_search_limit_bool_rejected(self):
+        r = mcp._tool_search({"query": "typing", "limit": True})
+        assert r["isError"] is True
+        assert "got bool" in r["content"][0]["text"]
+
+    def test_search_limit_null_uses_default(self):
+        r = mcp._tool_search({"query": "typing", "limit": None})
+        assert "isError" not in r
+        data = json.loads(r["content"][0]["text"])
+        assert isinstance(data, list)
+
+    def test_search_python_version_wrong_type(self):
+        r = mcp._tool_search({"query": "typing", "python_version": 3.12})
+        assert r["isError"] is True
+        assert "python_version must be a string" in r["content"][0]["text"]
+
+    def test_search_category_wrong_type(self):
+        r = mcp._tool_search({"query": "typing", "category": 42})
+        assert r["isError"] is True
+        assert "category must be a string" in r["content"][0]["text"]
+
+    def test_retrieve_guide_ids_string(self):
+        r = mcp._tool_retrieve({"guide_ids": "use-builtin-generics"})
+        assert r["isError"] is True
+        assert "guide_ids must be an array" in r["content"][0]["text"]
+
+    def test_retrieve_guide_ids_element_wrong_type(self):
+        r = mcp._tool_retrieve({"guide_ids": [123]})
+        assert r["isError"] is True
+        assert "guide_ids elements must be strings" in r["content"][0]["text"]
+
+    def test_retrieve_python_version_wrong_type(self):
+        r = mcp._tool_retrieve({"guide_ids": ["use-builtin-generics"], "python_version": 3.12})
+        assert r["isError"] is True
+        assert "python_version must be a string" in r["content"][0]["text"]
+
+    def test_list_python_version_wrong_type(self):
+        r = mcp._tool_list({"python_version": 312})
+        assert r["isError"] is True
+        assert "python_version must be a string" in r["content"][0]["text"]
+
+    def test_list_category_wrong_type(self):
+        r = mcp._tool_list({"category": 42})
+        assert r["isError"] is True
+        assert "category must be a string" in r["content"][0]["text"]
+
+    def test_detect_version_project_dir_wrong_type(self):
+        r = mcp._tool_detect_version({"project_dir": 123})
+        assert r["isError"] is True
+        assert "project_dir must be a string" in r["content"][0]["text"]
+
+
 # --- _handle_tool_call ---
 
 
