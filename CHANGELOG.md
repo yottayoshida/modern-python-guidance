@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.3] — 2026-06-09
+
+### Fixed
+
+- MCP server: all 4 tool functions (`search_guides`, `retrieve_guides`, `list_guides`, `detect_python_version`) now validate argument types and return specific error messages instead of opaque "Internal error during tool execution". Covers string/integer/array type confusion, bool-as-int rejection (JSON Schema `"type": "integer"` excludes boolean), float rejection, `guide_ids` element type check, and `limit: null` crash path. (closes #115)
+- CLI: `--limit` now rejects values outside 1-50 at parse time (`exit 2`) instead of silently accepting 0, negatives, or values above 50. Non-integer input (`--limit abc`, `--limit 1.5`) also rejected with clear error message. (closes #116)
+- `search()`: negative `limit` no longer causes silent result truncation via Python slice semantics (`results[:-N]`). Defense-in-depth guard `limit = max(1, limit)` added.
+
+### Added
+
+- `_validate_type()` helper in MCP server with JSON Schema error terminology and `_JSON_TYPE_LABELS` for grammatically correct messages ("a string", "an integer", "an array").
+- 30 new tests across 4 test files (1028 → 1058 total).
+
 ## [0.5.2] — 2026-06-08
 
 ### Changed
