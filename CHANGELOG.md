@@ -2,6 +2,21 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+### Fixed
+
+- PostToolUse hook now auto-detects the project's target Python version from the nearest `pyproject.toml` (`requires-python`, Poetry constraints) or `.python-version`, walking up from the edited file, and filters guides accordingly. Previously every guide's patterns applied regardless of the project's Python floor, producing false positives such as union-syntax (`>=3.10`) warnings in a 3.8 project. The resolved target is shown in the hook summary line (`[target: py3.X]`), and version-config parsing never emits stderr noise on clean files. (closes #117)
+- `mpg setup` now registers the MCP server with the absolute interpreter path (`<python> -m modern_python_guidance mcp`) instead of a bare `mpg` command, which Claude Code could not resolve when mpg was installed in a virtualenv (the MCP server process does not inherit venv activation). Re-running `mpg setup` replaces a stale existing registration in place (add → remove → retry only on "already exists", so a failed add never deletes a working entry), and the exact registered launch command is echoed for inspection. (closes #118)
+
+### Migration
+
+- If you ran `mpg setup` before this version and the MCP server is not loading (check with `claude mcp list`; most likely with venv installs), re-run `mpg setup` once — it replaces the old bare-`mpg` registration with the absolute interpreter path.
+
+### Added
+
+- `detect_configured_version()` internal helper (config-derived version only, no default fallback) with a 1 MiB size cap on config reads, and an upward config search bounded at depth 40.
+
 ## [0.5.3] — 2026-06-09
 
 ### Fixed

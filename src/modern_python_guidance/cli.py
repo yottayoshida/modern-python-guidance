@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import contextlib
 import json
+import logging
 import signal
 import sys
 from pathlib import Path
@@ -15,7 +16,11 @@ from modern_python_guidance.compat import VERSION_RE, version_compatible
 from modern_python_guidance.guide_index import build_index
 from modern_python_guidance.retrieve import retrieve, suggest_ids
 from modern_python_guidance.search import search as do_search
-from modern_python_guidance.version_detect import detect_version
+from modern_python_guidance.version_detect import (
+    DEFAULT_VERSION,
+    detect_version,
+    find_configured_version,
+)
 
 
 def _limit_type(value: str) -> int:
@@ -441,6 +446,23 @@ def _cmd_hook(args: argparse.Namespace) -> None:
 
 
 def _hook_post_tool_use() -> None:
+    """Wrapper enforcing the hook contract: zero stderr output for clean files.
+
+    detect_* helpers log warnings on malformed config, and an unconfigured
+    logging setup routes them to stderr via the last-resort handler, so the
+    package logger is silenced for the whole hook run (restored afterwards —
+    tests invoke this in-process).
+    """
+    pkg_logger = logging.getLogger("modern_python_guidance")
+    previous_level = pkg_logger.level
+    pkg_logger.setLevel(logging.CRITICAL + 1)
+    try:
+        _hook_post_tool_use_inner()
+    finally:
+        pkg_logger.setLevel(previous_level)
+
+
+def _hook_post_tool_use_inner() -> None:
     try:
         data = json.load(sys.stdin)
     except (json.JSONDecodeError, ValueError):
@@ -458,9 +480,11 @@ def _hook_post_tool_use() -> None:
     if not path.is_file():
         sys.exit(0)
 
+    python_version = _detect_version_for_file(path) or DEFAULT_VERSION
+
     index = build_index()
     try:
-        matches = check_file(path, index)
+        matches = check_file(path, index, python_version=python_version)
     except CheckError:
         sys.exit(0)
 
@@ -475,8 +499,23 @@ def _hook_post_tool_use() -> None:
         )
     guide_ids = sorted({m.guide_id for m in matches})
     print(
-        f"mpg: {len(matches)} outdated pattern(s). "
+        f"mpg: {len(matches)} outdated pattern(s) [target: py{python_version}]. "
         f"Run `mpg retrieve {','.join(guide_ids)}` for modern alternatives.",
         file=sys.stderr,
     )
     sys.exit(2)
+
+
+def _detect_version_for_file(file_path: Path) -> str | None:
+    """Resolve the edited file and find the nearest usable version config.
+
+    Catch-all by design: the walk reads ancestor directories the project does
+    not control, and no config anomaly (encoding, parser recursion, symlink
+    races — RuntimeError on 3.11/3.12 resolve()) may crash the hook. Any
+    failure falls back to the caller's default.
+    """
+    try:
+        start = file_path.resolve().parent
+        return find_configured_version(start)
+    except Exception:
+        return None

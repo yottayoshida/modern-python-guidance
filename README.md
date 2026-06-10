@@ -43,7 +43,12 @@ mpg retrieve pydantic-v2-validators
 
 **MCP registration (Claude Code):**
 ```bash
+# uv tool / pipx installs (mpg is on PATH):
 claude mcp add mpg -- mpg mcp
+
+# venv installs — Claude Code spawns MCP servers outside your venv, so register
+# the interpreter's absolute path (`mpg setup` does this automatically):
+claude mcp add mpg -- "$(python -c 'import sys; print(sys.executable)')" -m modern_python_guidance mcp
 ```
 
 **Other MCP-compatible agents** (Cursor, Windsurf, etc.) — add to your MCP config:
@@ -57,6 +62,8 @@ claude mcp add mpg -- mpg mcp
   }
 }
 ```
+
+For venv installs, set `"command"` to your interpreter's absolute path and `"args"` to `["-m", "modern_python_guidance", "mcp"]` for the same reason as above.
 
 **Agent Skills + Rules only (Claude Code):**
 ```bash
@@ -166,11 +173,13 @@ Add a [PostToolUse hook](https://docs.anthropic.com/en/docs/claude-code/hooks) t
 }
 ```
 
-The hook reads stdin from Claude Code, checks any `.py` file for outdated patterns, and surfaces findings as inline feedback. Non-Python files and clean files produce no output.
+The hook reads stdin from Claude Code, checks any `.py` file for outdated patterns, and surfaces findings as inline feedback. The project's target Python version is auto-detected from the nearest `pyproject.toml` (`requires-python` or Poetry's `python` constraint) or `.python-version`, walking up from the edited file — the same sources as `mpg detect-version` — so patterns that require a newer Python than your project targets are not flagged. The resolved target is shown in the summary line (`[target: py3.X]`). Non-Python files and clean files produce no output.
+
+If mpg is installed in a venv (not `uv tool`/`pipx`), use the interpreter's absolute path in `command`: `/path/to/venv/bin/python -m modern_python_guidance hook claude-post-tool-use`.
 
 Verify with `/hooks` in Claude Code to confirm the hook is active.
 
-For manual CLI use, `mpg check --quiet <file>` provides the same check without the "no patterns found" message.
+For manual CLI use, `mpg check --quiet <file> --python-version X.Y` runs the same check — pass your project's floor explicitly, since unlike the hook, `mpg check` does not auto-detect it.
 
 ## Development
 

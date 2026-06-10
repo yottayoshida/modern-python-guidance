@@ -357,6 +357,247 @@ class TestCmdHook:
             main(argv=["hook", "claude-post-tool-use"])
 
 
+class TestCmdHookVersionDetection:
+    """#117: the hook resolves the project's target Python version from the edited file."""
+
+    UNION_BAD = (
+        "from typing import Optional\n\ndef f(x: Optional[int]) -> Optional[int]:\n    return x\n"
+    )
+
+    def _run_hook(self, monkeypatch, file_path):
+        import io
+
+        stdin_data = json.dumps({"tool_input": {"file_path": str(file_path)}})
+        monkeypatch.setattr("sys.stdin", io.StringIO(stdin_data))
+        main(argv=["hook", "claude-post-tool-use"])
+
+    def test_py38_project_suppresses_310_patterns(self, tmp_path, capsys, monkeypatch):
+        (tmp_path / "pyproject.toml").write_text(
+            '[project]\nname = "x"\nrequires-python = ">=3.8"\n'
+        )
+        p = tmp_path / "bad.py"
+        p.write_text(self.UNION_BAD)
+        with pytest.raises(SystemExit, match="0"):
+            self._run_hook(monkeypatch, p)
+        captured = capsys.readouterr()
+        assert captured.err == ""
+        assert captured.out == ""
+
+    def test_py310_project_flags_union_syntax(self, tmp_path, capsys, monkeypatch):
+        (tmp_path / "pyproject.toml").write_text(
+            '[project]\nname = "x"\nrequires-python = ">=3.10"\n'
+        )
+        p = tmp_path / "bad.py"
+        p.write_text(self.UNION_BAD)
+        with pytest.raises(SystemExit, match="2"):
+            self._run_hook(monkeypatch, p)
+        err = capsys.readouterr().err
+        assert "union-syntax" in err
+        assert "[target: py3.10]" in err
+
+    def test_no_config_defaults_to_311(self, tmp_path, capsys, monkeypatch):
+        """Spec (plan #117): no usable config anywhere -> filter on DEFAULT_VERSION 3.11."""
+        p = tmp_path / "bad.py"
+        p.write_text(self.UNION_BAD)
+        with pytest.raises(SystemExit, match="2"):
+            self._run_hook(monkeypatch, p)
+        assert "[target: py3.11]" in capsys.readouterr().err
+
+    def test_malformed_pyproject_clean_file_silent(self, tmp_path, capsys, monkeypatch):
+        (tmp_path / "pyproject.toml").write_text("this is [not valid toml")
+        p = tmp_path / "clean.py"
+        p.write_text("x: list[str] = []\n")
+        with pytest.raises(SystemExit, match="0"):
+            self._run_hook(monkeypatch, p)
+        captured = capsys.readouterr()
+        assert captured.err == ""
+        assert captured.out == ""
+
+    @pytest.mark.parametrize(
+        "pyproject_content",
+        [
+            'project = "not-a-table"\n',
+            'tool = "not-a-table"\n',
+            '[tool.poetry]\ndependencies = "not-a-table"\n',
+            "[project]\nrequires-python = 3.8\n",
+        ],
+        ids=["project-not-table", "tool-not-table", "deps-not-table", "requires-python-float"],
+    )
+    def test_schema_invalid_pyproject_clean_file_silent(
+        self, tmp_path, capsys, monkeypatch, pyproject_content
+    ):
+        """Valid TOML violating the pyproject schema must not break the hook contract."""
+        (tmp_path / "pyproject.toml").write_text(pyproject_content)
+        p = tmp_path / "clean.py"
+        p.write_text("x: list[str] = []\n")
+        with pytest.raises(SystemExit, match="0"):
+            self._run_hook(monkeypatch, p)
+        captured = capsys.readouterr()
+        assert captured.err == ""
+        assert captured.out == ""
+
+    def test_monorepo_nearest_usable_config_wins(self, tmp_path, capsys, monkeypatch):
+        (tmp_path / "pyproject.toml").write_text(
+            '[project]\nname = "root"\nrequires-python = ">=3.8"\n'
+        )
+        sub = tmp_path / "services" / "api"
+        sub.mkdir(parents=True)
+        # Nearest pyproject has no version info; the walk must continue upward.
+        (sub / "pyproject.toml").write_text('[tool.other]\nkey = "v"\n')
+        p = sub / "bad.py"
+        p.write_text(self.UNION_BAD)
+        with pytest.raises(SystemExit, match="0"):
+            self._run_hook(monkeypatch, p)
+        assert capsys.readouterr().err == ""
+
+    def test_python_version_file_detected(self, tmp_path, capsys, monkeypatch):
+        (tmp_path / ".python-version").write_text("3.9\n")
+        p = tmp_path / "bad.py"
+        p.write_text(self.UNION_BAD)
+        with pytest.raises(SystemExit, match="0"):
+            self._run_hook(monkeypatch, p)
+        assert capsys.readouterr().err == ""
+
+    def test_relative_file_path_resolved(self, tmp_path, capsys, monkeypatch):
+        (tmp_path / "pyproject.toml").write_text(
+            '[project]\nname = "x"\nrequires-python = ">=3.8"\n'
+        )
+        p = tmp_path / "bad.py"
+        p.write_text(self.UNION_BAD)
+        monkeypatch.chdir(tmp_path)
+        with pytest.raises(SystemExit, match="0"):
+            self._run_hook(monkeypatch, "bad.py")
+        assert capsys.readouterr().err == ""
+
+    def test_nearest_usable_config_wins_over_parent(self, tmp_path, capsys, monkeypatch):
+        """Positive observation: the child's 3.10 beats the parent's 3.8."""
+        (tmp_path / "pyproject.toml").write_text(
+            '[project]\nname = "root"\nrequires-python = ">=3.8"\n'
+        )
+        sub = tmp_path / "svc"
+        sub.mkdir()
+        (sub / "pyproject.toml").write_text(
+            '[project]\nname = "svc"\nrequires-python = ">=3.10"\n'
+        )
+        p = sub / "bad.py"
+        p.write_text(self.UNION_BAD)
+        with pytest.raises(SystemExit, match="2"):
+            self._run_hook(monkeypatch, p)
+        assert "[target: py3.10]" in capsys.readouterr().err
+
+    def test_malformed_child_falls_back_to_parent_config(self, tmp_path, capsys, monkeypatch):
+        """Positive observation: the parent's 3.8 suppresses union-syntax, proving
+        the broken child config was skipped (not just a clean-silence artifact)."""
+        (tmp_path / "pyproject.toml").write_text(
+            '[project]\nname = "root"\nrequires-python = ">=3.8"\n'
+        )
+        sub = tmp_path / "svc"
+        sub.mkdir()
+        (sub / "pyproject.toml").write_text("not [valid toml")
+        p = sub / "bad.py"
+        p.write_text(self.UNION_BAD)
+        with pytest.raises(SystemExit, match="0"):
+            self._run_hook(monkeypatch, p)
+        assert capsys.readouterr().err == ""
+
+    def test_config_at_walk_depth_limit_detected(self, tmp_path, capsys, monkeypatch):
+        """Config exactly at depth 40 from the edited file is still found."""
+        from modern_python_guidance.version_detect import _MAX_WALK_DEPTH
+
+        (tmp_path / "pyproject.toml").write_text(
+            '[project]\nname = "x"\nrequires-python = ">=3.8"\n'
+        )
+        nested = tmp_path
+        for i in range(_MAX_WALK_DEPTH):
+            nested = nested / f"d{i}"
+        nested.mkdir(parents=True)
+        p = nested / "bad.py"
+        p.write_text(self.UNION_BAD)
+        with pytest.raises(SystemExit, match="0"):
+            self._run_hook(monkeypatch, p)
+        assert capsys.readouterr().err == ""
+
+    def test_config_beyond_walk_depth_limit_ignored(self, tmp_path, capsys, monkeypatch):
+        """Config at depth 41 is out of reach -> default 3.11 -> union-syntax flagged."""
+        from modern_python_guidance.version_detect import _MAX_WALK_DEPTH
+
+        (tmp_path / "pyproject.toml").write_text(
+            '[project]\nname = "x"\nrequires-python = ">=3.8"\n'
+        )
+        nested = tmp_path
+        for i in range(_MAX_WALK_DEPTH + 1):
+            nested = nested / f"d{i}"
+        nested.mkdir(parents=True)
+        p = nested / "bad.py"
+        p.write_text(self.UNION_BAD)
+        with pytest.raises(SystemExit, match="2"):
+            self._run_hook(monkeypatch, p)
+        assert "[target: py3.11]" in capsys.readouterr().err
+
+    def test_logger_level_restored_after_hook(self, tmp_path, monkeypatch):
+        """The hook-wide logger silencing is restored even across sys.exit."""
+        import logging
+
+        pkg_logger = logging.getLogger("modern_python_guidance")
+        original = pkg_logger.level
+        pkg_logger.setLevel(logging.DEBUG)
+        try:
+            p = tmp_path / "clean.py"
+            p.write_text("x = 1\n")
+            with pytest.raises(SystemExit, match="0"):
+                self._run_hook(monkeypatch, p)
+            assert pkg_logger.level == logging.DEBUG
+        finally:
+            pkg_logger.setLevel(original)
+
+    def test_detection_error_falls_back_and_restores_logger(self, tmp_path, capsys, monkeypatch):
+        """A raising detector must not crash the hook (fail-safe to default),
+        and the hook-wide logger silencing is restored afterwards."""
+        import logging
+
+        from modern_python_guidance import version_detect
+
+        def boom(_dir):
+            raise RuntimeError("detection blew up")
+
+        pkg_logger = logging.getLogger("modern_python_guidance")
+        original = pkg_logger.level
+        pkg_logger.setLevel(logging.DEBUG)
+        monkeypatch.setattr(version_detect, "detect_configured_version", boom)
+        try:
+            p = tmp_path / "clean.py"
+            p.write_text("x = 1\n")
+            with pytest.raises(SystemExit, match="0"):
+                self._run_hook(monkeypatch, p)
+            assert capsys.readouterr().err == ""
+            assert pkg_logger.level == logging.DEBUG
+        finally:
+            pkg_logger.setLevel(original)
+
+    def test_undecodable_config_clean_file_silent(self, tmp_path, capsys, monkeypatch):
+        """Non-UTF-8 config bytes anywhere on the walk must not crash the hook."""
+        (tmp_path / "pyproject.toml").write_bytes(b"\xff\xfe\x00b\x00r\x00o\x00k")
+        p = tmp_path / "clean.py"
+        p.write_text("x: list[str] = []\n")
+        with pytest.raises(SystemExit, match="0"):
+            self._run_hook(monkeypatch, p)
+        captured = capsys.readouterr()
+        assert captured.err == ""
+        assert captured.out == ""
+
+    def test_recursion_bomb_pyproject_clean_file_silent(self, tmp_path, capsys, monkeypatch):
+        """Deeply nested TOML (RecursionError in tomllib, under the size cap)
+        must not crash the hook."""
+        (tmp_path / "pyproject.toml").write_text("a = " + "[" * 10000 + "]" * 10000)
+        p = tmp_path / "clean.py"
+        p.write_text("x: list[str] = []\n")
+        with pytest.raises(SystemExit, match="0"):
+            self._run_hook(monkeypatch, p)
+        captured = capsys.readouterr()
+        assert captured.err == ""
+        assert captured.out == ""
+
+
 class TestCmdSetupUninstall:
     def test_setup_dispatch(self):
         with patch("modern_python_guidance.setup_cmd.run_setup", return_value=0) as mock:

@@ -131,16 +131,51 @@ def _build_rule_text() -> str:
     return RULE_FRONTMATTER + "\n\n" + _THIN_RULE_BODY
 
 
+def _run_claude_mcp(cmd: list[str]) -> subprocess.CompletedProcess[bytes] | None:
+    """Run a claude mcp subcommand; report timeout/OSError and return None."""
+    try:
+        return subprocess.run(cmd, capture_output=True, timeout=30)
+    except subprocess.TimeoutExpired:
+        print("Error: 'claude mcp' command timed out after 30 seconds.", file=sys.stderr)
+        return None
+    except OSError as e:
+        print(f"Error: failed to run 'claude mcp' command: {e}", file=sys.stderr)
+        return None
+
+
+def _print_stderr(result: subprocess.CompletedProcess[bytes]) -> None:
+    stderr_text = (result.stderr or b"").decode(errors="replace").strip()
+    if stderr_text:
+        print(stderr_text, file=sys.stderr)
+
+
 def setup_mcp(
     *,
     scope: str = "user",
     dry_run: bool = False,
 ) -> bool:
-    """Register the MCP server with Claude Code. Returns True on success."""
-    args = ["mcp", "add", "--scope", scope, MCP_SERVER_NAME, "--", "mpg", "mcp"]
+    """Register the MCP server with Claude Code. Returns True on success.
+
+    The launch command pins the current interpreter (``sys.executable -m ...``)
+    instead of a bare ``mpg``: Claude Code spawns MCP servers from its own
+    environment, where a venv-only ``mpg`` is not on PATH (#118).
+    """
+    if not sys.executable or not Path(sys.executable).is_file():
+        # sys.executable can be empty in embedded/frozen interpreters; a
+        # registration pointing at it would never launch.
+        print("Error: cannot resolve the current Python interpreter path.", file=sys.stderr)
+        print(
+            "Re-run 'mpg setup' from a regular Python environment "
+            "(frozen/embedded interpreters cannot host the MCP server).",
+            file=sys.stderr,
+        )
+        return False
+
+    launch = [sys.executable, "-m", "modern_python_guidance", "mcp"]
+    args = ["mcp", "add", "--scope", scope, MCP_SERVER_NAME, "--", *launch]
 
     if dry_run:
-        print(f"Would run: claude {' '.join(args)}")
+        print(f"Would run: claude {shlex.join(args)}")
         return True
 
     claude = shutil.which("claude")
@@ -153,25 +188,45 @@ def setup_mcp(
         )
         return False
 
-    cmd = [claude, *args]
+    add_cmd = [claude, *args]
+    result = _run_claude_mcp(add_cmd)
+    if result is None:
+        return False
 
-    try:
-        result = subprocess.run(cmd, capture_output=True, timeout=30)
-    except subprocess.TimeoutExpired:
-        print("Error: 'claude mcp add' timed out after 30 seconds.", file=sys.stderr)
-        return False
-    except OSError as e:
-        print(f"Error: failed to run 'claude mcp add': {e}", file=sys.stderr)
-        return False
+    if result.returncode != 0 and b"already exists" in (result.stderr or b""):
+        # Stale registration (e.g. a pre-#118 bare `mpg` entry): replace it.
+        # Add-first keeps the existing entry intact when `add` fails for any
+        # other reason (timeout, permissions), so a broken retry cannot leave
+        # the user with no registration at all.
+        remove_cmd = [claude, "mcp", "remove", "--scope", scope, MCP_SERVER_NAME]
+        removed = _run_claude_mcp(remove_cmd)
+        if removed is None or removed.returncode != 0:
+            print(
+                f"Error: could not replace the existing '{MCP_SERVER_NAME}' registration.",
+                file=sys.stderr,
+            )
+            if removed is not None:
+                _print_stderr(removed)
+            return False
+        result = _run_claude_mcp(add_cmd)
+        if result is None:
+            return False
 
     if result.returncode != 0:
-        stderr_text = result.stderr.decode(errors="replace").strip()
         print(f"Error: 'claude mcp add' failed (exit {result.returncode}).", file=sys.stderr)
-        if stderr_text:
-            print(stderr_text, file=sys.stderr)
+        _print_stderr(result)
+        # Only reachable when the retried add hit "already exists" again (a
+        # race); for unrelated failures a remove suggestion would be harmful.
+        if b"already exists" in (result.stderr or b""):
+            print(
+                f"Run 'claude mcp remove {MCP_SERVER_NAME} --scope {scope}' "
+                f"and re-run 'mpg setup'.",
+                file=sys.stderr,
+            )
         return False
 
     print(f"MCP server registered with Claude Code ({scope} scope).")
+    print(f"Registered launch: {shlex.join(launch)}")
     return True
 
 
