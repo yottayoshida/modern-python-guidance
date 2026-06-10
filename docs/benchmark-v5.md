@@ -1,6 +1,6 @@
 # Benchmark V5: mpg lifts modern-Python adoption by up to 19pp on vague prompts
 
-Model: Claude Opus 4.8 | Date: 2026-05-30 | Scorer: AST-based (`bench/score_v5.py`)
+Models: Claude Opus 4.6 / 4.8 / Fable 5 | Updated: 2026-06-10 | Scorer: AST-based (`bench/score_v5.py`)
 
 ## Key finding
 
@@ -61,22 +61,42 @@ Neither prompt mentions specific pattern names (no "TaskGroup", no "field_valida
 | DS1 | Frozen dataclass with slots | Model omits `slots=True` consistently |
 | PD3 | field_serializer | Prompt doesn't elicit serialization code |
 
-## Model comparison (4.6 vs 4.8)
+## Model comparison (4.6 vs 4.8 vs Fable 5)
 
 | Model | Prompt | Control | Treatment | Delta |
 |-------|--------|---------|-----------|-------|
 | Opus 4.6 | Normal (N=10) | 90.0% | 95.0% | +5.0pp |
 | Opus 4.6 | Terse (N=3) | 86.0% | 94.6% | +8.6pp |
-| **Opus 4.8** | **Normal (N=3)** | **93.3%** | **100.0%** | **+6.7pp** |
-| **Opus 4.8** | **Terse (N=3)** | **78.9%** | **98.3%** | **+19.4pp** |
+| Opus 4.8 | Normal (N=3) | 93.3% | 100.0% | +6.7pp |
+| Opus 4.8 | Terse (N=3) | 78.9% | 98.3% | +19.4pp |
+| **Fable 5** | **Terse (N=3)** | **87.0%** | **94.9%*** | **+7.9pp*** |
+
+\* All treatment OUTDATED hits in the Fable 5 runs are SL3 scorer false positives (legitimate `rstrip("\n")` / `rstrip("/")` char-set strips flagged as outdated — see [#129](https://github.com/yottayoshida/modern-python-guidance/issues/129)). Excluding them, all 3 treatment runs score 100% and the corrected delta is +13.0pp.
 
 Opus 4.8 with detailed instructions is better than 4.6 (Control 93.3% vs 90.0%). But with terse instructions, 4.8 is worse (78.9% vs 86.0%). The model improved at following detailed specs but became more reliant on explicit instruction for pattern choices.
 
 mpg guidance on 4.8 Terse (98%) outperforms both models without guidance.
 
+### Fable 5 findings (Terse, N=3, 2026-06-10)
+
+Fable 5 reverses the 4.8 terse regression: its no-guidance baseline (87.0%) beats both Opus 4.8 (78.9%) and Opus 4.6 (86.0%). The headroom for guidance shrinks accordingly, but guidance still closes the gap to 100% (corrected for #129).
+
+Control failures concentrate on a small stubborn set rather than spreading across items:
+
+| Item | Pattern | Control failures | Treatment |
+|------|---------|------------------|-----------|
+| AS1 | TaskGroup over gather | 3/3 (systematic) | fixed 3/3 |
+| FA2 | Annotated Depends | 2/3 | fixed |
+| DS1 | Frozen dataclass with slots | 1/3 | fixed |
+| FA3 | FastAPI typed state | 1/3 | fixed |
+
+`asyncio.gather` over `TaskGroup` (AS1) remains the one fully systematic habit, carried over from both Opus generations. On Fable 5 the value of mpg shifts from broad uplift to targeted correction of these few stubborn patterns.
+
+Run variance is low: control scored 88.9% / 88.9% / 83.3%, treatment 95.0% / 95.0% / 94.7% (raw).
+
 ## Limitations
 
-- **Two models tested**: Opus 4.6 and 4.8. Other models/versions may differ
+- **Three models tested**: Opus 4.6, Opus 4.8, and Fable 5 (terse only). Other models/versions may differ; Fable 5 normal-granularity runs not yet done
 - **Single app type**: FastAPI web app only. CLI, data pipeline, library not covered
 - **N=3**: small sample. Directional signal is clear but not statistically rigorous
 - **Normal prompt is generous**: specifies file structure and function signatures, more detailed than typical usage
@@ -93,6 +113,10 @@ mpg guidance on 4.8 Terse (98%) outperforms both models without guidance.
 # Run (6 sessions per granularity, ~20 min each)
 MODEL=claude-opus-4-8 ./bench/run-v5.sh myrun both --variant a --granularity normal -N 3
 MODEL=claude-opus-4-8 ./bench/run-v5.sh myrun-t both --variant a --granularity terse -N 3
+
+# Fable 5: raise the per-session budget guard — sessions run $1.6–3.8 in estimated
+# cost and the $2.00 default truncates them mid-run (estimate only; no charge on Max)
+MODEL=claude-fable-5 ./bench/run-v5.sh myrun-f both --variant a --granularity terse -N 3 --budget 10.00
 
 # Score
 python3 bench/score_v5.py myrun-1-v5an --variant a
