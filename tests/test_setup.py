@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import shlex
 import subprocess
 import sys
 from pathlib import Path
@@ -22,6 +23,23 @@ from modern_python_guidance.setup_cmd import (
 )
 
 BIN = [sys.executable, "-m", "modern_python_guidance"]
+
+
+def _expected_add_argv(scope: str) -> list[str]:
+    """The full `claude mcp add` argv that setup_mcp must produce (#118)."""
+    return [
+        "/usr/bin/claude",
+        "mcp",
+        "add",
+        "--scope",
+        scope,
+        "mpg",
+        "--",
+        sys.executable,
+        "-m",
+        "modern_python_guidance",
+        "mcp",
+    ]
 
 
 # --- _find_skills_dir ---
@@ -196,28 +214,108 @@ class TestSetupMcp:
         out = capsys.readouterr().out
         assert "mcp add" in out
         assert "--scope local" in out
-        assert "mpg mcp" in out
+        assert "-m modern_python_guidance mcp" in out
 
     def test_subprocess_argv(self):
-        """Actual subprocess.run receives correct argv list."""
+        """#118: registers the absolute interpreter path, not a bare `mpg`."""
         with (
             patch("modern_python_guidance.setup_cmd.shutil.which", return_value="/usr/bin/claude"),
             patch("modern_python_guidance.setup_cmd.subprocess.run") as m,
         ):
             m.return_value = subprocess.CompletedProcess([], 0)
             setup_mcp(scope="local")
-        argv = m.call_args[0][0]
-        assert argv == [
+        assert m.call_args[0][0] == _expected_add_argv("local")
+
+    def test_success_echoes_registered_launch(self, capsys: pytest.CaptureFixture[str]):
+        """#118: the exact registered launch command is printed for inspection."""
+        with (
+            patch("modern_python_guidance.setup_cmd.shutil.which", return_value="/usr/bin/claude"),
+            patch("modern_python_guidance.setup_cmd.subprocess.run") as mock_run,
+        ):
+            mock_run.return_value = subprocess.CompletedProcess([], 0)
+            setup_mcp()
+        out = capsys.readouterr().out
+        expected = shlex.join([sys.executable, "-m", "modern_python_guidance", "mcp"])
+        assert f"Registered launch: {expected}" in out
+
+    def test_already_exists_triggers_remove_then_retry(self, capsys: pytest.CaptureFixture[str]):
+        """#118: a stale registration is replaced (add -> remove -> add)."""
+        with (
+            patch("modern_python_guidance.setup_cmd.shutil.which", return_value="/usr/bin/claude"),
+            patch("modern_python_guidance.setup_cmd.subprocess.run") as m,
+        ):
+            m.side_effect = [
+                subprocess.CompletedProcess([], 1, stderr=b"MCP server mpg already exists"),
+                subprocess.CompletedProcess([], 0, stderr=b""),
+                subprocess.CompletedProcess([], 0, stderr=b""),
+            ]
+            ok = setup_mcp(scope="user")
+        assert ok is True
+        assert m.call_count == 3
+        # Both the first add and the retry must use the new launch command.
+        assert m.call_args_list[0][0][0] == _expected_add_argv("user")
+        assert m.call_args_list[1][0][0] == [
             "/usr/bin/claude",
             "mcp",
-            "add",
+            "remove",
             "--scope",
-            "local",
+            "user",
             "mpg",
-            "--",
-            "mpg",
-            "mcp",
         ]
+        assert m.call_args_list[2][0][0] == _expected_add_argv("user")
+        assert "MCP server registered" in capsys.readouterr().out
+
+    def test_other_failure_does_not_remove(self, capsys: pytest.CaptureFixture[str]):
+        """#118: a non-duplicate add failure must NOT delete the existing entry."""
+        with (
+            patch("modern_python_guidance.setup_cmd.shutil.which", return_value="/usr/bin/claude"),
+            patch("modern_python_guidance.setup_cmd.subprocess.run") as m,
+        ):
+            m.return_value = subprocess.CompletedProcess([], 1, stderr=b"permission denied")
+            ok = setup_mcp()
+        assert ok is False
+        assert m.call_count == 1
+        assert "failed" in capsys.readouterr().err
+
+    def test_remove_failure_reported(self, capsys: pytest.CaptureFixture[str]):
+        """#118: remove failing during replacement is surfaced as an error."""
+        with (
+            patch("modern_python_guidance.setup_cmd.shutil.which", return_value="/usr/bin/claude"),
+            patch("modern_python_guidance.setup_cmd.subprocess.run") as m,
+        ):
+            m.side_effect = [
+                subprocess.CompletedProcess([], 1, stderr=b"MCP server mpg already exists"),
+                subprocess.CompletedProcess([], 1, stderr=b"remove blew up"),
+            ]
+            ok = setup_mcp()
+        assert ok is False
+        assert m.call_count == 2
+        err = capsys.readouterr().err
+        assert "could not replace" in err
+        assert "remove blew up" in err
+
+    def test_retry_add_failure_reported(self, capsys: pytest.CaptureFixture[str]):
+        """#118: the retried add failing is surfaced as an error."""
+        with (
+            patch("modern_python_guidance.setup_cmd.shutil.which", return_value="/usr/bin/claude"),
+            patch("modern_python_guidance.setup_cmd.subprocess.run") as m,
+        ):
+            m.side_effect = [
+                subprocess.CompletedProcess([], 1, stderr=b"MCP server mpg already exists"),
+                subprocess.CompletedProcess([], 0, stderr=b""),
+                subprocess.CompletedProcess([], 1, stderr=b"still failing"),
+            ]
+            ok = setup_mcp()
+        assert ok is False
+        assert m.call_count == 3
+        assert "still failing" in capsys.readouterr().err
+
+    def test_unresolvable_interpreter_fails(self, capsys: pytest.CaptureFixture[str]):
+        """#118: empty sys.executable (embedded interpreter) fails loudly."""
+        with patch("modern_python_guidance.setup_cmd.sys.executable", ""):
+            ok = setup_mcp()
+        assert ok is False
+        assert "cannot resolve" in capsys.readouterr().err
 
 
 # --- setup_skills ---

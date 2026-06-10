@@ -5,7 +5,12 @@ from pathlib import Path
 
 import pytest
 
-from modern_python_guidance.version_detect import DEFAULT_VERSION, detect_version
+from modern_python_guidance.version_detect import (
+    _MAX_CONFIG_SIZE,
+    DEFAULT_VERSION,
+    detect_configured_version,
+    detect_version,
+)
 
 
 @pytest.fixture
@@ -182,3 +187,62 @@ class TestPrecedence:
 class TestDefault:
     def test_empty_dir(self, tmp_project: Path):
         assert detect_version(project_dir=tmp_project) == DEFAULT_VERSION
+
+
+class TestDetectConfiguredVersion:
+    """detect_configured_version never falls back to DEFAULT_VERSION."""
+
+    def test_pyproject_detected(self, tmp_project: Path):
+        (tmp_project / "pyproject.toml").write_text('[project]\nrequires-python = ">=3.8"\n')
+        assert detect_configured_version(tmp_project) == "3.8"
+
+    def test_python_version_file_detected(self, tmp_project: Path):
+        (tmp_project / ".python-version").write_text("3.9\n")
+        assert detect_configured_version(tmp_project) == "3.9"
+
+    def test_empty_dir_returns_none(self, tmp_project: Path):
+        assert detect_configured_version(tmp_project) is None
+
+    def test_pyproject_without_version_returns_none(self, tmp_project: Path):
+        (tmp_project / "pyproject.toml").write_text('[tool.other]\nkey = "v"\n')
+        assert detect_configured_version(tmp_project) is None
+
+    def test_malformed_pyproject_returns_none(self, tmp_project: Path):
+        (tmp_project / "pyproject.toml").write_text("not [valid toml")
+        assert detect_configured_version(tmp_project) is None
+
+    def test_malformed_pyproject_falls_to_python_version_file(self, tmp_project: Path):
+        (tmp_project / "pyproject.toml").write_text("not [valid toml")
+        (tmp_project / ".python-version").write_text("3.9\n")
+        assert detect_configured_version(tmp_project) == "3.9"
+
+
+class TestConfigSizeLimit:
+    def test_size_cap_is_one_mib(self):
+        """The 1 MiB cap is a documented spec value (CHANGELOG), not a free variable."""
+        assert _MAX_CONFIG_SIZE == 1024 * 1024
+
+    def test_oversized_pyproject_skipped(self, tmp_project: Path, caplog):
+        pyproject = tmp_project / "pyproject.toml"
+        padding = "# " + "x" * _MAX_CONFIG_SIZE + "\n"
+        pyproject.write_text(f'[project]\nrequires-python = ">=3.8"\n{padding}')
+        with caplog.at_level(logging.WARNING):
+            assert detect_configured_version(tmp_project) is None
+        assert "too large" in caplog.text
+
+    def test_oversized_python_version_file_skipped(self, tmp_project: Path):
+        pv = tmp_project / ".python-version"
+        pv.write_text("3.9" + " " * _MAX_CONFIG_SIZE + "\n")
+        assert detect_configured_version(tmp_project) is None
+
+    def test_python_version_file_at_limit_still_read(self, tmp_project: Path):
+        content = "3.9"
+        padding = " " * (_MAX_CONFIG_SIZE - len(content))
+        (tmp_project / ".python-version").write_text(content + padding)
+        assert detect_configured_version(tmp_project) == "3.9"
+
+    def test_at_limit_still_read(self, tmp_project: Path):
+        content = '[project]\nrequires-python = ">=3.8"\n'
+        padding = "# " + "x" * (_MAX_CONFIG_SIZE - len(content) - 3) + "\n"
+        (tmp_project / "pyproject.toml").write_text(content + padding)
+        assert detect_configured_version(tmp_project) == "3.8"
