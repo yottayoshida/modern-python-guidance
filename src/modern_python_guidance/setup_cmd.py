@@ -149,10 +149,93 @@ def _print_stderr(result: subprocess.CompletedProcess[bytes]) -> None:
         print(stderr_text, file=sys.stderr)
 
 
+def _run_claude_mcp_quiet(
+    cmd: list[str], cwd: str | None = None
+) -> subprocess.CompletedProcess[bytes] | None:
+    """Run a claude mcp subcommand without reporting failures.
+
+    For advisory paths (shadowing detection) where an ``Error:`` line right
+    after a successful setup would be misleading; callers degrade instead.
+    """
+    try:
+        return subprocess.run(cmd, capture_output=True, timeout=30, cwd=cwd)
+    except (subprocess.TimeoutExpired, OSError):
+        return None
+
+
+# Claude Code resolves same-name MCP registrations by scope precedence
+# (the whole entry from the highest-precedence scope wins; no merging).
+_SCOPE_PRECEDENCE = {"local": 3, "project": 2, "user": 1}
+
+
+def _effective_scope(stdout: bytes) -> str | None:
+    """Extract the winning scope from ``claude mcp get`` output.
+
+    Returns "local"/"project"/"user", or None when the ``Scope:`` line is
+    missing or names an unknown scope (e.g. the claude.ai-managed scope, or
+    a future format change) — callers must stay silent then, because a
+    wrong warning would prompt the user to remove a healthy registration.
+    """
+    for line in stdout.decode(errors="replace").splitlines():
+        stripped = line.strip()
+        if stripped.startswith("Scope:"):
+            rest = stripped.removeprefix("Scope:").strip()
+            token = rest.split()[0].lower() if rest else ""
+            return token if token in _SCOPE_PRECEDENCE else None
+    return None
+
+
+def _warn_if_shadowed(scope: str, claude: str, project_dir: Path | None = None) -> None:
+    """Warn when a higher-precedence scope shadows the entry just written.
+
+    Advisory only: never changes setup's outcome, and never issues mutating
+    ``claude mcp`` subcommands. Failure handling is asymmetric on purpose:
+    a get failure right after a successful add is anomalous and gets a
+    one-line note (without a remove command), while unparseable output is
+    silently skipped (#131).
+
+    Local/project scopes are bound to the project directory ``claude``
+    runs in, so when setup targets another project (``--project-dir``)
+    the check runs there — that is where shadowing would bite.
+    """
+    if scope not in _SCOPE_PRECEDENCE:
+        return
+    cwd = str(project_dir) if project_dir is not None and project_dir.is_dir() else None
+    result = _run_claude_mcp_quiet([claude, "mcp", "get", MCP_SERVER_NAME], cwd=cwd)
+    if result is None or result.returncode != 0:
+        print(
+            f"Note: could not verify which scope's '{MCP_SERVER_NAME}' registration "
+            f"Claude Code will launch. Inspect with: claude mcp get {MCP_SERVER_NAME}",
+            file=sys.stderr,
+        )
+        return
+    winner = _effective_scope(result.stdout or b"")
+    if winner is None or _SCOPE_PRECEDENCE[winner] <= _SCOPE_PRECEDENCE[scope]:
+        return
+    print(
+        f"Warning: an existing '{MCP_SERVER_NAME}' MCP registration in the "
+        f"higher-precedence '{winner}' scope will be used instead of the "
+        f"'{scope}'-scope one just registered.",
+        file=sys.stderr,
+    )
+    print(
+        "Claude Code resolves scopes local > project > user. If that entry points "
+        "at an old or broken command, mpg guides will silently fail to load.",
+        file=sys.stderr,
+    )
+    print(
+        "To use the new registration, remove the shadowing entry and re-run setup:",
+        file=sys.stderr,
+    )
+    print(f"  claude mcp remove {MCP_SERVER_NAME} -s {winner}", file=sys.stderr)
+    print("  mpg setup", file=sys.stderr)
+
+
 def setup_mcp(
     *,
     scope: str = "user",
     dry_run: bool = False,
+    project_dir: Path | None = None,
 ) -> bool:
     """Register the MCP server with Claude Code. Returns True on success.
 
@@ -227,6 +310,7 @@ def setup_mcp(
 
     print(f"MCP server registered with Claude Code ({scope} scope).")
     print(f"Registered launch: {shlex.join(launch)}")
+    _warn_if_shadowed(scope, claude, project_dir)
     return True
 
 
@@ -359,7 +443,7 @@ def run_setup(
     rules_ok = True
 
     if do_mcp:
-        mcp_ok = setup_mcp(scope=scope, dry_run=dry_run)
+        mcp_ok = setup_mcp(scope=scope, dry_run=dry_run, project_dir=project_dir)
 
     if do_skills:
         skills_ok = setup_skills(project_dir=project_dir, dry_run=dry_run)

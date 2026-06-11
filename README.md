@@ -79,6 +79,8 @@ mpg setup --skills-only
 | `--project-dir PATH` | Target project for Skills/Rules symlinks |
 | `--dry-run` | Show what would be done |
 
+After registering, `mpg setup` checks whether a same-name registration in a higher-precedence scope (local > project > user) would shadow the one it just wrote, and prints a warning with the exact `claude mcp remove` command if so.
+
 **Uninstall** — reverse `mpg setup` (deregister the MCP server and unlink Agent Skills + Rules):
 ```bash
 mpg uninstall            # remove all
