@@ -42,6 +42,249 @@ def _expected_add_argv(scope: str) -> list[str]:
     ]
 
 
+# Scope-line wordings captured live from `claude mcp get` (#131 step 0).
+_SCOPE_LINES = {
+    "user": "Scope: User config (available in all your projects)",
+    "local": "Scope: Local config (private to you in this project)",
+    "project": "Scope: Project config (shared via .mcp.json)",
+    "claude.ai": "Scope: claude.ai config",
+}
+
+
+def _get_stdout(scope_key: str, status: str = "✔ Connected") -> bytes:
+    """Realistic `claude mcp get mpg` stdout for the winning scope."""
+    return (
+        "mpg:\n"
+        f"  {_SCOPE_LINES[scope_key]}\n"
+        f"  Status: {status}\n"
+        "  Type: stdio\n"
+        "  Command: /nonexistent/bin/mpg\n"
+        "  Args: mcp\n"
+        "  Environment:\n"
+        "\n"
+        f'To remove this server, run: claude mcp remove "mpg" -s {scope_key}\n'
+    ).encode()
+
+
+def _get_result(scope_key: str, status: str = "✔ Connected") -> subprocess.CompletedProcess[bytes]:
+    return subprocess.CompletedProcess([], 0, stdout=_get_stdout(scope_key, status), stderr=b"")
+
+
+_ADD_OK = subprocess.CompletedProcess([], 0, stdout=b"", stderr=b"")
+
+
+class TestWarnIfShadowed:
+    """#131: cross-scope shadowing detection after a successful add (V-201..V-212)."""
+
+    def _setup_with_get(self, scope: str, get_effect) -> tuple[bool, str]:
+        """Run setup_mcp with a mocked add followed by the given get outcome."""
+        with (
+            patch("modern_python_guidance.setup_cmd.shutil.which", return_value="/usr/bin/claude"),
+            patch("modern_python_guidance.setup_cmd.subprocess.run") as m,
+        ):
+            m.side_effect = [_ADD_OK, get_effect]
+            ok = setup_mcp(scope=scope)
+            get_argv = m.call_args_list[-1][0][0]
+        assert get_argv == ["/usr/bin/claude", "mcp", "get", "mpg"]
+        return ok, get_argv
+
+    def test_local_shadows_user_warns(self, capsys: pytest.CaptureFixture[str]):
+        """V-201: broken local winner over a user-scope write -> actionable warning."""
+        ok, _ = self._setup_with_get("user", _get_result("local", "✘ Failed to connect"))
+        assert ok is True
+        captured = capsys.readouterr()
+        assert "MCP server registered" in captured.out
+        assert "Warning:" in captured.err
+        assert "'local' scope" in captured.err
+        assert "'user'-scope" in captured.err
+        assert "claude mcp remove mpg -s local" in captured.err
+        assert "mpg setup" in captured.err
+        # V-210: never echo the winning entry's launch details (T1/T2).
+        assert "/nonexistent/bin/mpg" not in captured.err
+        assert "Command:" not in captured.err
+        assert "Args:" not in captured.err
+        assert "Environment:" not in captured.err
+
+    def test_project_shadows_user_warns(self, capsys: pytest.CaptureFixture[str]):
+        """V-211: project scope also shadows user."""
+        ok, _ = self._setup_with_get("user", _get_result("project"))
+        assert ok is True
+        err = capsys.readouterr().err
+        assert "Warning:" in err
+        assert "'project' scope" in err
+        assert "'user'-scope" in err
+        assert "claude mcp remove mpg -s project" in err
+
+    def test_same_scope_no_warning(self, capsys: pytest.CaptureFixture[str]):
+        """V-202: the scope just written is the winner -> clean output."""
+        ok, _ = self._setup_with_get("user", _get_result("user"))
+        assert ok is True
+        assert capsys.readouterr().err == ""
+
+    def test_local_write_never_warns(self, capsys: pytest.CaptureFixture[str]):
+        """V-203: local is the highest precedence mpg can write; no warning."""
+        ok, _ = self._setup_with_get("local", _get_result("local"))
+        assert ok is True
+        assert capsys.readouterr().err == ""
+
+    def test_lower_precedence_winner_no_warning(self, capsys: pytest.CaptureFixture[str]):
+        """V-204: a user-scope winner cannot shadow a local-scope write."""
+        ok, _ = self._setup_with_get("local", _get_result("user"))
+        assert ok is True
+        assert capsys.readouterr().err == ""
+
+    def test_get_nonzero_notes_without_error(self, capsys: pytest.CaptureFixture[str]):
+        """V-205: get failure right after add -> one-line note, not Error, no remove hint."""
+        ok, _ = self._setup_with_get(
+            "user", subprocess.CompletedProcess([], 1, stdout=b"", stderr=b"boom")
+        )
+        assert ok is True
+        err = capsys.readouterr().err
+        assert len(err.strip().splitlines()) == 1
+        assert "Note: could not verify" in err
+        assert "claude mcp get mpg" in err
+        assert "Error:" not in err
+        assert "Warning:" not in err
+        assert "remove" not in err
+        assert "boom" not in err
+
+    def test_get_timeout_notes_without_error(self, capsys: pytest.CaptureFixture[str]):
+        """V-206: detection timeout degrades to the note; setup stays successful."""
+        ok, _ = self._setup_with_get("user", subprocess.TimeoutExpired([], 30))
+        assert ok is True
+        err = capsys.readouterr().err
+        assert "Note: could not verify" in err
+        assert "Error:" not in err
+
+    def test_get_oserror_notes_without_error(self, capsys: pytest.CaptureFixture[str]):
+        """V-212: OSError during detection degrades to the note."""
+        ok, _ = self._setup_with_get("user", OSError("exec format error"))
+        assert ok is True
+        err = capsys.readouterr().err
+        assert "Note: could not verify" in err
+        assert "Error:" not in err
+
+    def test_format_drift_is_silent(self, capsys: pytest.CaptureFixture[str]):
+        """V-207: output without a Scope line -> completely silent."""
+        drifted = subprocess.CompletedProcess(
+            [], 0, stdout=b"mpg:\n  Effective: somewhere\n", stderr=b""
+        )
+        ok, _ = self._setup_with_get("user", drifted)
+        assert ok is True
+        assert capsys.readouterr().err == ""
+
+    def test_mid_line_scope_does_not_mask_real_scope_line(
+        self, capsys: pytest.CaptureFixture[str]
+    ):
+        """'Scope:' embedded mid-line is not a Scope line (line-start match);
+        the real Scope line after it must still be found and warn."""
+        embedded = subprocess.CompletedProcess(
+            [],
+            0,
+            stdout=(
+                b"mpg:\n"
+                b"  Command: echo Scope: stuff\n"
+                b"  Scope: Local config (private to you in this project)\n"
+            ),
+            stderr=b"",
+        )
+        ok, _ = self._setup_with_get("user", embedded)
+        assert ok is True
+        assert "claude mcp remove mpg -s local" in capsys.readouterr().err
+
+    def test_scope_line_in_stderr_is_ignored(self, capsys: pytest.CaptureFixture[str]):
+        """Only stdout is parsed; a Scope line in stderr must not trigger a warning."""
+        stderr_only = subprocess.CompletedProcess(
+            [], 0, stdout=b"mpg:\n", stderr=_get_stdout("local")
+        )
+        ok, _ = self._setup_with_get("user", stderr_only)
+        assert ok is True
+        assert capsys.readouterr().err == ""
+
+    def test_unknown_scope_token_is_silent(self, capsys: pytest.CaptureFixture[str]):
+        """V-208: an unrecognized scope (claude.ai-managed) is skipped silently."""
+        ok, _ = self._setup_with_get("user", _get_result("claude.ai"))
+        assert ok is True
+        assert capsys.readouterr().err == ""
+
+    def test_near_miss_scope_tokens_are_silent(self, capsys: pytest.CaptureFixture[str]):
+        """Exact-match normalization: 'locality' / 'local-config' are unknown."""
+        for token_line in (b"  Scope: locality config\n", b"  Scope: local-config\n"):
+            near_miss = subprocess.CompletedProcess(
+                [], 0, stdout=b"mpg:\n" + token_line, stderr=b""
+            )
+            ok, _ = self._setup_with_get("user", near_miss)
+            assert ok is True
+            assert capsys.readouterr().err == ""
+
+    def test_get_call_contract(self):
+        """The detection call keeps the quiet-runner contract: one get after the
+        successful add, with capture_output and the standard timeout."""
+        with (
+            patch("modern_python_guidance.setup_cmd.shutil.which", return_value="/usr/bin/claude"),
+            patch("modern_python_guidance.setup_cmd.subprocess.run") as m,
+        ):
+            m.side_effect = [_ADD_OK, _get_result("user")]
+            setup_mcp(scope="user")
+        argvs = [c[0][0] for c in m.call_args_list]
+        assert argvs == [
+            _expected_add_argv("user"),
+            ["/usr/bin/claude", "mcp", "get", "mpg"],
+        ]
+        get_kwargs = m.call_args_list[-1].kwargs
+        assert get_kwargs.get("capture_output") is True
+        assert get_kwargs.get("timeout") == 30
+        assert get_kwargs.get("cwd") is None
+
+    def test_dry_run_skips_detection(self, capsys: pytest.CaptureFixture[str]):
+        """V-209: dry-run must not shell out at all (no get health-check spawn)."""
+        with (
+            patch("modern_python_guidance.setup_cmd.shutil.which", return_value="/usr/bin/claude"),
+            patch("modern_python_guidance.setup_cmd.subprocess.run") as m,
+        ):
+            ok = setup_mcp(scope="user", dry_run=True)
+        assert ok is True
+        assert m.call_count == 0
+        assert capsys.readouterr().err == ""
+
+    def test_default_detection_runs_in_cwd(self):
+        """Without --project-dir, the check inherits the current directory."""
+        with (
+            patch("modern_python_guidance.setup_cmd.shutil.which", return_value="/usr/bin/claude"),
+            patch("modern_python_guidance.setup_cmd.subprocess.run") as m,
+        ):
+            m.side_effect = [_ADD_OK, _get_result("user")]
+            setup_mcp(scope="user")
+        assert m.call_args_list[-1].kwargs.get("cwd") is None
+
+    def test_project_dir_detection_runs_in_target(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ):
+        """R1 P0: local/project scopes are project-bound, so with --project-dir
+        the shadowing check must run in the target project, not the cwd."""
+        with (
+            patch("modern_python_guidance.setup_cmd.shutil.which", return_value="/usr/bin/claude"),
+            patch("modern_python_guidance.setup_cmd.subprocess.run") as m,
+        ):
+            m.side_effect = [_ADD_OK, _get_result("project")]
+            code = run_setup(mcp_only=True, scope="user", project_dir=tmp_path)
+        assert code == 0
+        get_call = m.call_args_list[-1]
+        assert get_call[0][0] == ["/usr/bin/claude", "mcp", "get", "mpg"]
+        assert get_call.kwargs.get("cwd") == str(tmp_path)
+        assert "claude mcp remove mpg -s project" in capsys.readouterr().err
+
+    def test_missing_project_dir_falls_back_to_cwd(self, tmp_path: Path):
+        """A not-yet-created --project-dir cannot host the check; fall back."""
+        with (
+            patch("modern_python_guidance.setup_cmd.shutil.which", return_value="/usr/bin/claude"),
+            patch("modern_python_guidance.setup_cmd.subprocess.run") as m,
+        ):
+            m.side_effect = [_ADD_OK, _get_result("user")]
+            setup_mcp(scope="user", project_dir=tmp_path / "does-not-exist")
+        assert m.call_args_list[-1].kwargs.get("cwd") is None
+
+
 # --- _find_skills_dir ---
 
 
@@ -224,7 +467,7 @@ class TestSetupMcp:
         ):
             m.return_value = subprocess.CompletedProcess([], 0)
             setup_mcp(scope="local")
-        assert m.call_args[0][0] == _expected_add_argv("local")
+        assert m.call_args_list[0][0][0] == _expected_add_argv("local")
 
     def test_success_echoes_registered_launch(self, capsys: pytest.CaptureFixture[str]):
         """#118: the exact registered launch command is printed for inspection."""
@@ -248,10 +491,11 @@ class TestSetupMcp:
                 subprocess.CompletedProcess([], 1, stderr=b"MCP server mpg already exists"),
                 subprocess.CompletedProcess([], 0, stderr=b""),
                 subprocess.CompletedProcess([], 0, stderr=b""),
+                _get_result("user"),  # post-add shadowing check
             ]
             ok = setup_mcp(scope="user")
         assert ok is True
-        assert m.call_count == 3
+        assert m.call_count == 4
         # Both the first add and the retry must use the new launch command.
         assert m.call_args_list[0][0][0] == _expected_add_argv("user")
         assert m.call_args_list[1][0][0] == [
@@ -263,6 +507,7 @@ class TestSetupMcp:
             "mpg",
         ]
         assert m.call_args_list[2][0][0] == _expected_add_argv("user")
+        assert m.call_args_list[3][0][0] == ["/usr/bin/claude", "mcp", "get", "mpg"]
         assert "MCP server registered" in capsys.readouterr().out
 
     def test_other_failure_does_not_remove(self, capsys: pytest.CaptureFixture[str]):
