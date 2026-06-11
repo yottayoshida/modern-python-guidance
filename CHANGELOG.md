@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.5] — 2026-06-11
+
+**Summary**: `mpg setup` now detects cross-scope MCP registration shadowing, and the benchmark scorer no longer penalizes legitimate char-set strips.
+
+### Fixed
+
+- `mpg setup` warns when a same-name MCP registration in a higher-precedence scope (Claude Code resolves local > project > user) shadows the one it just wrote, naming the winning scope and the exact `claude mcp remove` command to recover. Previously a stale entry in another scope (e.g. a pre-0.5.4 bare-`mpg` registration in local scope) kept launching while setup printed success. Detection is advisory and fail-safe: warn-only with no auto-repair, never changes setup's exit code, issues no mutating subcommands, never echoes the winning entry's command line, degrades to a one-line note when `claude mcp get` fails, and stays silent on unparseable or unknown-scope output. With `--project-dir`, the check runs in the target project (local/project scopes are project-bound); dry-run skips detection entirely. (closes #131)
+- Benchmark scorer: `check_SL3` no longer flags legitimate char-set strips (`line.rstrip("\n")`, `url.rstrip("/")`, whitespace sets like `"\r\n"`) as OUTDATED. It now matches only the removeprefix/removesuffix misuse class — a call with a single multi-char, non-whitespace string-literal argument such as `lstrip("test_")` or `rstrip(".json")`. Scorer-only change; previously reported benchmark figures were computed with the pre-fix scorer and are annotated in docs/benchmark-v5.md. (closes #129)
+
 ## [0.5.4] — 2026-06-10
 
 ### Fixed
