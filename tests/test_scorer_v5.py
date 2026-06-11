@@ -612,6 +612,220 @@ class TestSL:
         )
         assert check_SL3(files) == CheckResult.OUTDATED
 
+    def test_sl3_multichar_lstrip_outdated(self, tmp_path):
+        # The misuse class removeprefix exists to fix: strips a char set,
+        # not the prefix "test_".
+        files = _make_files(
+            tmp_path,
+            """
+        def clean(name):
+            return name.lstrip("test_")
+        """,
+        )
+        assert check_SL3(files) == CheckResult.OUTDATED
+
+    def test_sl3_multichar_rstrip_outdated(self, tmp_path):
+        files = _make_files(
+            tmp_path,
+            """
+        def stem(path):
+            return path.rstrip(".json")
+        """,
+        )
+        assert check_SL3(files) == CheckResult.OUTDATED
+
+    def test_sl3_single_char_rstrip_none(self, tmp_path):
+        # #129: char-set strip of one char is legitimate, not replaceable
+        # by removesuffix (removes ALL trailing slashes, not one).
+        files = _make_files(
+            tmp_path,
+            """
+        def normalize(url):
+            return url.rstrip("/")
+        """,
+        )
+        assert check_SL3(files) == CheckResult.NONE
+
+    def test_sl3_single_char_newline_none(self, tmp_path):
+        files = _make_files(
+            tmp_path,
+            """
+        def chomp(line):
+            return line.rstrip("\\n")[:500]
+        """,
+        )
+        assert check_SL3(files) == CheckResult.NONE
+
+    def test_sl3_bare_rstrip_none(self, tmp_path):
+        files = _make_files(
+            tmp_path,
+            """
+        def trim(line):
+            return line.rstrip()
+        """,
+        )
+        assert check_SL3(files) == CheckResult.NONE
+
+    def test_sl3_kwarg_only_none(self, tmp_path):
+        # chars= as keyword leaves node.args empty; must not crash or flag.
+        files = _make_files(
+            tmp_path,
+            """
+        def trim(line):
+            return line.rstrip(chars="ab")
+        """,
+        )
+        assert check_SL3(files) == CheckResult.NONE
+
+    def test_sl3_whitespace_multichar_none(self, tmp_path):
+        # "\\r\\n" is a canonical char-set idiom, not a suffix removal.
+        files = _make_files(
+            tmp_path,
+            """
+        def chomp(line):
+            return line.rstrip("\\r\\n")
+        """,
+        )
+        assert check_SL3(files) == CheckResult.NONE
+
+    def test_sl3_whitespace_punctuation_mix_outdated(self, tmp_path):
+        # Design boundary: mixed whitespace+punctuation is multi-char
+        # non-whitespace, so it is flagged even if char-set intent.
+        files = _make_files(
+            tmp_path,
+            """
+        def trim(line):
+            return line.rstrip(" \\n,")
+        """,
+        )
+        assert check_SL3(files) == CheckResult.OUTDATED
+
+    def test_sl3_nonliteral_arg_none(self, tmp_path):
+        files = _make_files(
+            tmp_path,
+            """
+        def trim(line, sep):
+            return line.rstrip(sep) + line.rstrip(f"{sep}x")
+        """,
+        )
+        assert check_SL3(files) == CheckResult.NONE
+
+    def test_sl3_bytes_arg_none(self, tmp_path):
+        files = _make_files(
+            tmp_path,
+            """
+        def trim(data: bytes):
+            return data.rstrip(b"ab")
+        """,
+        )
+        assert check_SL3(files) == CheckResult.NONE
+
+    def test_sl3_empty_string_arg_none(self, tmp_path):
+        files = _make_files(
+            tmp_path,
+            """
+        def trim(line):
+            return line.rstrip("")
+        """,
+        )
+        assert check_SL3(files) == CheckResult.NONE
+
+    def test_sl3_bare_attribute_reference_none(self, tmp_path):
+        # Method reference without a call must not flag (Call-only match).
+        files = _make_files(
+            tmp_path,
+            """
+        def make_trimmer(line):
+            f = line.rstrip
+            return f
+        """,
+        )
+        assert check_SL3(files) == CheckResult.NONE
+
+    def test_sl3_chained_single_char_none(self, tmp_path):
+        files = _make_files(
+            tmp_path,
+            """
+        def heading(line):
+            return line.lstrip("#").strip()
+        """,
+        )
+        assert check_SL3(files) == CheckResult.NONE
+
+    def test_sl3_outdated_wins_over_modern(self, tmp_path):
+        # Transitional code: misuse present alongside removeprefix.
+        files = _make_files(
+            tmp_path,
+            """
+        def clean(name):
+            return name.lstrip("test_").removeprefix("x")
+        """,
+        )
+        assert check_SL3(files) == CheckResult.OUTDATED
+
+    def test_sl3_exact_two_char_literal_outdated(self, tmp_path):
+        # Length boundary: exactly 2 non-whitespace chars is already misuse.
+        files = _make_files(
+            tmp_path,
+            """
+        def trim(line):
+            return line.rstrip("ab")
+        """,
+        )
+        assert check_SL3(files) == CheckResult.OUTDATED
+
+    def test_sl3_two_positional_args_none(self, tmp_path):
+        # Invalid arity at runtime but valid AST; must require exactly 1 arg.
+        files = _make_files(
+            tmp_path,
+            """
+        def trim(line):
+            return line.rstrip("ab", "cd")
+        """,
+        )
+        assert check_SL3(files) == CheckResult.NONE
+
+    def test_sl3_multichar_strip_none(self, tmp_path):
+        # strip() is symmetric trimming, not the removeprefix misuse class.
+        files = _make_files(
+            tmp_path,
+            """
+        def trim(line):
+            return line.strip("ab")
+        """,
+        )
+        assert check_SL3(files) == CheckResult.NONE
+
+    def test_sl3_whitespace_multichar_lstrip_none(self, tmp_path):
+        files = _make_files(
+            tmp_path,
+            """
+        def dedent(line):
+            return line.lstrip(" \\t")
+        """,
+        )
+        assert check_SL3(files) == CheckResult.NONE
+
+    def test_sl3_empty_lstrip_none(self, tmp_path):
+        files = _make_files(
+            tmp_path,
+            """
+        def trim(line):
+            return line.lstrip("")
+        """,
+        )
+        assert check_SL3(files) == CheckResult.NONE
+
+    def test_sl3_removesuffix_modern(self, tmp_path):
+        files = _make_files(
+            tmp_path,
+            """
+        def stem(path):
+            return path.removesuffix(".txt")
+        """,
+        )
+        assert check_SL3(files) == CheckResult.MODERN
+
     def test_sl4_modern(self, tmp_path):
         files = _make_files(
             tmp_path,
