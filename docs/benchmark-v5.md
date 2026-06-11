@@ -71,7 +71,7 @@ Neither prompt mentions specific pattern names (no "TaskGroup", no "field_valida
 | Opus 4.8 | Terse (N=3) | 78.9% | 98.3% | +19.4pp |
 | **Fable 5** | **Terse (N=3)** | **87.0%** | **94.9%*** | **+7.9pp*** |
 
-\* All treatment OUTDATED hits in the Fable 5 runs are SL3 scorer false positives (legitimate `rstrip("\n")` / `rstrip("/")` char-set strips flagged as outdated — see [#129](https://github.com/yottayoshida/modern-python-guidance/issues/129)). Excluding them, all 3 treatment runs score 100% and the corrected delta is +13.0pp.
+\* All treatment OUTDATED hits in the Fable 5 runs were SL3 scorer false positives (legitimate `rstrip("\n")` / `rstrip("/")` char-set strips flagged as outdated). The scorer was fixed in [#129](https://github.com/yottayoshida/modern-python-guidance/issues/129); the raw figures above come from the pre-fix scorer, and the corrected figures (all 3 treatment runs 100%, delta +13.0pp) match what the post-fix scorer reports.
 
 Opus 4.8 with detailed instructions is better than 4.6 (Control 93.3% vs 90.0%). But with terse instructions, 4.8 is worse (78.9% vs 86.0%). The model improved at following detailed specs but became more reliant on explicit instruction for pattern choices.
 

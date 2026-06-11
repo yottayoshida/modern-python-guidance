@@ -805,13 +805,35 @@ def check_SL2(files: list[ParsedFile]) -> CheckResult:
     return CheckResult.NONE
 
 
+def _is_prefix_suffix_misuse(node: ast.Call) -> bool:
+    """lstrip/rstrip called with a multi-char, non-whitespace string literal.
+
+    This is the misuse class removeprefix/removesuffix exists to fix:
+    ``lstrip("test_")`` strips the character set {t, e, s, _}, not the
+    prefix. Bare strips, single-char strips (``rstrip("/")``), and
+    whitespace sets (``rstrip("\\r\\n")``) are legitimate char-set trims.
+    Non-literal args are skipped: intent is not statically knowable, and
+    a false OUTDATED penalizes correct modern code (#129).
+    """
+    if not (isinstance(node.func, ast.Attribute) and node.func.attr in ("lstrip", "rstrip")):
+        return False
+    if len(node.args) != 1:
+        return False
+    arg = node.args[0]
+    if not (isinstance(arg, ast.Constant) and isinstance(arg.value, str)):
+        return False
+    # str.isspace() is True only for non-empty all-whitespace strings, so
+    # this flags "test_" / ".json" but not "" / "\r\n" / " \t".
+    return len(arg.value) >= 2 and not arg.value.isspace()
+
+
 def check_SL3(files: list[ParsedFile]) -> CheckResult:
-    """removeprefix/removesuffix vs lstrip/rstrip/[len():]."""
+    """removeprefix/removesuffix vs char-set-misused lstrip/rstrip/[len():]."""
     for pf in files:
         has_outdated = False
         has_modern = False
         for node in _iter_code_nodes(pf.tree):
-            if isinstance(node, ast.Attribute) and node.attr in ("lstrip", "rstrip"):
+            if isinstance(node, ast.Call) and _is_prefix_suffix_misuse(node):
                 has_outdated = True
             if isinstance(node, ast.Subscript) and isinstance(node.slice, ast.Slice):
                 # [len(prefix):] pattern
