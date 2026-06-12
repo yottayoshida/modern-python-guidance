@@ -38,3 +38,28 @@ jobs:
 
       - name: Run tests
         run: pytest --tb=short -q --cov --cov-report=term-missing
+
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Build sdist and wheel
+        run: |
+          pip install "build==1.5.0"  # keep in sync with publish.yml
+          python -m build
+
+      - name: Install built wheel
+        run: pip install dist/*.whl
+
+      - name: Verify bundled assets
+        working-directory: ${{ runner.temp }}
+        run: env -u PYTHONPATH python "$GITHUB_WORKSPACE/scripts/verify_wheel_assets.py" "$GITHUB_WORKSPACE"

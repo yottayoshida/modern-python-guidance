@@ -162,37 +162,77 @@ Fuzzy results are marked with `fuzzy: true` in the output.
 
 The CLI defaults to JSON when piped and human-readable when attached to a TTY. The `--format` flag overrides this.
 
+The MCP server tools (`search_guides`, `retrieve_guides`, `list_guides`) return the same JSON shapes as the CLI's `--format json` output. Only the exit semantics differ: the CLI exits 1 on empty results or missing IDs, while the MCP server returns the same payload as a non-error tool result.
+
+These examples are real captured outputs: the field set is the contract (maintained against the serializers in `cli.py` and `mcp_server.py`), while values such as `score`, `token_estimate`, and `snippet` vary by query and guide revision.
+
 ### JSON schema (search)
+
+First result of `mpg search "builtin generics" --format json` (the full output is an array of all matches):
 
 ```json
 [
   {
-    "id": "use-builtin-generics",
-    "title": "Use built-in generics instead of typing module",
+    "id": "type-parameter-syntax",
+    "title": "Use PEP 695 Type Parameter Syntax for Generics",
     "category": "typing",
     "layer": 1,
-    "score": 18.0,
-    "token_estimate": 350,
-    "fuzzy": false
+    "tags": ["type-hints", "generics", "typevar"],
+    "python": ">=3.12",
+    "frequency": "medium",
+    "score": 15.5,
+    "token_estimate": 273,
+    "fuzzy": false,
+    "snippet": "from typing import Generic, TypeVar → class Stack[T]:"
   }
 ]
 ```
 
 ### JSON schema (retrieve)
 
+When all requested IDs are found, the output is a bare array (captured from `mpg retrieve use-builtin-generics --format json`, with `content` elided):
+
 ```json
 [
   {
     "id": "use-builtin-generics",
-    "title": "Use built-in generics instead of typing module",
+    "title": "Use Built-in Generic Types Instead of typing Module",
     "category": "typing",
     "layer": 1,
     "python": ">=3.9",
     "frequency": "high",
     "version_match": true,
     "content": "## BAD\n...\n## GOOD\n...",
-    "token_estimate": 350,
-    "source": "modern-python-guidance v0.1.0"
+    "token_estimate": 261,
+    "source": "modern-python-guidance v<version>"
+  }
+]
+```
+
+`source` reflects the installed package version at runtime (e.g. `modern-python-guidance v0.5.5`); do not pin fixtures or integrations to a literal version.
+
+When one or more requested IDs are not found, the shape changes to an envelope (and the CLI exits 1):
+
+```json
+{
+  "results": [{ "...": "found guides, same shape as above" }],
+  "not_found": [
+    { "id": "no-such-guide", "suggestions": ["django-async-views"] }
+  ]
+}
+```
+
+### JSON schema (list)
+
+```json
+[
+  {
+    "id": "use-builtin-generics",
+    "title": "Use Built-in Generic Types Instead of typing Module",
+    "category": "typing",
+    "layer": 1,
+    "python": ">=3.9",
+    "frequency": "high"
   }
 ]
 ```
