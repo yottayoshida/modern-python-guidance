@@ -2,7 +2,7 @@
 
 All notable changes to this project will be documented in this file.
 
-## [Unreleased]
+## [0.5.6] — 2026-06-12
 
 **Summary**: design.md output-schema examples now match the real CLI/MCP output, and CI builds the wheel and verifies the bundled assets so a packaging regression can no longer ship silently. No runtime behavior changes.
 
