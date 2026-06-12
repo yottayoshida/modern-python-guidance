@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+**Summary**: design.md output-schema examples now match the real CLI/MCP output, and CI builds the wheel and verifies the bundled assets so a packaging regression can no longer ship silently. No runtime behavior changes.
+
+### Docs
+
+- `docs/design.md` output-format examples corrected to match the actual serializers: the search example now lists all 11 fields (previously `tags`, `python`, `frequency`, and `snippet` were missing), the retrieve example's `source` field is shown as the dynamic `modern-python-guidance v<version>` instead of a stale hardcoded `v0.1.0`, and the previously undocumented `not_found` envelope (returned when some requested IDs do not exist) is now documented along with the `list` output schema. Also states explicitly that CLI `--format json` and the MCP tools emit the same JSON shapes, differing only in exit semantics. (closes #119)
+
+### CI
+
+- New `build` job builds the wheel (`python -m build`, pinned `build==1.5.0`, matching publish.yml), installs it non-editable, and runs `scripts/verify_wheel_assets.py` from outside the checkout to verify the bundled assets: `SKILL.md` presence, exact relative-path-set match of all guides against the checkout, the bundled rule file, and a functional `mpg list` against the installed wheel. Previously CI only ran tests against an editable install, so a broken `[tool.hatch.build.targets.wheel.sources]` mapping would have shipped a wheel with zero guides — failing silently with empty results at runtime. This gate covers the wheel install path only; sdist contents are not verified. (closes #120)
+
 ## [0.5.5] — 2026-06-11
 
 **Summary**: `mpg setup` now detects cross-scope MCP registration shadowing, and the benchmark scorer no longer penalizes legitimate char-set strips.
