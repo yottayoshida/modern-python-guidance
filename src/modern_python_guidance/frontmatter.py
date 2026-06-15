@@ -17,6 +17,7 @@ from packaging.specifiers import InvalidSpecifier, SpecifierSet
 
 _KEY_RE = re.compile(r"^([a-z][a-z0-9_-]*)\s*:\s*(.*)")
 _LIST_ITEM_RE = re.compile(r"^  - (.+)")
+_FQN_RE = re.compile(r"^[a-zA-Z_]\w*(\.[a-zA-Z_]\w*)+$")
 _FENCE = "---"
 
 REQUIRED_FIELDS = frozenset({"id", "title", "category", "layer", "tags", "python", "frequency"})
@@ -42,6 +43,7 @@ class GuideMeta:
     aliases: list[str] = field(default_factory=list)
     pep: list[int] = field(default_factory=list)
     detect_patterns: list[str] | None = None
+    detect_names: list[str] | None = None
 
 
 def parse_frontmatter(text: str) -> tuple[GuideMeta, str]:
@@ -173,6 +175,27 @@ def _build_meta(raw: dict[str, Any]) -> GuideMeta:
     else:
         raise FrontmatterError(f"detect-patterns must be a list, got {detect_raw!r}")
 
+    detect_names_raw = raw.get("detect-names")
+    if detect_names_raw is None:
+        detect_names = None
+    elif isinstance(detect_names_raw, list):
+        detect_names = [str(n) for n in detect_names_raw]
+        for n in detect_names:
+            if not n:
+                raise FrontmatterError("detect-names entry must not be empty")
+            if "*" in n:
+                raise FrontmatterError(f"wildcards not allowed in detect-names: {n!r}")
+            if ".." in n:
+                raise FrontmatterError(f"consecutive dots in detect-names: {n!r}")
+            if n.endswith(("(", ")")):
+                raise FrontmatterError(f"detect-names must not end with parentheses: {n!r}")
+            if not _FQN_RE.match(n):
+                raise FrontmatterError(
+                    f"detect-names entry must be a fully qualified name (module.name): {n!r}"
+                )
+    else:
+        raise FrontmatterError(f"detect-names must be a list, got {detect_names_raw!r}")
+
     return GuideMeta(
         id=str(raw["id"]),
         title=str(raw["title"]),
@@ -184,4 +207,5 @@ def _build_meta(raw: dict[str, Any]) -> GuideMeta:
         aliases=[str(a) for a in aliases_raw],
         pep=pep,
         detect_patterns=detect_patterns,
+        detect_names=detect_names,
     )

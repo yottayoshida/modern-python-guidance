@@ -16,6 +16,9 @@ frequency: high
 detect-patterns:
   - "datetime\.utcnow\("
   - "datetime\.utcfromtimestamp\("
+detect-names:
+  - "datetime.datetime.utcnow"
+  - "datetime.datetime.utcfromtimestamp"
 ---
 
 # Use datetime.now(UTC) Instead of utcnow()

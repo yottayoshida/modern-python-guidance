@@ -18,6 +18,18 @@ frequency: high
 pep: 585
 detect-patterns:
   - "from typing import .*\b(List|Dict|Set|Tuple|FrozenSet|Type|Deque|DefaultDict|OrderedDict|Counter|ChainMap)\b"
+detect-names:
+  - "typing.List"
+  - "typing.Dict"
+  - "typing.Set"
+  - "typing.Tuple"
+  - "typing.FrozenSet"
+  - "typing.Type"
+  - "typing.Deque"
+  - "typing.DefaultDict"
+  - "typing.OrderedDict"
+  - "typing.Counter"
+  - "typing.ChainMap"
 ---
 
 # Use Built-in Generic Types

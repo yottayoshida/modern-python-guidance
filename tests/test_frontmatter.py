@@ -407,3 +407,185 @@ Body.
 """
     with pytest.raises(FrontmatterError, match="detect-patterns must be a list"):
         parse_frontmatter(text)
+
+
+class TestDetectNames:
+    """Tests for detect-names frontmatter field."""
+
+    def test_valid_detect_names(self):
+        text = """\
+---
+id: test-dn
+title: Detect Names Test
+category: typing
+layer: 1
+tags:
+  - test
+python: ">=3.9"
+frequency: high
+detect-names:
+  - "typing.List"
+  - "typing.Dict"
+---
+
+Body.
+"""
+        meta, _ = parse_frontmatter(text)
+        assert meta.detect_names == ["typing.List", "typing.Dict"]
+
+    def test_detect_names_absent(self):
+        text = """\
+---
+id: test-no-dn
+title: No Detect Names
+category: typing
+layer: 1
+tags:
+  - test
+python: ">=3.9"
+frequency: high
+---
+
+Body.
+"""
+        meta, _ = parse_frontmatter(text)
+        assert meta.detect_names is None
+
+    def test_detect_names_rejects_bare_name(self):
+        text = """\
+---
+id: test-bare
+title: Bare Name
+category: typing
+layer: 1
+tags:
+  - test
+python: ">=3.9"
+frequency: high
+detect-names:
+  - "List"
+---
+
+Body.
+"""
+        with pytest.raises(FrontmatterError, match="fully qualified name"):
+            parse_frontmatter(text)
+
+    def test_detect_names_rejects_wildcard(self):
+        text = """\
+---
+id: test-wild
+title: Wildcard
+category: typing
+layer: 1
+tags:
+  - test
+python: ">=3.9"
+frequency: high
+detect-names:
+  - "typing.*"
+---
+
+Body.
+"""
+        with pytest.raises(FrontmatterError, match="wildcards"):
+            parse_frontmatter(text)
+
+    def test_detect_names_rejects_consecutive_dots(self):
+        text = """\
+---
+id: test-dots
+title: Dots
+category: typing
+layer: 1
+tags:
+  - test
+python: ">=3.9"
+frequency: high
+detect-names:
+  - "typing..List"
+---
+
+Body.
+"""
+        with pytest.raises(FrontmatterError, match="consecutive dots"):
+            parse_frontmatter(text)
+
+    def test_detect_names_rejects_parentheses(self):
+        text = """\
+---
+id: test-parens
+title: Parens
+category: typing
+layer: 1
+tags:
+  - test
+python: ">=3.9"
+frequency: high
+detect-names:
+  - "typing.List("
+---
+
+Body.
+"""
+        with pytest.raises(FrontmatterError, match="parentheses"):
+            parse_frontmatter(text)
+
+    def test_detect_names_rejects_non_list(self):
+        text = """\
+---
+id: test-nonlist
+title: Non List
+category: typing
+layer: 1
+tags:
+  - test
+python: ">=3.9"
+frequency: high
+detect-names: notalist
+---
+
+Body.
+"""
+        with pytest.raises(FrontmatterError, match="detect-names must be a list"):
+            parse_frontmatter(text)
+
+    def test_detect_names_rejects_trailing_dot(self):
+        text = """\
+---
+id: test-trail
+title: Trailing Dot
+category: typing
+layer: 1
+tags:
+  - test
+python: ">=3.9"
+frequency: high
+detect-names:
+  - "typing.List."
+---
+
+Body.
+"""
+        with pytest.raises(FrontmatterError, match="fully qualified name"):
+            parse_frontmatter(text)
+
+    def test_detect_names_rejects_empty_entry(self):
+        text = """\
+---
+id: test-empty
+title: Empty Entry
+category: typing
+layer: 1
+tags:
+  - test
+python: ">=3.9"
+frequency: high
+detect-names:
+  - ""
+---
+
+Body.
+"""
+        with pytest.raises(FrontmatterError, match="must not be empty"):
+            parse_frontmatter(text)

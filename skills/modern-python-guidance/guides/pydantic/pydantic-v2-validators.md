@@ -16,6 +16,9 @@ frequency: high
 detect-patterns:
   - "@validator\("
   - "@root_validator"
+detect-names:
+  - "pydantic.validator"
+  - "pydantic.root_validator"
 ---
 
 # Use Pydantic V2 Validators

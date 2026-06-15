@@ -17,6 +17,8 @@ frequency: high
 detect-patterns:
   - "os\.system\("
   - "shell\s*=\s*True"
+detect-names:
+  - "os.system"
 ---
 
 # Use subprocess Safely
