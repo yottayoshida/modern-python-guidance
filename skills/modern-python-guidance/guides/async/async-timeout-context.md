@@ -13,6 +13,8 @@ python: ">=3.11"
 frequency: medium
 detect-patterns:
   - "asyncio\.wait_for\("
+detect-names:
+  - "asyncio.wait_for"
 ---
 
 # Use asyncio.timeout Instead of wait_for

@@ -10,9 +10,12 @@ import pytest
 from modern_python_guidance.check import (
     FREQ_RANK,
     CheckError,
+    _MAX_FILE_SIZE,
     _auto_extract_patterns,
     _build_patterns,
     _get_patterns,
+    _mask_strings,
+    _parse_imports,
     _read_file,
     _validate_file,
     check_file,
@@ -338,3 +341,336 @@ class TestFreqRank:
         assert "medium" in FREQ_RANK
         assert "low" in FREQ_RANK
         assert FREQ_RANK["high"] < FREQ_RANK["medium"] < FREQ_RANK["low"]
+
+
+class TestMaskStrings:
+    """V-001 family: tokenize-based string/comment masking."""
+
+    def test_single_line_string_masked(self):
+        code = 'x = "from typing import List"\n'
+        skip, masked = _mask_strings(code)
+        assert 1 not in skip
+        assert 1 in masked
+        assert "from typing" not in masked[1]
+
+    def test_multiline_string_interior_skipped(self):
+        code = '"""\nfrom typing import List\n"""\n'
+        skip, masked = _mask_strings(code)
+        assert 2 in skip
+
+    def test_comment_masked(self):
+        code = "x = 1  # datetime.utcnow()\n"
+        skip, masked = _mask_strings(code)
+        assert 1 in masked
+        assert "utcnow" not in masked[1]
+
+    def test_tokenize_error_fallback(self):
+        code = 'x = """unterminated\n'
+        skip, masked = _mask_strings(code)
+        assert skip == frozenset()
+        assert masked == {}
+
+    def test_code_outside_string_preserved(self):
+        code = 'from typing import List; x = "hello"\n'
+        skip, masked = _mask_strings(code)
+        assert 1 not in skip
+        assert 1 in masked
+        assert "from typing import List" in masked[1]
+        assert "hello" not in masked[1]
+
+    def test_single_line_string_not_in_skip(self):
+        """Mutation guard: single-line strings must use masked, not skip."""
+        code = 'x = "from typing import List"\nreal_code = 1\n'
+        skip, masked = _mask_strings(code)
+        assert 1 not in skip
+        assert 2 not in skip
+
+    def test_fstring_literal_masked(self):
+        """f-string literal portion should be masked; expressions should remain."""
+        code = 'x = f"prefix {some_var} suffix"\n'
+        skip, masked = _mask_strings(code)
+        assert 1 not in skip
+        if 1 in masked:
+            assert "prefix" not in masked[1]
+
+
+class TestParseImports:
+    def test_import_module(self):
+        result = _parse_imports("import typing\n")
+        assert result is not None
+        aliases, _tree = result
+        assert aliases == {"typing": "typing"}
+
+    def test_from_import(self):
+        result = _parse_imports("from typing import List\n")
+        assert result is not None
+        aliases, _tree = result
+        assert aliases == {"List": "typing.List"}
+
+    def test_aliased_import(self):
+        result = _parse_imports("from typing import List as L\n")
+        assert result is not None
+        aliases, _tree = result
+        assert aliases == {"L": "typing.List"}
+
+    def test_module_alias(self):
+        result = _parse_imports("import typing as t\n")
+        assert result is not None
+        aliases, _tree = result
+        assert aliases == {"t": "typing"}
+
+    def test_syntax_error_returns_none(self):
+        assert _parse_imports("def f(\n") is None
+
+    def test_from_import_nested(self):
+        result = _parse_imports("from datetime import datetime\n")
+        assert result is not None
+        aliases, _tree = result
+        assert aliases == {"datetime": "datetime.datetime"}
+
+
+class TestStringLiteralFP:
+    """V-001/V-002: string literals must not cause false positives."""
+
+    def test_string_literal_no_match(self, tmp_path: Path, index: GuideIndex):
+        """V-001: x = 'from typing import List' → 0 matches."""
+        p = tmp_path / "v001.py"
+        p.write_text('x = "from typing import List"\n', encoding="utf-8")
+        matches = check_file(p, index)
+        assert matches == []
+
+    def test_string_with_real_code(self, tmp_path: Path, index: GuideIndex):
+        """V-002: real import on different line still detected despite string."""
+        p = tmp_path / "v002.py"
+        p.write_text(
+            "from typing import List\n"
+            'x = "from typing import Dict"\n',
+            encoding="utf-8",
+        )
+        matches = check_file(p, index)
+        ids = {m.guide_id for m in matches}
+        assert "use-builtin-generics" in ids
+        assert len(matches) == 1
+        assert matches[0].line == 1
+
+    def test_inline_comment_no_match(self, tmp_path: Path, index: GuideIndex):
+        """V-003: x = 1  # datetime.utcnow() → 0 matches."""
+        p = tmp_path / "v003.py"
+        p.write_text("x = 1  # datetime.utcnow()\n", encoding="utf-8")
+        matches = check_file(p, index)
+        assert matches == []
+
+
+class TestAstQualifiedDetection:
+    """V-012+: qualified/aliased forms detected via AST."""
+
+    def test_qualified_typing_list(self, tmp_path: Path, index: GuideIndex):
+        """V-012: import typing; x: typing.List[str]."""
+        p = tmp_path / "v012.py"
+        p.write_text(
+            "import typing\n\nx: typing.List[str] = []\n",
+            encoding="utf-8",
+        )
+        matches = check_file(p, index)
+        ids = {m.guide_id for m in matches}
+        assert "use-builtin-generics" in ids
+
+    def test_aliased_pydantic_validator(self, tmp_path: Path, index: GuideIndex):
+        """V-013: from pydantic import validator as v; @v('name')."""
+        p = tmp_path / "v013.py"
+        p.write_text(
+            "from pydantic import validator as v\n\n@v('name')\ndef check(cls, v): pass\n",
+            encoding="utf-8",
+        )
+        matches = check_file(p, index)
+        ids = {m.guide_id for m in matches}
+        assert "pydantic-v2-validators" in ids
+
+    def test_qualified_pydantic_validator(self, tmp_path: Path, index: GuideIndex):
+        """V-014: import pydantic; @pydantic.validator('name')."""
+        p = tmp_path / "v014.py"
+        p.write_text(
+            "import pydantic\n\n@pydantic.validator('name')\ndef check(cls, v): pass\n",
+            encoding="utf-8",
+        )
+        matches = check_file(p, index)
+        ids = {m.guide_id for m in matches}
+        assert "pydantic-v2-validators" in ids
+
+    def test_qualified_datetime_utcnow(self, tmp_path: Path, index: GuideIndex):
+        """import datetime; datetime.datetime.utcnow()."""
+        p = tmp_path / "dt_qualified.py"
+        p.write_text(
+            "import datetime\n\nnow = datetime.datetime.utcnow()\n",
+            encoding="utf-8",
+        )
+        matches = check_file(p, index)
+        ids = {m.guide_id for m in matches}
+        assert "datetime-utc" in ids
+
+    def test_aliased_datetime_utcnow(self, tmp_path: Path, index: GuideIndex):
+        """from datetime import datetime as dt; dt.utcnow()."""
+        p = tmp_path / "dt_aliased.py"
+        p.write_text(
+            "from datetime import datetime as dt\n\nnow = dt.utcnow()\n",
+            encoding="utf-8",
+        )
+        matches = check_file(p, index)
+        ids = {m.guide_id for m in matches}
+        assert "datetime-utc" in ids
+
+    def test_module_alias_asyncio_gather(self, tmp_path: Path, index: GuideIndex):
+        """import asyncio as aio; aio.gather(...)."""
+        p = tmp_path / "aio_alias.py"
+        p.write_text(
+            "import asyncio as aio\n\nasync def f():\n    await aio.gather(a(), b())\n",
+            encoding="utf-8",
+        )
+        matches = check_file(p, index)
+        ids = {m.guide_id for m in matches}
+        assert "taskgroup-over-gather" in ids
+
+    def test_fstring_expression_detected_by_ast(self, tmp_path: Path, index: GuideIndex):
+        """f-string: literal portion masked, but expression code detected by AST."""
+        p = tmp_path / "fstring_ast.py"
+        p.write_text(
+            "from datetime import datetime\n\nx = f\"now is {datetime.utcnow()}\"\n",
+            encoding="utf-8",
+        )
+        matches = check_file(p, index)
+        ids = {m.guide_id for m in matches}
+        assert "datetime-utc" in ids
+
+    def test_ast_fallback_on_syntax_error(self, tmp_path: Path, index: GuideIndex):
+        """V-020: AST parse failure → regex-only detection still works."""
+        p = tmp_path / "v020.py"
+        p.write_text(
+            "from typing import List\ndef f(\n",
+            encoding="utf-8",
+        )
+        matches = check_file(p, index)
+        ids = {m.guide_id for m in matches}
+        assert "use-builtin-generics" in ids
+
+    def test_python_version_filter_applies_to_ast(self, tmp_path: Path, index: GuideIndex):
+        """AST detect-names also respects python_version filter."""
+        p = tmp_path / "version_filter.py"
+        p.write_text(
+            "import typing\nx: typing.List[str] = []\n",
+            encoding="utf-8",
+        )
+        matches_all = check_file(p, index)
+        matches_38 = check_file(p, index, python_version="3.8")
+        all_ids = {m.guide_id for m in matches_all}
+        ids_38 = {m.guide_id for m in matches_38}
+        assert "use-builtin-generics" in all_ids
+        assert "use-builtin-generics" not in ids_38
+
+
+class TestMergeAndDedup:
+    """One match per line; AST preferred over regex on same line."""
+
+    def test_one_match_per_line(self, tmp_path: Path, index: GuideIndex):
+        p = tmp_path / "dedup.py"
+        p.write_text(
+            "from typing import List\n",
+            encoding="utf-8",
+        )
+        matches = check_file(p, index)
+        assert len(matches) == 1
+
+    def test_matches_sorted_by_line(self, tmp_path: Path, index: GuideIndex):
+        p = tmp_path / "sorted.py"
+        p.write_text(
+            "from typing import List\n\nfrom datetime import datetime\nnow = datetime.utcnow()\n",
+            encoding="utf-8",
+        )
+        matches = check_file(p, index)
+        lines = [m.line for m in matches]
+        assert lines == sorted(lines)
+
+    def test_ast_and_regex_same_line_dedup(self, tmp_path: Path, index: GuideIndex):
+        """When regex and AST both match on the same line, only one result."""
+        p = tmp_path / "both.py"
+        p.write_text(
+            "from typing import List\n"
+            "import typing\n"
+            "x: typing.List[str] = []\n",
+            encoding="utf-8",
+        )
+        matches = check_file(p, index)
+        line3_matches = [m for m in matches if m.line == 3]
+        assert len(line3_matches) <= 1
+
+    def test_ast_only_match_on_clean_line(self, tmp_path: Path, index: GuideIndex):
+        """AST-only match (no regex) still appears in results."""
+        p = tmp_path / "ast_only.py"
+        p.write_text(
+            "import typing\n\nx: typing.List[str] = []\n",
+            encoding="utf-8",
+        )
+        matches = check_file(p, index)
+        ids = {m.guide_id for m in matches}
+        assert "use-builtin-generics" in ids
+
+
+class TestMaxFileSize:
+    def test_large_file_rejected(self, tmp_path: Path, index: GuideIndex):
+        p = tmp_path / "huge.py"
+        p.write_bytes(b"x = 1\n" * (_MAX_FILE_SIZE // 6 + 1))
+        with pytest.raises(CheckError, match="file too large"):
+            check_file(p, index)
+
+    def test_normal_file_accepted(self, tmp_path: Path, index: GuideIndex):
+        p = tmp_path / "normal.py"
+        p.write_text("x = 1\n" * 100, encoding="utf-8")
+        matches = check_file(p, index)
+        assert matches == []
+
+
+class TestKnownLimitations:
+    """Document known limitations — these are expected to NOT detect."""
+
+    def test_wildcard_import_not_detected(self, tmp_path: Path, index: GuideIndex):
+        """from typing import * → List usage not detected via AST."""
+        p = tmp_path / "wildcard.py"
+        p.write_text(
+            "from typing import *\n\nx: List[str] = []\n",
+            encoding="utf-8",
+        )
+        matches = check_file(p, index)
+        ast_on_line3 = [m for m in matches if m.line == 3]
+        assert ast_on_line3 == []
+
+    def test_reassignment_not_tracked(self, tmp_path: Path, index: GuideIndex):
+        """v = validator; @v(...) — re-assignment not tracked."""
+        p = tmp_path / "reassign.py"
+        p.write_text(
+            "from pydantic import validator\nv = validator\n\n@v('name')\ndef check(): pass\n",
+            encoding="utf-8",
+        )
+        matches = check_file(p, index)
+        ast_on_decorator = [m for m in matches if m.line == 4]
+        assert ast_on_decorator == []
+
+    def test_store_context_not_detected(self, tmp_path: Path, index: GuideIndex):
+        """Assignment target should not trigger detection (Codex P2 fix)."""
+        p = tmp_path / "store.py"
+        p.write_text(
+            "from pydantic import validator\nvalidator = lambda x: x\n",
+            encoding="utf-8",
+        )
+        matches = check_file(p, index)
+        store_matches = [m for m in matches if m.line == 2]
+        assert store_matches == []
+
+    def test_attribute_store_context_not_detected(self, tmp_path: Path, index: GuideIndex):
+        """Qualified assignment target (typing.List = list) must not trigger."""
+        p = tmp_path / "attr_store.py"
+        p.write_text(
+            "import typing\ntyping.List = list\n",
+            encoding="utf-8",
+        )
+        matches = check_file(p, index)
+        store_matches = [m for m in matches if m.line == 2]
+        assert store_matches == []
