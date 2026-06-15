@@ -2,6 +2,20 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.7] — 2026-06-15
+
+**Summary**: `mpg check` now uses a hybrid regex+AST detection engine — string-literal and comment false positives are eliminated via tokenize-based masking, and qualified/aliased forms (`typing.List`, `import typing as t; t.List`) are detected via AST import-alias resolution.
+
+### Fixed
+
+- `mpg check` no longer reports matches inside string literals or inline comments. A new tokenize-based `_mask_strings()` blanks the column ranges of STRING, FSTRING_MIDDLE, and COMMENT tokens before regex matching, replacing the previous `_string_lines()` which only skipped entire multi-line-string lines. Single-line strings like `x = "from typing import List"` previously triggered false positives; they are now correctly ignored while real code on the same or adjacent lines is still detected. (closes #121)
+
+### Added
+
+- AST-based qualified/aliased name detection: guides can now declare a `detect-names` frontmatter field listing fully qualified Python names (e.g. `typing.List`, `asyncio.gather`). `mpg check` builds an import-alias map from `ast.Import`/`ast.ImportFrom` nodes and resolves `ast.Name`/`ast.Attribute` references through it, matching qualified (`typing.List`), aliased (`import typing as t; t.List`), and direct (`from typing import List`) forms. Results are merged with regex matches (one per line, AST preferred). Six guides updated with detect-names: use-builtin-generics (11 names), pydantic-v2-validators, datetime-utc, taskgroup-over-gather, async-timeout-context, safe-subprocess. (closes #122)
+- `_MAX_FILE_SIZE` (2 MB) guard: files exceeding 2 MB raise `CheckError` before reading, preventing memory issues on large generated files.
+- `detect_names` field on `GuideMeta` with FQN validation (no bare names, wildcards, consecutive dots, or trailing parentheses).
+
 ## [0.5.6] — 2026-06-12
 
 **Summary**: design.md output-schema examples now match the real CLI/MCP output, and CI builds the wheel and verifies the bundled assets so a packaging regression can no longer ship silently. No runtime behavior changes.
