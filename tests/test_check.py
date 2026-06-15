@@ -8,9 +8,9 @@ from pathlib import Path
 import pytest
 
 from modern_python_guidance.check import (
+    _MAX_FILE_SIZE,
     FREQ_RANK,
     CheckError,
-    _MAX_FILE_SIZE,
     _auto_extract_patterns,
     _build_patterns,
     _get_patterns,
@@ -355,12 +355,12 @@ class TestMaskStrings:
 
     def test_multiline_string_interior_skipped(self):
         code = '"""\nfrom typing import List\n"""\n'
-        skip, masked = _mask_strings(code)
+        skip, _masked = _mask_strings(code)
         assert 2 in skip
 
     def test_comment_masked(self):
         code = "x = 1  # datetime.utcnow()\n"
-        skip, masked = _mask_strings(code)
+        _skip, masked = _mask_strings(code)
         assert 1 in masked
         assert "utcnow" not in masked[1]
 
@@ -381,7 +381,7 @@ class TestMaskStrings:
     def test_single_line_string_not_in_skip(self):
         """Mutation guard: single-line strings must use masked, not skip."""
         code = 'x = "from typing import List"\nreal_code = 1\n'
-        skip, masked = _mask_strings(code)
+        skip, _masked = _mask_strings(code)
         assert 1 not in skip
         assert 2 not in skip
 

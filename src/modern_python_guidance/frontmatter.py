@@ -182,7 +182,7 @@ def _build_meta(raw: dict[str, Any]) -> GuideMeta:
         detect_names = [str(n) for n in detect_names_raw]
         for n in detect_names:
             if not n:
-                raise FrontmatterError(f"detect-names entry must not be empty")
+                raise FrontmatterError("detect-names entry must not be empty")
             if "*" in n:
                 raise FrontmatterError(f"wildcards not allowed in detect-names: {n!r}")
             if ".." in n:
