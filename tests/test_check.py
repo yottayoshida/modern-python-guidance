@@ -443,8 +443,7 @@ class TestStringLiteralFP:
         """V-002: real import on different line still detected despite string."""
         p = tmp_path / "v002.py"
         p.write_text(
-            "from typing import List\n"
-            'x = "from typing import Dict"\n',
+            'from typing import List\nx = "from typing import Dict"\n',
             encoding="utf-8",
         )
         matches = check_file(p, index)
@@ -534,7 +533,7 @@ class TestAstQualifiedDetection:
         """f-string: literal portion masked, but expression code detected by AST."""
         p = tmp_path / "fstring_ast.py"
         p.write_text(
-            "from datetime import datetime\n\nx = f\"now is {datetime.utcnow()}\"\n",
+            'from datetime import datetime\n\nx = f"now is {datetime.utcnow()}"\n',
             encoding="utf-8",
         )
         matches = check_file(p, index)
@@ -593,9 +592,7 @@ class TestMergeAndDedup:
         """When regex and AST both match on the same line, only one result."""
         p = tmp_path / "both.py"
         p.write_text(
-            "from typing import List\n"
-            "import typing\n"
-            "x: typing.List[str] = []\n",
+            "from typing import List\nimport typing\nx: typing.List[str] = []\n",
             encoding="utf-8",
         )
         matches = check_file(p, index)

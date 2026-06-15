@@ -61,9 +61,7 @@ def _mask_strings(text: str) -> tuple[frozenset[int], dict[int, str]]:
 
         for tok in tokens:
             if tok.type == _tokenize.COMMENT:
-                masked_chars.setdefault(tok.start[0], []).append(
-                    (tok.start[1], tok.end[1])
-                )
+                masked_chars.setdefault(tok.start[0], []).append((tok.start[1], tok.end[1]))
             elif tok.type in string_types:
                 if tok.end[0] > tok.start[0]:
                     for ln in range(tok.start[0] + 1, tok.end[0]):
@@ -71,13 +69,9 @@ def _mask_strings(text: str) -> tuple[frozenset[int], dict[int, str]]:
                     masked_chars.setdefault(tok.start[0], []).append(
                         (tok.start[1], len(lines[tok.start[0] - 1]))
                     )
-                    masked_chars.setdefault(tok.end[0], []).append(
-                        (0, tok.end[1])
-                    )
+                    masked_chars.setdefault(tok.end[0], []).append((0, tok.end[1]))
                 else:
-                    masked_chars.setdefault(tok.start[0], []).append(
-                        (tok.start[1], tok.end[1])
-                    )
+                    masked_chars.setdefault(tok.start[0], []).append((tok.start[1], tok.end[1]))
     except (_tokenize.TokenError, SyntaxError, IndentationError):
         return frozenset(), {}
 
@@ -365,9 +359,7 @@ def _merge_matches(
             result.append(m)
             seen_lines.add(m.line)
 
-    result.sort(
-        key=lambda m: (m.line, FREQ_RANK.get(m.frequency, 2), m.guide_id)
-    )
+    result.sort(key=lambda m: (m.line, FREQ_RANK.get(m.frequency, 2), m.guide_id))
     return result
 
 
