@@ -60,14 +60,23 @@ def detect_version(
 def find_configured_version(start_dir: Path) -> str | None:
     """Walk upward from *start_dir* to the nearest usable version config.
 
+    The walk stops at the first directory containing ``.git`` (directory or
+    file, covering normal repos, worktrees, and submodules).  The ``.git``
+    directory's own config is still checked before stopping, so a monorepo
+    root with both ``.git`` and ``pyproject.toml`` works correctly.
+
     A directory whose config exists but yields no version (e.g. a pyproject
     without requires-python) is skipped and the walk continues upward.
-    Returns None when no ancestor has a usable config.
+    Returns None when no ancestor has a usable config (or the repository
+    boundary is reached without finding one).
     """
     for current in (start_dir, *start_dir.parents)[: _MAX_WALK_DEPTH + 1]:
         version = detect_configured_version(current)
         if version is not None:
             return version
+        if (current / ".git").exists():
+            log.debug("Stopped version walk at repository boundary: %s", current)
+            break
     return None
 
 
