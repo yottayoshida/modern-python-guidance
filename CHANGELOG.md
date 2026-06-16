@@ -2,7 +2,9 @@
 
 All notable changes to this project will be documented in this file.
 
-## [Unreleased]
+## [0.5.8] — 2026-06-17
+
+**Summary**: The PostToolUse hook's version-config walk now stops at `.git` repository boundaries, preventing silent adoption of external configs like `~/.python-version`.
 
 ### Fixed
 
