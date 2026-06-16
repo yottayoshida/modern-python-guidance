@@ -10,6 +10,7 @@ from modern_python_guidance.version_detect import (
     DEFAULT_VERSION,
     detect_configured_version,
     detect_version,
+    find_configured_version,
 )
 
 
@@ -246,3 +247,83 @@ class TestConfigSizeLimit:
         padding = "# " + "x" * (_MAX_CONFIG_SIZE - len(content) - 3) + "\n"
         (tmp_project / "pyproject.toml").write_text(content + padding)
         assert detect_configured_version(tmp_project) == "3.8"
+
+
+class TestFindConfiguredVersionBoundary:
+    """V-001..V-007: .git boundary stops the upward walk."""
+
+    def test_git_dir_with_config_returns_version(self, tmp_path: Path):
+        """V-001: .git + pyproject.toml in same dir — config is found."""
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        (repo / ".git").mkdir()
+        (repo / "pyproject.toml").write_text('[project]\nrequires-python = ">=3.10"\n')
+        sub = repo / "pkg" / "src"
+        sub.mkdir(parents=True)
+        assert find_configured_version(sub) == "3.10"
+
+    def test_git_file_recognized_as_boundary(self, tmp_path: Path):
+        """V-002: .git as file (worktree/submodule) stops the walk."""
+        parent = tmp_path / "parent"
+        parent.mkdir()
+        (parent / ".python-version").write_text("3.8\n")
+        worktree = parent / "wt"
+        worktree.mkdir()
+        (worktree / ".git").write_text("gitdir: /some/fake/path\n")
+        sub = worktree / "src"
+        sub.mkdir()
+        assert find_configured_version(sub) is None
+
+    def test_boundary_blocks_parent_config(self, tmp_path: Path):
+        """V-003: .git boundary prevents leaking to parent's .python-version."""
+        (tmp_path / ".python-version").write_text("3.8\n")
+        repo = tmp_path / "project"
+        repo.mkdir()
+        (repo / ".git").mkdir()
+        sub = repo / "src"
+        sub.mkdir()
+        assert find_configured_version(sub) is None
+
+    def test_no_git_walks_to_depth_limit(self, tmp_path: Path):
+        """V-004: without .git, walk continues (existing depth behavior)."""
+        (tmp_path / "pyproject.toml").write_text('[project]\nrequires-python = ">=3.9"\n')
+        deep = tmp_path / "a" / "b" / "c"
+        deep.mkdir(parents=True)
+        assert find_configured_version(deep) == "3.9"
+
+    def test_nested_repo_inner_boundary_stops(self, tmp_path: Path):
+        """V-005: inner .git stops walk, outer repo config not reached."""
+        outer = tmp_path / "outer"
+        outer.mkdir()
+        (outer / ".git").mkdir()
+        (outer / "pyproject.toml").write_text('[project]\nrequires-python = ">=3.8"\n')
+        inner = outer / "vendor" / "inner"
+        inner.mkdir(parents=True)
+        (inner / ".git").mkdir()
+        sub = inner / "src"
+        sub.mkdir()
+        assert find_configured_version(sub) is None
+
+    def test_monorepo_child_config_wins(self, tmp_path: Path):
+        """V-006: child config found before reaching .git root."""
+        repo = tmp_path / "mono"
+        repo.mkdir()
+        (repo / ".git").mkdir()
+        (repo / "pyproject.toml").write_text('[project]\nrequires-python = ">=3.8"\n')
+        svc = repo / "services" / "api"
+        svc.mkdir(parents=True)
+        (svc / "pyproject.toml").write_text('[project]\nrequires-python = ">=3.12"\n')
+        src = svc / "src"
+        src.mkdir()
+        assert find_configured_version(src) == "3.12"
+
+    def test_monorepo_child_no_version_falls_to_root(self, tmp_path: Path):
+        """V-007: child pyproject without version skipped, root config used."""
+        repo = tmp_path / "mono"
+        repo.mkdir()
+        (repo / ".git").mkdir()
+        (repo / "pyproject.toml").write_text('[project]\nrequires-python = ">=3.10"\n')
+        svc = repo / "services" / "api"
+        svc.mkdir(parents=True)
+        (svc / "pyproject.toml").write_text("[tool.other]\nkey = 1\n")
+        assert find_configured_version(svc) == "3.10"

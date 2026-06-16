@@ -534,6 +534,18 @@ class TestCmdHookVersionDetection:
             self._run_hook(monkeypatch, p)
         assert "[target: py3.11]" in capsys.readouterr().err
 
+    def test_git_boundary_blocks_parent_config(self, tmp_path, capsys, monkeypatch):
+        """#132: .git boundary prevents the hook from leaking to parent config."""
+        (tmp_path / ".python-version").write_text("3.8\n")
+        repo = tmp_path / "project"
+        repo.mkdir()
+        (repo / ".git").mkdir()
+        p = repo / "bad.py"
+        p.write_text(self.UNION_BAD)
+        with pytest.raises(SystemExit, match="2"):
+            self._run_hook(monkeypatch, p)
+        assert "[target: py3.11]" in capsys.readouterr().err
+
     def test_logger_level_restored_after_hook(self, tmp_path, monkeypatch):
         """The hook-wide logger silencing is restored even across sys.exit."""
         import logging

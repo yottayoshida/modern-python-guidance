@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+### Fixed
+
+- The PostToolUse hook's upward version-config walk (`find_configured_version`) now stops at the first directory containing `.git` (directory or file, covering normal repos, worktrees, and submodules). Previously the walk could escape the repository boundary and silently adopt configs like `~/.python-version` (a common pyenv artifact), causing every config-less project under `$HOME` to target a stale version instead of the default 3.11. The `.git`-bearing directory's own config is still checked before stopping, so monorepo roots with both `.git` and `pyproject.toml` work correctly. Nested repos (including submodules) are treated as separate projects — the inner `.git` stops the walk, and the outer repo's config is not inherited. Projects without `.git` (tarballs, vendored source) are unaffected: the walk continues to the depth limit as before. (closes #132)
+
 ## [0.5.7] — 2026-06-15
 
 **Summary**: `mpg check` now uses a hybrid regex+AST detection engine — string-literal and comment false positives are eliminated via tokenize-based masking, and qualified/aliased forms (`typing.List`, `import typing as t; t.List`) are detected via AST import-alias resolution.
