@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+### CI
+
+- The publish workflow was merged into `ci.yml` (build-once-publish-same). The release path no longer rebuilds a separate, unverified wheel: the `build` job now uploads the exact wheel that passed `scripts/verify_wheel_assets.py` as an artifact (on `release`/`workflow_dispatch` events), and a new `publish` job — gated on `needs: [test, build]` — downloads that same artifact and publishes it to PyPI. This closes the time-of-check-to-time-of-use gap where CI verified one wheel but a different, unverified wheel shipped. The `id-token: write` permission stays scoped to the `publish` job only, the `pypi` environment is unchanged, and `workflow_dispatch` publishes are restricted to the `main` branch or tag refs. The `build==1.5.0` pin is now single-sourced. Requires updating the PyPI Trusted Publisher workflow filename from `publish.yml` to `ci.yml`. (closes #140)
+
 ## [0.5.8] — 2026-06-17
 
 **Summary**: The PostToolUse hook's version-config walk now stops at `.git` repository boundaries, preventing silent adoption of external configs like `~/.python-version`.
