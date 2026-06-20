@@ -5,6 +5,9 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  release:
+    types: [published]
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -54,7 +57,7 @@ jobs:
 
       - name: Build sdist and wheel
         run: |
-          pip install "build==1.5.0"  # keep in sync with publish.yml
+          pip install "build==1.5.0"
           python -m build
 
       - name: Install built wheel
@@ -63,3 +66,28 @@ jobs:
       - name: Verify bundled assets
         working-directory: ${{ runner.temp }}
         run: env -u PYTHONPATH python "$GITHUB_WORKSPACE/scripts/verify_wheel_assets.py" "$GITHUB_WORKSPACE"
+
+      - name: Upload artifacts
+        if: github.event_name == 'release' || github.event_name == 'workflow_dispatch'
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+          retention-days: 3
+
+  publish:
+    if: github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')
+    needs: [test, build]
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
