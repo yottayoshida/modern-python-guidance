@@ -91,9 +91,7 @@ class TestRetrieve:
         )
         assert r.returncode == 1
         data = json.loads(r.stdout)
-        assert set(data.keys()) == extract_design_md_keys(
-            "retrieve", "envelope"
-        )
+        assert set(data.keys()) == extract_design_md_keys("retrieve", "envelope")
         assert set(data["not_found"][0].keys()) == extract_design_md_keys(
             "retrieve", "not_found_item"
         )

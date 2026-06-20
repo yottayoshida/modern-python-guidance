@@ -9,9 +9,7 @@ from pathlib import Path
 _DESIGN_MD = Path(__file__).resolve().parent.parent / "docs" / "design.md"
 
 
-def extract_design_md_keys(
-    section: str, variant: str | None = None
-) -> set[str]:
+def extract_design_md_keys(section: str, variant: str | None = None) -> set[str]:
     """Extract JSON field-name sets from docs/design.md schema examples.
 
     *section*: ``"search"``, ``"retrieve"``, or ``"list"``.
@@ -22,9 +20,7 @@ def extract_design_md_keys(
       - ``"not_found_item"``   — keys of a ``not_found`` array element
     """
     if variant is not None and section != "retrieve":
-        raise ValueError(
-            f"variant is only supported for 'retrieve', got section={section!r}"
-        )
+        raise ValueError(f"variant is only supported for 'retrieve', got section={section!r}")
 
     text = _DESIGN_MD.read_text()
 
@@ -36,12 +32,8 @@ def extract_design_md_keys(
         )
         assert sec_m, "docs/design.md: retrieve section not found"
 
-        blocks = re.findall(
-            r"```json\n(.*?)\n```", sec_m.group(1), re.DOTALL
-        )
-        assert len(blocks) >= 2, (
-            "docs/design.md: expected >=2 JSON blocks in retrieve section"
-        )
+        blocks = re.findall(r"```json\n(.*?)\n```", sec_m.group(1), re.DOTALL)
+        assert len(blocks) >= 2, "docs/design.md: expected >=2 JSON blocks in retrieve section"
 
         found_keys: set[str] | None = None
         envelope_keys: set[str] | None = None
@@ -55,9 +47,7 @@ def extract_design_md_keys(
             elif isinstance(data, dict):
                 envelope_keys = set(data.keys()) - {"..."}
                 if "not_found" in data and data["not_found"]:
-                    not_found_item_keys = (
-                        set(data["not_found"][0].keys()) - {"..."}
-                    )
+                    not_found_item_keys = set(data["not_found"][0].keys()) - {"..."}
 
         if variant in (None, "found"):
             assert found_keys is not None, (
