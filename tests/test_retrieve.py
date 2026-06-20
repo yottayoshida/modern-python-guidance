@@ -4,8 +4,8 @@ import json
 from pathlib import Path
 
 import pytest
-
 from conftest import extract_design_md_keys
+
 from modern_python_guidance.guide_index import build_index
 from modern_python_guidance.retrieve import retrieve, retrieve_json, suggest_ids
 

@@ -46,7 +46,7 @@ def extract_design_md_keys(section: str, variant: str | None = None) -> set[str]
                 found_keys = set(data[0].keys()) - {"..."}
             elif isinstance(data, dict):
                 envelope_keys = set(data.keys()) - {"..."}
-                if "not_found" in data and data["not_found"]:
+                if data.get("not_found"):
                     not_found_item_keys = set(data["not_found"][0].keys()) - {"..."}
 
         if variant in (None, "found"):

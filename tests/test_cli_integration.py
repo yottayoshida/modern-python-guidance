@@ -7,6 +7,7 @@ import subprocess
 import sys
 
 from conftest import extract_design_md_keys
+
 from modern_python_guidance import __version__
 
 BIN = [sys.executable, "-m", "modern_python_guidance"]
