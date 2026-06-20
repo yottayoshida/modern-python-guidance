@@ -6,6 +6,8 @@ import json
 import subprocess
 import sys
 
+from conftest import extract_design_md_keys
+
 from modern_python_guidance import __version__
 
 BIN = [sys.executable, "-m", "modern_python_guidance"]
@@ -54,20 +56,7 @@ class TestSearch:
         r = run_cli("search", "pydantic validator", "--format", "json")
         assert r.returncode == 0
         data = json.loads(r.stdout)
-        expected_keys = {
-            "id",
-            "title",
-            "category",
-            "layer",
-            "tags",
-            "python",
-            "frequency",
-            "score",
-            "token_estimate",
-            "fuzzy",
-            "snippet",
-        }
-        assert set(data[0].keys()) == expected_keys
+        assert set(data[0].keys()) == extract_design_md_keys("search")
         assert isinstance(data[0]["tags"], list)
         assert "→" in data[0]["snippet"]
 
@@ -94,22 +83,24 @@ class TestRetrieve:
         r = run_cli("retrieve", "nonexistent", "--format", "json")
         assert r.returncode == 1
 
+    def test_retrieve_not_found_envelope_keys(self):
+        r = run_cli(
+            "retrieve",
+            "nonexistent,use-builtin-generics",
+            "--format",
+            "json",
+        )
+        assert r.returncode == 1
+        data = json.loads(r.stdout)
+        assert set(data.keys()) == extract_design_md_keys("retrieve", "envelope")
+        assert set(data["not_found"][0].keys()) == extract_design_md_keys(
+            "retrieve", "not_found_item"
+        )
+
     def test_retrieve_stable_schema(self):
         r = run_cli("retrieve", "use-builtin-generics", "--format", "json")
         data = json.loads(r.stdout)
-        expected_keys = {
-            "id",
-            "title",
-            "category",
-            "layer",
-            "python",
-            "frequency",
-            "version_match",
-            "content",
-            "token_estimate",
-            "source",
-        }
-        assert set(data[0].keys()) == expected_keys
+        assert set(data[0].keys()) == extract_design_md_keys("retrieve")
 
     def test_retrieve_version_match_flag(self):
         r = run_cli(
@@ -131,6 +122,12 @@ class TestList:
         data = json.loads(r.stdout)
         assert isinstance(data, list)
         assert len(data) >= 5
+
+    def test_list_stable_schema(self):
+        r = run_cli("list", "--format", "json")
+        assert r.returncode == 0
+        data = json.loads(r.stdout)
+        assert set(data[0].keys()) == extract_design_md_keys("list")
 
     def test_list_category_filter(self):
         r = run_cli("list", "--category", "typing", "--format", "json")

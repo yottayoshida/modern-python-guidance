@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 
 import pytest
+from conftest import extract_design_md_keys
 
 from modern_python_guidance.guide_index import build_index
 from modern_python_guidance.retrieve import retrieve, retrieve_json, suggest_ids
@@ -71,19 +72,7 @@ class TestRetrieveJSON:
     def test_stable_schema_keys(self, index):
         output = retrieve_json(index, ["use-builtin-generics"])
         parsed = json.loads(output)
-        expected_keys = {
-            "id",
-            "title",
-            "category",
-            "layer",
-            "python",
-            "frequency",
-            "version_match",
-            "content",
-            "token_estimate",
-            "source",
-        }
-        assert set(parsed[0].keys()) == expected_keys
+        assert set(parsed[0].keys()) == extract_design_md_keys("retrieve")
 
 
 class TestSuggestIds:
