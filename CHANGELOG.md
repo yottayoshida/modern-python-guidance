@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.9] — 2026-06-20
+
+**Summary**: JSON schema field-name sets in `docs/design.md` are now pinned to live serializer output via snapshot tests, and `ci.yml` + `publish.yml` are merged into a single workflow so the wheel published to PyPI is the exact artifact that passed CI verification.
+
+### Added
+
+- Snapshot tests pin `docs/design.md` JSON schema field-name sets (search, retrieve, list, not_found envelope) to live CLI/MCP serializer output. Adding or removing a field in either the serializer or design.md without updating the other now fails the test suite. Shared `extract_design_md_keys()` helper in `tests/conftest.py` replaces four hardcoded `expected_keys` locations. (closes #139)
+
+### Changed
+
+- `publish.yml` merged into `ci.yml`: the wheel published to PyPI is now the same artifact that passed `verify_wheel_assets.py`, eliminating the TOCTOU gap where a separately-built, unverified wheel was shipped. `id-token: write` is scoped to the publish job only (previously top-level in `publish.yml`). Artifact upload is conditional on release/dispatch events with 3-day retention. (closes #140)
+
 ## [0.5.8] — 2026-06-17
 
 **Summary**: The PostToolUse hook's version-config walk now stops at `.git` repository boundaries, preventing silent adoption of external configs like `~/.python-version`.
