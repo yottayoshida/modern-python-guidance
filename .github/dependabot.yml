@@ -1,0 +1,28 @@
+version: 2
+
+# Python ecosystem: not managed by dependabot. mpg uses uv + pyproject.toml
+# for dependency management; dependabot's pip ecosystem expects requirements.txt
+# and would not be useful here.
+#
+# GitHub Actions ecosystem: monthly patch-only updates keep SHA pins current
+# without PR noise from minor/major bumps. The `github-actions` ecosystem also
+# updates the trailing `# vX.Y.Z` comment beside each pinned SHA.
+
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+      day: monday
+      time: "09:00"
+      timezone: Asia/Tokyo
+    open-pull-requests-limit: 2
+    ignore:
+      - dependency-name: "*"
+        update-types:
+          - "version-update:semver-major"
+          - "version-update:semver-minor"
+    groups:
+      actions-patch-only:
+        patterns:
+          - "*"

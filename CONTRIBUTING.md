@@ -52,9 +52,13 @@ ruff format --check src/ tests/     # format check (CI enforced)
 
 To auto-fix formatting: `ruff format src/ tests/`
 
+## Workflow changes
+
+All GitHub Actions `uses:` references must be pinned to full commit SHAs with a version comment: `uses: actions/checkout@34e1148... # v4.3.1`. The `action-pin-check` CI job rejects unpinned refs. Dependabot sends monthly PRs for patch updates.
+
 ## CI checks
 
-All PRs run these checks on Python 3.11, 3.12, and 3.13:
+All PRs run these checks on Python 3.11, 3.12, 3.13, and 3.14:
 
 1. `ruff format --check` — formatting
 2. `ruff check` — linting
