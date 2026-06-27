@@ -104,24 +104,63 @@ Run variance is low: control scored 88.9% / 88.9% / 83.3%, treatment 95.0% / 95.
 
 ## Reproducing
 
+### Cost and credit safety
+
+Treat automated V5 benchmark runs as potentially credit-consuming. This policy was
+updated on 2026-06-21 after `claude -p` benchmark sessions were reported to consume
+credits in some Claude setups. `--max-budget-usd` is a per-session guard for the CLI
+run; it is not a promise that a subscription plan makes the run free.
+
+Always start with `--dry-run`, check the total session count, and only run the
+automated benchmark if you are willing to spend credits for every listed session.
+`bench/run-v5.sh` requires `--allow-credit-use` for non-dry-run execution.
+
+### Low-cost manual path
+
+Use this path for documentation checks or small spot checks where a full automated
+benchmark would be too expensive:
+
 ```bash
-# Prerequisites: Claude CLI with Max plan, Python 3.12+
+# Prerequisites: Claude CLI/account you are willing to benchmark with, Python 3.12+
 
-# Dry run
+# Inspect the exact prompts and session count; this does not call claude -p
 ./bench/run-v5.sh test both --variant a --granularity normal -N 3 --dry-run
+```
 
-# Run (6 sessions per granularity, ~20 min each)
-MODEL=claude-opus-4-8 ./bench/run-v5.sh myrun both --variant a --granularity normal -N 3
-MODEL=claude-opus-4-8 ./bench/run-v5.sh myrun-t both --variant a --granularity terse -N 3
+Then manually run the prompt files in the Claude session type you intend to measure:
 
-# Fable 5: raise the per-session budget guard — sessions run $1.6–3.8 in estimated
-# cost and the $2.00 default truncates them mid-run (estimate only; no charge on Max)
-MODEL=claude-fable-5 ./bench/run-v5.sh myrun-f both --variant a --granularity terse -N 3 --budget 10.00
+- Control: run the prompt without mpg guidance.
+- Treatment: create `.claude/rules/modern-python.md` from `skills/modern-python-guidance/SKILL.md`, then run the same prompt.
+- Save generated files under a scorer-compatible directory such as
+  `results/run-manual-1-v5an/<control|treatment>/`, then score `manual-1-v5an`.
 
-# Score
+Score any collected run with:
+
+```bash
 python3 bench/score_v5.py myrun-1-v5an --variant a
 python3 bench/score_v5.py myrun-1-v5an --variant a --format json
 ```
+
+This manual path is lower cost because you can run one prompt/session at a time and
+stop as soon as you have the evidence needed for the check.
+
+### Automated path
+
+Only use the automated path after reviewing the dry-run output:
+
+```bash
+# Run (6 sessions per granularity, ~20 min each)
+MODEL=claude-opus-4-8 ./bench/run-v5.sh myrun both --variant a --granularity normal -N 3 --allow-credit-use
+MODEL=claude-opus-4-8 ./bench/run-v5.sh myrun-t both --variant a --granularity terse -N 3 --allow-credit-use
+
+# Fable 5: June 2026 runs were observed around $1.6-3.8 estimated cost per session.
+# Set a higher budget guard only after reviewing the current dry-run session count.
+MODEL=claude-fable-5 ./bench/run-v5.sh myrun-f both --variant a --granularity terse -N 3 --budget 10.00 --allow-credit-use
+```
+
+The older V1/V2 procedure in `docs/benchmark-procedure.md` is historical. Issue
+[#124](https://github.com/yottayoshida/modern-python-guidance/issues/124) tracks
+consolidating the benchmark docs so V5 is the single primary reproduction path.
 
 ## Appendix: V5 scorer changes from V4
 

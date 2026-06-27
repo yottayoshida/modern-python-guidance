@@ -14,6 +14,7 @@ set -euo pipefail
 #   --granularity terse|normal|detailed|all  (default: normal)
 #   -N <count>                (default: 1)
 #   --dry-run                 Print execution plan without running
+#   --allow-credit-use        Required for non-dry-run execution; claude -p may consume credits
 #   --budget <usd>            Per-session budget (default: 2.00)
 
 REPO_DIR="$(cd "$(dirname "$0")/.." && pwd)"
@@ -25,6 +26,7 @@ VARIANTS="a"
 GRANULARITIES="normal"
 N_RUNS=1
 DRY_RUN=false
+ALLOW_CREDIT_USE=false
 BUDGET="2.00"
 MODEL="${MODEL:-}"
 MODEL_ARGS=()
@@ -35,6 +37,7 @@ while [[ $# -gt 0 ]]; do
         --granularity) GRANULARITIES="$2"; shift 2 ;;
         -N) N_RUNS="$2"; shift 2 ;;
         --dry-run) DRY_RUN=true; shift ;;
+        --allow-credit-use) ALLOW_CREDIT_USE=true; shift ;;
         --budget) BUDGET="$2"; shift 2 ;;
         *) echo "Unknown option: $1" >&2; exit 1 ;;
     esac
@@ -86,6 +89,8 @@ if $DRY_RUN; then
     echo "Model:        ${MODEL:-<default>}"
     echo "Per-session:  \$$BUDGET"
     echo "Total sessions: $session_count"
+    echo "Credit use:   none (--dry-run)"
+    echo "To execute:   re-run without --dry-run and add --allow-credit-use"
     echo ""
     echo "Prompt files:"
     for v in "${variant_list[@]}"; do
@@ -95,6 +100,15 @@ if $DRY_RUN; then
         done
     done
     exit 0
+fi
+
+if ! $ALLOW_CREDIT_USE; then
+    cat >&2 <<'EOF'
+ERROR: V5 benchmark runs call claude -p and may consume Claude credits.
+Re-run with --allow-credit-use only after reviewing the session count and budget.
+Use --dry-run first to inspect the execution plan without spending credits.
+EOF
+    exit 2
 fi
 
 # --- Pre-flight checks ---
