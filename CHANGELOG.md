@@ -2,6 +2,21 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.10] — 2026-06-27
+
+**Summary**: V5 benchmark runner now requires explicit `--allow-credit-use` opt-in for non-dry-run execution, and CI release-artifact invariants (build-verify-upload order, OIDC scope, no-rebuild-in-publish) are pinned by regression tests.
+
+### Added
+
+- Regression tests pin the verified-artifact release flow in `ci.yml`: build job verifies wheel assets before uploading, publish job reuses that verified artifact instead of rebuilding, `id-token: write` stays scoped to the publish job, and artifact upload is limited to release/workflow_dispatch events. Includes a negative-test fixture proving the pre-hardening workflow shape would fail the invariant. (closes #140)
+- `bench/run-v5.sh` now requires `--allow-credit-use` for non-dry-run execution; `claude -p` benchmark sessions may consume credits depending on the account type. `--dry-run` output shows the session count and directs users to opt in explicitly. (closes #153)
+- Tests for the credit-use guard: non-dry-run without `--allow-credit-use` exits 2, dry-run warns without requiring opt-in.
+
+### Docs
+
+- V5 benchmark reproduction docs restructured into cost/credit safety guidance, a low-cost manual path, and an automated path with dated budget wording.
+- V1/V2 benchmark procedure (`docs/benchmark-procedure.md`) marked as historical with a cross-link to V5 and issue #124.
+
 ## [0.5.9] — 2026-06-20
 
 **Summary**: JSON schema field-name sets in `docs/design.md` are now pinned to live serializer output via snapshot tests, and `ci.yml` + `publish.yml` are merged into a single workflow so the wheel published to PyPI is the exact artifact that passed CI verification.
