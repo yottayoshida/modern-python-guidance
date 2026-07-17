@@ -278,9 +278,15 @@ class TestHook:
         p.write_text("from typing import List\n")
         stdin = json.dumps({"tool_input": {"file_path": str(p)}})
         r = self._run_hook(stdin)
-        assert r.returncode == 2
-        assert "mpg:" in r.stderr
-        assert r.stdout == ""
+        assert r.returncode == 0
+        assert r.stderr == ""
+        payload = json.loads(r.stdout)
+        context = payload["hookSpecificOutput"]["additionalContext"]
+        assert payload["hookSpecificOutput"]["hookEventName"] == "PostToolUse"
+        assert "mpg:" in context
+        assert "use-builtin-generics" in context
+        # raw source line must never appear (T1: indirect prompt injection channel)
+        assert "from typing import List" not in context
 
     def test_hook_py_clean(self, tmp_path):
         p = tmp_path / "clean.py"
@@ -290,6 +296,32 @@ class TestHook:
         assert r.returncode == 0
         assert r.stdout == ""
         assert r.stderr == ""
+
+    def test_hook_caps_surfaced_matches(self, tmp_path):
+        """#152 Step 4: additionalContext surfaces at most 5 matches + a '+N more'
+        summary, even when many more patterns are found (noise-bound per UX)."""
+        p = tmp_path / "very_bad.py"
+        p.write_text("from typing import List\n" * 7)
+        stdin = json.dumps({"tool_input": {"file_path": str(p)}})
+        r = self._run_hook(stdin)
+        assert r.returncode == 0
+        context = json.loads(r.stdout)["hookSpecificOutput"]["additionalContext"]
+        per_match_lines = [
+            ln for ln in context.splitlines() if ln.startswith("mpg: use-builtin-generics (line")
+        ]
+        assert len(per_match_lines) == 5
+        assert "+2 more" in context
+
+    def test_hook_cta_uses_resolvable_interpreter(self, tmp_path):
+        """#152 Step 4: the CTA must be runnable as-is, not a bare `mpg` that
+        can be unresolvable on PATH in a venv-only install (#118 same class)."""
+        p = tmp_path / "bad.py"
+        p.write_text("from typing import List\n")
+        stdin = json.dumps({"tool_input": {"file_path": str(p)}})
+        r = self._run_hook(stdin)
+        context = json.loads(r.stdout)["hookSpecificOutput"]["additionalContext"]
+        assert sys.executable in context
+        assert "retrieve_guides" in context
 
     def test_hook_non_py(self, tmp_path):
         p = tmp_path / "file.js"
@@ -316,8 +348,9 @@ class TestHook:
         p.write_text("from typing import List\n")
         stdin = json.dumps({"tool_input": {"file_path": str(p)}})
         r = self._run_hook(stdin)
-        assert r.returncode == 2
-        assert "mpg:" in r.stderr
+        assert r.returncode == 0
+        payload = json.loads(r.stdout)
+        assert "mpg:" in payload["hookSpecificOutput"]["additionalContext"]
 
     def test_hook_bare_no_subcommand(self):
         r = subprocess.run(

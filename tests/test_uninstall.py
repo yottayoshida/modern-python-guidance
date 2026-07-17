@@ -367,6 +367,14 @@ class TestUninstallRules:
 class TestRunUninstall:
     """V-026, V-027, V-053~V-055: exit codes, partial success, mutual exclusion."""
 
+    @pytest.fixture(autouse=True)
+    def _mock_hook(self):
+        """#152: uninstall_hook does real file I/O; autouse-mocked so the
+        pre-existing tests in this class (none about hook behavior) can't
+        touch a real .claude/settings.local.json via the real cwd."""
+        with patch("modern_python_guidance.uninstall_cmd.uninstall_hook", return_value=True) as m:
+            yield m
+
     def _patch_all(self, mcp=True, skills=True, rules=True):
         return (
             patch("modern_python_guidance.uninstall_cmd.uninstall_mcp", return_value=mcp),
@@ -397,6 +405,30 @@ class TestRunUninstall:
             m_mcp.assert_not_called()
             m_skills.assert_called_once()
             m_rules.assert_called_once()
+
+    def test_full_uninstall_removes_hook(self, _mock_hook):
+        """#152: uninstall is symmetric with setup — hook removal runs by
+        default (it's a project-local artifact like Skills/Rules)."""
+        p_mcp, p_skills, p_rules = self._patch_all()
+        with p_mcp, p_skills, p_rules:
+            assert run_uninstall() == 0
+        _mock_hook.assert_called_once()
+
+    def test_mcp_only_skips_hook(self, _mock_hook):
+        p_mcp, p_skills, p_rules = self._patch_all()
+        with p_mcp, p_skills, p_rules:
+            assert run_uninstall(mcp_only=True) == 0
+        _mock_hook.assert_not_called()
+
+    def test_hook_failure_causes_exit_1(self):
+        p_mcp, p_skills, p_rules = self._patch_all()
+        with (
+            p_mcp,
+            p_skills,
+            p_rules,
+            patch("modern_python_guidance.uninstall_cmd.uninstall_hook", return_value=False),
+        ):
+            assert run_uninstall() == 1
 
     def test_partial_mcp_fail(self):
         """V-026: MCP fails but Skills+Rules succeed -> exit 1."""

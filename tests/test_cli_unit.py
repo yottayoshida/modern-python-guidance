@@ -312,9 +312,14 @@ class TestCmdHook:
 
         stdin_data = json.dumps({"tool_input": {"file_path": str(p)}})
         monkeypatch.setattr("sys.stdin", io.StringIO(stdin_data))
-        with pytest.raises(SystemExit, match="2"):
+        with pytest.raises(SystemExit, match="0"):
             main(argv=["hook", "claude-post-tool-use"])
-        assert "mpg:" in capsys.readouterr().err
+        captured = capsys.readouterr()
+        assert captured.err == ""
+        payload = json.loads(captured.out)
+        context = payload["hookSpecificOutput"]["additionalContext"]
+        assert "mpg:" in context
+        assert "from typing import List" not in context
 
     def test_post_tool_use_py_clean(self, tmp_path, monkeypatch):
         p = tmp_path / "clean.py"
@@ -389,19 +394,20 @@ class TestCmdHookVersionDetection:
         )
         p = tmp_path / "bad.py"
         p.write_text(self.UNION_BAD)
-        with pytest.raises(SystemExit, match="2"):
+        with pytest.raises(SystemExit, match="0"):
             self._run_hook(monkeypatch, p)
-        err = capsys.readouterr().err
-        assert "union-syntax" in err
-        assert "[target: py3.10]" in err
+        context = json.loads(capsys.readouterr().out)["hookSpecificOutput"]["additionalContext"]
+        assert "union-syntax" in context
+        assert "[target: py3.10]" in context
 
     def test_no_config_defaults_to_311(self, tmp_path, capsys, monkeypatch):
         """Spec (plan #117): no usable config anywhere -> filter on DEFAULT_VERSION 3.11."""
         p = tmp_path / "bad.py"
         p.write_text(self.UNION_BAD)
-        with pytest.raises(SystemExit, match="2"):
+        with pytest.raises(SystemExit, match="0"):
             self._run_hook(monkeypatch, p)
-        assert "[target: py3.11]" in capsys.readouterr().err
+        context = json.loads(capsys.readouterr().out)["hookSpecificOutput"]["additionalContext"]
+        assert "[target: py3.11]" in context
 
     def test_malformed_pyproject_clean_file_silent(self, tmp_path, capsys, monkeypatch):
         (tmp_path / "pyproject.toml").write_text("this is [not valid toml")
@@ -481,9 +487,10 @@ class TestCmdHookVersionDetection:
         )
         p = sub / "bad.py"
         p.write_text(self.UNION_BAD)
-        with pytest.raises(SystemExit, match="2"):
+        with pytest.raises(SystemExit, match="0"):
             self._run_hook(monkeypatch, p)
-        assert "[target: py3.10]" in capsys.readouterr().err
+        context = json.loads(capsys.readouterr().out)["hookSpecificOutput"]["additionalContext"]
+        assert "[target: py3.10]" in context
 
     def test_malformed_child_falls_back_to_parent_config(self, tmp_path, capsys, monkeypatch):
         """Positive observation: the parent's 3.8 suppresses union-syntax, proving
@@ -530,9 +537,10 @@ class TestCmdHookVersionDetection:
         nested.mkdir(parents=True)
         p = nested / "bad.py"
         p.write_text(self.UNION_BAD)
-        with pytest.raises(SystemExit, match="2"):
+        with pytest.raises(SystemExit, match="0"):
             self._run_hook(monkeypatch, p)
-        assert "[target: py3.11]" in capsys.readouterr().err
+        context = json.loads(capsys.readouterr().out)["hookSpecificOutput"]["additionalContext"]
+        assert "[target: py3.11]" in context
 
     def test_git_boundary_blocks_parent_config(self, tmp_path, capsys, monkeypatch):
         """#132: .git boundary prevents the hook from leaking to parent config."""
@@ -542,9 +550,10 @@ class TestCmdHookVersionDetection:
         (repo / ".git").mkdir()
         p = repo / "bad.py"
         p.write_text(self.UNION_BAD)
-        with pytest.raises(SystemExit, match="2"):
+        with pytest.raises(SystemExit, match="0"):
             self._run_hook(monkeypatch, p)
-        assert "[target: py3.11]" in capsys.readouterr().err
+        context = json.loads(capsys.readouterr().out)["hookSpecificOutput"]["additionalContext"]
+        assert "[target: py3.11]" in context
 
     def test_logger_level_restored_after_hook(self, tmp_path, monkeypatch):
         """The hook-wide logger silencing is restored even across sys.exit."""

@@ -3,12 +3,25 @@
 from __future__ import annotations
 
 import importlib.resources
+import json
 import os
 import shlex
 import shutil
 import subprocess
 import sys
 from pathlib import Path
+
+from modern_python_guidance.hook_config import (
+    HookConfigError,
+    build_mpg_group,
+    has_mpg_hook,
+    is_ephemeral_interpreter,
+    merge_hook,
+    read_settings,
+    remove_hook,
+    settings_local_path,
+    write_settings_atomic,
+)
 
 SKILLS_LINK_NAME = "modern-python-guidance"
 RULE_FILE_NAME = "modern-python.md"
@@ -430,6 +443,81 @@ def setup_rules(
     return True
 
 
+def _has_existing_assets(project_dir: Path | None = None) -> bool:
+    """True if this project already has mpg's Skills or Rules symlink.
+
+    Used to decide whether hook auto-registration would silently change
+    behavior for an existing user (guardrail: never flip a project's
+    default without an explicit `--with-hook`). Checks project scope only
+    — a user-scope MCP registration does not count, since a fresh project
+    with an existing user-wide MCP registration is exactly the case the
+    hook should default on for.
+    """
+    return (
+        _skills_link_path(project_dir).is_symlink() or _rules_file_path(project_dir).is_symlink()
+    )
+
+
+def setup_hook(
+    *,
+    project_dir: Path | None = None,
+    dry_run: bool = False,
+) -> bool:
+    """Register the mpg PostToolUse hook. Returns True on success.
+
+    Writes to ``<project_dir>/.claude/settings.local.json`` — a personal,
+    git-ignored file, never the shared ``settings.json`` — so this cannot
+    change behavior for teammates on ``git pull``. Skipping an ephemeral
+    interpreter (uvx/temp venv) is a deliberate no-op, not a failure: a
+    hook pinned to a torn-down venv would break on every future edit.
+    """
+    if not sys.executable or not Path(sys.executable).is_file():
+        print("Error: cannot resolve the current Python interpreter path.", file=sys.stderr)
+        return False
+
+    if is_ephemeral_interpreter(sys.executable):
+        print(
+            f"Skipping hook registration: {sys.executable} looks like a "
+            "one-shot environment (uvx/temp) that will be torn down, leaving "
+            "the hook broken. Install with 'uv tool install' or 'pipx install' "
+            "for a persistent environment, then run 'mpg setup --with-hook'.",
+            file=sys.stderr,
+        )
+        return True
+
+    root = project_dir or _find_project_root()
+    path = settings_local_path(root)
+
+    try:
+        settings = read_settings(path)
+        merged = merge_hook(settings, sys.executable)
+    except HookConfigError as e:
+        print(f"Error: {e}", file=sys.stderr)
+        print("Hook registration skipped; existing file left untouched.", file=sys.stderr)
+        return False
+
+    group = build_mpg_group(sys.executable)
+
+    if dry_run:
+        print(f"Would write hook entry to {path}:")
+        print(json.dumps(group, indent=2))
+        return True
+
+    try:
+        write_settings_atomic(path, merged)
+    except HookConfigError as e:
+        print(f"Error: {e}", file=sys.stderr)
+        return False
+    except OSError as e:
+        print(f"Error: failed to write {path}: {e}", file=sys.stderr)
+        return False
+
+    print(f"PostToolUse hook registered in {path}")
+    print(json.dumps(group, indent=2))
+    print("Disable: mpg setup --no-hook")
+    return True
+
+
 def run_setup(
     *,
     scope: str = "user",
@@ -437,15 +525,31 @@ def run_setup(
     skills_only: bool = False,
     project_dir: Path | None = None,
     dry_run: bool = False,
+    no_hook: bool = False,
+    with_hook: bool = False,
 ) -> int:
-    """Run the full setup sequence. Returns exit code (0=success, 1=failure)."""
+    """Run the full setup sequence. Returns exit code (0=success, 1=failure).
+
+    Hook default-on decision (guardrail against silently changing behavior
+    for an existing user, #152): if this project already has mpg's Skills
+    or Rules symlink, auto-registration is skipped in favor of an
+    announcement — an existing user must opt in with ``--with-hook``. A
+    fresh project (no prior mpg artifacts) gets the hook by default, since
+    an opt-in-only hook is exactly the delivery gap #152 exists to close.
+    ``--no-hook`` always wins: it actively removes any existing mpg hook,
+    it does not merely skip adding one.
+    """
     if mcp_only and skills_only:
         print("Error: --mcp-only and --skills-only are mutually exclusive.", file=sys.stderr)
+        return 1
+    if no_hook and with_hook:
+        print("Error: --no-hook and --with-hook are mutually exclusive.", file=sys.stderr)
         return 1
 
     do_mcp = not skills_only
     do_skills = not mcp_only
     do_rules = not mcp_only
+    do_hook = not mcp_only
 
     if project_dir is not None and (do_skills or do_rules) and not project_dir.exists():
         print(
@@ -453,9 +557,19 @@ def run_setup(
             file=sys.stderr,
         )
 
+    # Resolved once and reused for the existing-asset snapshot, setup_hook,
+    # and remove_hook below — each independently re-walks via
+    # _find_project_root() when given None, so resolving here collapses
+    # what would otherwise be several redundant filesystem walks into one.
+    # Snapshotted before setup_skills/setup_rules run: they create the very
+    # symlinks the existing-asset guardrail checks for.
+    root = (project_dir or _find_project_root()) if do_hook else None
+    existing_assets = _has_existing_assets(root) if do_hook else False
+
     mcp_ok = True
     skills_ok = True
     rules_ok = True
+    hook_ok = True
 
     if do_mcp:
         mcp_ok = setup_mcp(scope=scope, dry_run=dry_run, project_dir=project_dir)
@@ -466,12 +580,27 @@ def run_setup(
     if do_rules:
         rules_ok = setup_rules(project_dir=project_dir, dry_run=dry_run)
 
-    if mcp_ok and skills_ok and rules_ok:
-        if not dry_run:
-            if do_mcp and do_skills:
-                print("Ready. Start Claude Code to use mpg guides.")
-            print("Tip: Add a PostToolUse hook to auto-check Python files.")
-            print("See: https://github.com/yottayoshida/modern-python-guidance#recommended-hooks")
+    if do_hook:
+        if no_hook:
+            hook_ok = remove_hook(project_root=root, dry_run=dry_run)
+        elif with_hook or not existing_assets:
+            hook_ok = setup_hook(project_dir=root, dry_run=dry_run)
+        elif not dry_run:
+            # An existing user (existing_assets=True) already has the hook
+            # if a prior `--with-hook` run registered it — re-running plain
+            # `mpg setup` (e.g. after upgrading) must not re-announce "New:
+            # ... Enable" for something already enabled (QA M1).
+            try:
+                already_registered = has_mpg_hook(read_settings(settings_local_path(root)))
+            except HookConfigError:
+                already_registered = False
+            if not already_registered:
+                print("New: mpg can auto-check Python files after every edit.")
+                print("Enable: mpg setup --with-hook")
+
+    if mcp_ok and skills_ok and rules_ok and hook_ok:
+        if not dry_run and do_mcp and do_skills:
+            print("Ready. Start Claude Code to use mpg guides.")
         return 0
 
     return 1

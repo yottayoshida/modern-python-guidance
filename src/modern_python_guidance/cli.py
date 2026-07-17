@@ -110,6 +110,16 @@ def main(argv: list[str] | None = None) -> None:
         help="Project directory for Skills/Rules symlinks",
     )
     p_setup.add_argument("--dry-run", action="store_true", help="Show what would be done")
+    p_setup.add_argument(
+        "--no-hook",
+        action="store_true",
+        help="Do not register the PostToolUse hook (removes it if already present)",
+    )
+    p_setup.add_argument(
+        "--with-hook",
+        action="store_true",
+        help="Register the PostToolUse hook even if this project already has mpg artifacts",
+    )
 
     # uninstall
     p_uninstall = subparsers.add_parser(
@@ -349,6 +359,8 @@ def _cmd_setup(args: argparse.Namespace) -> None:
         skills_only=args.skills_only,
         project_dir=args.project_dir,
         dry_run=args.dry_run,
+        no_hook=args.no_hook,
+        with_hook=args.with_hook,
     )
     sys.exit(code)
 
@@ -462,6 +474,9 @@ def _hook_post_tool_use() -> None:
         pkg_logger.setLevel(previous_level)
 
 
+_MAX_SURFACED_MATCHES = 5
+
+
 def _hook_post_tool_use_inner() -> None:
     try:
         data = json.load(sys.stdin)
@@ -491,19 +506,43 @@ def _hook_post_tool_use_inner() -> None:
     if not matches:
         sys.exit(0)
 
-    for m in matches:
-        src = sanitize_line(m.source_line.strip())
-        print(
-            f"mpg: {m.guide_id} (line {m.line}): {src}",
-            file=sys.stderr,
-        )
-    guide_ids = sorted({m.guide_id for m in matches})
+    context = _format_hook_context(matches, python_version)
     print(
-        f"mpg: {len(matches)} outdated pattern(s) [target: py{python_version}]. "
-        f"Run `mpg retrieve {','.join(guide_ids)}` for modern alternatives.",
-        file=sys.stderr,
+        json.dumps(
+            {
+                "hookSpecificOutput": {
+                    "hookEventName": "PostToolUse",
+                    "additionalContext": context,
+                }
+            }
+        )
     )
-    sys.exit(2)
+    sys.exit(0)
+
+
+def _format_hook_context(matches: list[CheckMatch], python_version: str) -> str:
+    """Build the additionalContext message surfaced to Claude.
+
+    Deliberately excludes raw source lines: the edited file's content is
+    attacker-controllable (cloned repo, dependency, PR diff), and echoing it
+    back as an authoritative-looking hook message is an indirect prompt
+    injection channel. guide_id + line number are mpg's own trusted catalog
+    data, sufficient for Claude to look up the modern form.
+    """
+    shown = matches[:_MAX_SURFACED_MATCHES]
+    lines = [f"mpg: {m.guide_id} (line {m.line})" for m in shown]
+    remaining = len(matches) - len(shown)
+    if remaining > 0:
+        lines.append(f"+{remaining} more")
+
+    guide_ids = sorted({m.guide_id for m in matches})
+    lines.append(
+        f"mpg: {len(matches)} outdated pattern(s) found [target: py{python_version}]. "
+        f"If these are not intentional, apply the modern form: run "
+        f"`{sys.executable} -m modern_python_guidance retrieve {','.join(guide_ids)}` "
+        f"or call the MCP tool retrieve_guides({guide_ids})."
+    )
+    return "\n".join(lines)
 
 
 def _detect_version_for_file(file_path: Path) -> str | None:
