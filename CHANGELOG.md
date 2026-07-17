@@ -8,11 +8,17 @@ All notable changes to this project will be documented in this file.
 
 - `mpg setup` now registers a PostToolUse hook by default, closing the gap where MCP guides were never consulted during real Python development (0 calls across 894 `.py` edits). An existing project (Skills/Rules already present) gets an announcement instead of a silent behavior change unless `--with-hook` is passed; `--no-hook` actively removes an existing registration. (#152)
 - Hook output switches from exit 2/stderr to exit 0 + `hookSpecificOutput.additionalContext`, carrying more compliance weight with Claude; raw source lines are no longer echoed (only `guide_id` + line number), narrowing the indirect-prompt-injection surface a full source excerpt would open.
+- Rules file, SKILL.md, and the `search_guides` MCP tool description now include a proactive nudge to consult the full 41-guide catalog when writing Python outside the 5 embedded high-frequency patterns. (#152)
 
 ### Fixed
 
 - `mpg setup --scope local --project-dir X` now runs every `claude mcp` call (add, remove, retry-add) in `X`, not the caller's cwd — previously only the advisory shadowing check resolved `project_dir` into a cwd, so mutating calls could silently register `mpg` somewhere other than the target project. (closes #164)
 - README's example PostToolUse hook `matcher` used an unrecognized expression form that Claude Code evaluated as an unanchored regex matching every tool; corrected to `"Edit|Write"`.
+- `setup_rules`/`setup_skills`'s non-symlink blocker message incorrectly attributed a flattened rule/skill file to "an older mpg version" that never existed — both delivery paths have been symlink-only since introduction. Corrected to describe symlink-flattening (git checkout on some platforms, backup/sync tooling) as the actual cause; the message is now shared between both call sites.
+
+### Docs
+
+- README documents the PostToolUse hook's actual shipped behavior (`additionalContext` contract, 5-match cap, `--no-hook`/`--with-hook` semantics, guide_id-only redaction rationale) and the `mpg setup` flags table.
 
 ## [0.5.10] — 2026-06-27
 
