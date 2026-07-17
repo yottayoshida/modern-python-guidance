@@ -162,7 +162,7 @@ Add a [PostToolUse hook](https://docs.anthropic.com/en/docs/claude-code/hooks) t
   "hooks": {
     "PostToolUse": [
       {
-        "matcher": "tool == \"Edit\" || tool == \"Write\" || tool == \"MultiEdit\"",
+        "matcher": "Edit|Write",
         "hooks": [
           {
             "type": "command",
