@@ -26,7 +26,7 @@ pip install modern-python-guidance
 mpg setup
 ```
 
-This registers the MCP server, links Agent Skills, and creates a Rules file (`.claude/rules/modern-python.md`) in one command. The Rules file auto-injects modern Python guidance whenever you touch Python-related files. Start a new Claude Code session afterwards — newly registered MCP servers, skills, and rules take effect on the next launch.
+This registers the MCP server, links Agent Skills, creates a Rules file (`.claude/rules/modern-python.md`), and registers a PostToolUse hook in one command. The Rules file auto-injects modern Python guidance whenever you touch Python-related files, and the hook actively checks every edited `.py` file against the full 41-guide catalog (see [PostToolUse hook](#posttooluse-hook) below). Start a new Claude Code session afterwards — newly registered MCP servers, skills, rules, and hooks take effect on the next launch.
 
 ### CLI
 
@@ -78,6 +78,10 @@ mpg setup --skills-only
 | `--scope {user,local}` | MCP scope (default: user) |
 | `--project-dir PATH` | Target project for Skills/Rules symlinks |
 | `--dry-run` | Show what would be done |
+| `--no-hook` | Don't register the PostToolUse hook (removes it if already present) |
+| `--with-hook` | Register the hook even if this project already has mpg artifacts |
+
+If this project already has mpg's Skills or Rules symlinks from a previous `mpg setup`, the hook is not silently enabled — you'll see a note instead (`New: mpg can auto-check Python files after every edit.` / `Enable: mpg setup --with-hook`). A fresh project gets the hook by default.
 
 After registering, `mpg setup` checks whether a same-name registration in a higher-precedence scope (local > project > user) would shadow the one it just wrote, and prints a warning with the exact `claude mcp remove` command if so.
 
@@ -94,7 +98,7 @@ mpg uninstall --dry-run  # preview what would be removed
 | `--project-dir PATH` | Target project for Skills/Rules symlinks |
 | `--dry-run` | Show what would be done |
 
-`mpg uninstall` clears the MCP registration from every scope `setup` can write to (user and local), removes only the symlinks mpg created (never their targets or other files), and is idempotent — running it on an already-clean state is a harmless no-op.
+`mpg uninstall` clears the MCP registration from every scope `setup` can write to (user and local), removes only the symlinks mpg created (never their targets or other files), removes mpg's PostToolUse hook entry from `.claude/settings.local.json` (leaving any other tools' hooks untouched), and is idempotent — running it on an already-clean state is a harmless no-op.
 
 </details>
 
@@ -153,9 +157,27 @@ mpg list --python-version 3.9
 # Excludes: TaskGroup (3.11+), match/case (3.10+), etc.
 ```
 
-## Recommended hooks
+## PostToolUse hook
 
-Add a [PostToolUse hook](https://docs.anthropic.com/en/docs/claude-code/hooks) to auto-check Python files whenever Claude edits them. Create or update `.claude/settings.json` in your project:
+`mpg setup` registers a [PostToolUse hook](https://docs.anthropic.com/en/docs/claude-code/hooks) by default (see [Quick start](#quick-start) above) — no manual `.claude/settings.local.json` editing needed. It checks every `.py` file Claude edits or writes against the full 41-guide catalog and surfaces findings via `hookSpecificOutput.additionalContext`, so Claude receives them as part of its own context rather than as a raw stderr error.
+
+A few things worth knowing about how it behaves:
+
+- **It scans the whole edited file, not just your diff.** An edit anywhere in a file can resurface pre-existing outdated patterns you didn't touch this time, not only the lines you just wrote.
+- **Findings are capped at 5 per edit**, plus a `+N more` summary line, to bound how much context gets injected.
+- **Only the guide ID and line number are surfaced — never the matching source line itself.** Echoing arbitrary file content back as an authoritative-looking hook message would be an indirect prompt-injection channel; `guide_id` + line number is enough for Claude to look up the modern form.
+- The project's target Python version is auto-detected the same way as `mpg detect-version` (nearest `pyproject.toml` `requires-python` / Poetry `python` constraint, or `.python-version`, walking up from the edited file), so patterns that require a newer Python than your project targets are not flagged. The resolved target is shown in the summary (`[target: py3.X]`).
+- Non-Python files and clean files produce no output.
+- An existing project (Skills/Rules already linked from a previous `mpg setup`) is never silently opted in — see the `--with-hook`/`--no-hook` flags above.
+
+Verify with `/hooks` in Claude Code to confirm it's active.
+
+For manual CLI use, `mpg check --quiet <file> --python-version X.Y` runs the same check — pass your project's floor explicitly, since unlike the hook, `mpg check` does not auto-detect it.
+
+<details>
+<summary>Manual hook setup (advanced)</summary>
+
+If you'd rather manage the hook entry yourself instead of `mpg setup`, add it to `.claude/settings.local.json`:
 
 ```json
 {
@@ -166,7 +188,8 @@ Add a [PostToolUse hook](https://docs.anthropic.com/en/docs/claude-code/hooks) t
         "hooks": [
           {
             "type": "command",
-            "command": "mpg hook claude-post-tool-use"
+            "command": "/path/to/python",
+            "args": ["-m", "modern_python_guidance", "hook", "claude-post-tool-use"]
           }
         ]
       }
@@ -175,13 +198,9 @@ Add a [PostToolUse hook](https://docs.anthropic.com/en/docs/claude-code/hooks) t
 }
 ```
 
-The hook reads stdin from Claude Code, checks any `.py` file for outdated patterns, and surfaces findings as inline feedback. The project's target Python version is auto-detected from the nearest `pyproject.toml` (`requires-python` or Poetry's `python` constraint) or `.python-version`, walking up from the edited file — the same sources as `mpg detect-version` — so patterns that require a newer Python than your project targets are not flagged. The resolved target is shown in the summary line (`[target: py3.X]`). Non-Python files and clean files produce no output.
+Use the interpreter's absolute path (`command`), not a bare `mpg`/`python` — Claude Code spawns hooks from its own environment, where a venv-only interpreter is not on PATH. `mpg setup` resolves and pins this for you automatically.
 
-If mpg is installed in a venv (not `uv tool`/`pipx`), use the interpreter's absolute path in `command`: `/path/to/venv/bin/python -m modern_python_guidance hook claude-post-tool-use`.
-
-Verify with `/hooks` in Claude Code to confirm the hook is active.
-
-For manual CLI use, `mpg check --quiet <file> --python-version X.Y` runs the same check — pass your project's floor explicitly, since unlike the hook, `mpg check` does not auto-detect it.
+</details>
 
 ## Development
 

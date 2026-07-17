@@ -101,7 +101,10 @@ TOOLS = [
         "description": (
             "Search modern Python pattern guides by keyword. Returns guide IDs, titles, "
             "scores, and token estimates. Use this to discover which guides exist before "
-            "retrieving full content. Supports fuzzy matching when exact matches fail."
+            "retrieving full content. Supports fuzzy matching when exact matches fail. "
+            "Call this when writing or reviewing Python outside the ~5 high-frequency "
+            "patterns already embedded in your project rules (FastAPI, Django, "
+            "httpx, pytest, etc.); the full catalog has 41 guides."
         ),
         "inputSchema": {
             "type": "object",

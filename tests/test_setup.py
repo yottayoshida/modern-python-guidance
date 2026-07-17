@@ -748,6 +748,9 @@ class TestSetupSkills:
         err = capsys.readouterr().err
         assert "not a symlink" in err
         assert "rm -rf" in err
+        # #152 PR3: migration guidance symmetric with setup_rules
+        assert "flattened" in err
+        assert "re-run: mpg setup" in err
 
     def test_non_symlink_blocker_path_quoted(
         self,
@@ -920,6 +923,11 @@ class TestSetupRules:
         err = capsys.readouterr().err
         assert "not a symlink" in err
         assert "rm " in err
+        # #152 PR3: migration guidance for a stale non-symlink rule file
+        # (e.g. a symlink flattened by tooling — this workspace's own
+        # drifted `.claude/rules/modern-python.md` is a live example)
+        assert "flattened" in err
+        assert "re-run: mpg setup" in err
 
     def test_dry_run(self, tmp_path: Path, capsys: pytest.CaptureFixture[str]):
         """V-044: dry-run does not create symlink."""

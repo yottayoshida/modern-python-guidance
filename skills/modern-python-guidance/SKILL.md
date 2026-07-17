@@ -55,6 +55,10 @@ Pre-generation design patterns that Ruff cannot auto-fix. Apply these transforma
 - `subprocess.run(f"cmd {arg}", shell=True)` → `subprocess.run(["cmd", arg], check=True)`
   - Caveat: `shell=True` is valid when pipes/globs are needed; use `shlex.quote()` for user input
 
+## Beyond these embedded patterns
+
+Writing Python outside the patterns above? Call `mcp__mpg__search_guides` — the full catalog has 41 guides.
+
 ## All 41 guides by category
 
 - **typing** (7): `use-builtin-generics`, `union-syntax`, `type-parameter-syntax`, `override-decorator`, `typeis-vs-typeguard`, `paramspec-decorators`, `deferred-annotations`

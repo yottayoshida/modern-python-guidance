@@ -90,6 +90,23 @@ class TestToolsList:
             assert "inputSchema" in tool
             assert tool["inputSchema"]["type"] == "object"
 
+    def test_search_guides_description_guide_count_matches_index(self):
+        """#152 PR3: search_guides' description hardcodes a guide count
+        ("41 guides") with no other test tying it to reality — unlike
+        rules/modern-python.md (CI byte-matched against _build_rule_text)
+        and SKILL.md (test_catalog_count_matches). Pin it to the actual
+        index length so a future guide addition/removal can't leave this
+        description silently stale."""
+        from modern_python_guidance.guide_index import build_index
+
+        responses = _run_mcp(
+            *_init_handshake(),
+            {"jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {}},
+        )
+        tools = {t["name"]: t for t in responses[1]["result"]["tools"]}
+        actual_count = len(build_index())
+        assert f"{actual_count} guides" in tools["search_guides"]["description"]
+
 
 class TestSearchGuides:
     def test_search_returns_results(self):
