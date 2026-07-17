@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+### Fixed
+
+- `mpg setup --scope local --project-dir X` now runs every `claude mcp` call (add, remove, retry-add) in `X`, not the caller's cwd — previously only the advisory shadowing check resolved `project_dir` into a cwd, so mutating calls could silently register `mpg` somewhere other than the target project. (closes #164)
+- README's example PostToolUse hook `matcher` used an unrecognized expression form that Claude Code evaluated as an unanchored regex matching every tool; corrected to `"Edit|Write"`.
+
 ## [0.5.10] — 2026-06-27
 
 **Summary**: V5 benchmark runner now requires explicit `--allow-credit-use` opt-in for non-dry-run execution, and CI release-artifact invariants (build-verify-upload order, OIDC scope, no-rebuild-in-publish) are pinned by regression tests.
