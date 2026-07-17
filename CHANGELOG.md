@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+
+- `mpg setup` now registers a PostToolUse hook by default, closing the gap where MCP guides were never consulted during real Python development (0 calls across 894 `.py` edits). An existing project (Skills/Rules already present) gets an announcement instead of a silent behavior change unless `--with-hook` is passed; `--no-hook` actively removes an existing registration. (#152)
+- Hook output switches from exit 2/stderr to exit 0 + `hookSpecificOutput.additionalContext`, carrying more compliance weight with Claude; raw source lines are no longer echoed (only `guide_id` + line number), narrowing the indirect-prompt-injection surface a full source excerpt would open.
+
 ### Fixed
 
 - `mpg setup --scope local --project-dir X` now runs every `claude mcp` call (add, remove, retry-add) in `X`, not the caller's cwd — previously only the advisory shadowing check resolved `project_dir` into a cwd, so mutating calls could silently register `mpg` somewhere other than the target project. (closes #164)
