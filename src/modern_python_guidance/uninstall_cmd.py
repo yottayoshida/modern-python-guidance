@@ -8,6 +8,7 @@ import subprocess
 import sys
 from pathlib import Path
 
+from modern_python_guidance.hook_config import remove_hook
 from modern_python_guidance.setup_cmd import (
     MCP_SERVER_NAME,
     _find_project_root,
@@ -181,6 +182,21 @@ def uninstall_rules(
     return True
 
 
+def uninstall_hook(
+    *,
+    project_dir: Path | None = None,
+    dry_run: bool = False,
+) -> bool:
+    """Remove the mpg PostToolUse hook. Returns True on success.
+
+    Idempotent: a no-op success if no mpg hook is registered. Symmetric
+    with setup_hook — thin wrapper around hook_config.remove_hook, kept
+    here for naming consistency with uninstall_mcp/skills/rules.
+    """
+    root = project_dir or _find_project_root()
+    return remove_hook(project_root=root, dry_run=dry_run)
+
+
 def run_uninstall(
     *,
     mcp_only: bool = False,
@@ -196,10 +212,12 @@ def run_uninstall(
     do_mcp = not skills_only
     do_skills = not mcp_only
     do_rules = not mcp_only
+    do_hook = not mcp_only
 
     mcp_ok = True
     skills_ok = True
     rules_ok = True
+    hook_ok = True
 
     if do_mcp:
         mcp_ok = uninstall_mcp(dry_run=dry_run)
@@ -210,7 +228,10 @@ def run_uninstall(
     if do_rules:
         rules_ok = uninstall_rules(project_dir=project_dir, dry_run=dry_run)
 
-    if mcp_ok and skills_ok and rules_ok:
+    if do_hook:
+        hook_ok = uninstall_hook(project_dir=project_dir, dry_run=dry_run)
+
+    if mcp_ok and skills_ok and rules_ok and hook_ok:
         if not dry_run and do_mcp and do_skills:
             print("Done. mpg has been removed.")
         return 0

@@ -11,6 +11,11 @@ from unittest.mock import patch
 
 import pytest
 
+from modern_python_guidance.hook_config import (
+    merge_hook,
+    settings_local_path,
+    write_settings_atomic,
+)
 from modern_python_guidance.setup_cmd import (
     RULE_FILE_NAME,
     _find_project_root,
@@ -951,6 +956,16 @@ class TestSetupRules:
 class TestRunSetup:
     """V-012, V-013, V-014, V-045~V-048, V-058~V-060: exit codes and partial success."""
 
+    @pytest.fixture(autouse=True)
+    def _mock_hook(self):
+        """#152: setup_hook does real file I/O (no subprocess to mock), and
+        with no project_dir it resolves against the real cwd via
+        _find_project_root() — autouse-mocked here so the 14 pre-existing
+        tests in this class (none of which are about hook behavior) can't
+        write a stray .claude/settings.local.json into this repo."""
+        with patch("modern_python_guidance.setup_cmd.setup_hook", return_value=True) as m:
+            yield m
+
     def _patch_all(self, mcp=True, skills=True, rules=True):
         return (
             patch("modern_python_guidance.setup_cmd.setup_mcp", return_value=mcp),
@@ -1012,20 +1027,117 @@ class TestRunSetup:
             assert run_setup(dry_run=True) == 0
         assert "Ready" not in capsys.readouterr().out
 
-    def test_success_shows_hook_hint(self, capsys: pytest.CaptureFixture[str]):
+    def test_full_setup_registers_hook_by_default(self, _mock_hook):
+        """#152: hook auto-registration replaces the old print-only hint —
+        a fresh project (no existing skills/rules) gets setup_hook() called."""
         p_mcp, p_skills, p_rules = self._patch_all()
         with p_mcp, p_skills, p_rules:
             assert run_setup() == 0
-        out = capsys.readouterr().out
-        assert "PostToolUse" in out
+        _mock_hook.assert_called_once()
 
-    def test_skills_only_shows_hook_hint(self, capsys: pytest.CaptureFixture[str]):
+    def test_mcp_only_skips_hook(self, _mock_hook):
+        """--mcp-only excludes the hook too (it's a project-local artifact
+        like Skills/Rules, not an MCP-registration concern)."""
+        p_mcp, p_skills, p_rules = self._patch_all()
+        with p_mcp, p_skills, p_rules:
+            assert run_setup(mcp_only=True) == 0
+        _mock_hook.assert_not_called()
+
+    def test_skills_only_registers_hook(self, capsys: pytest.CaptureFixture[str], _mock_hook):
         p_mcp, p_skills, p_rules = self._patch_all()
         with p_mcp, p_skills, p_rules:
             assert run_setup(skills_only=True) == 0
+        _mock_hook.assert_called_once()
+        assert "Ready" not in capsys.readouterr().out
+
+    def test_existing_assets_skip_hook_with_announcement(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str], _mock_hook
+    ):
+        """#152 guardrail: an existing user (project already has the Skills
+        symlink) must not have the hook silently flipped on — only an
+        announcement, not a call to setup_hook()."""
+        skills_link = tmp_path / ".claude" / "skills" / "modern-python-guidance"
+        skills_link.parent.mkdir(parents=True)
+        skills_link.symlink_to(tmp_path)  # target content is irrelevant here
+        p_mcp, p_skills, p_rules = self._patch_all()
+        with p_mcp, p_skills, p_rules:
+            assert run_setup(project_dir=tmp_path) == 0
+        _mock_hook.assert_not_called()
         out = capsys.readouterr().out
-        assert "PostToolUse" in out
-        assert "Ready" not in out
+        assert "mpg setup --with-hook" in out
+
+    def test_existing_assets_with_hook_already_registered_no_announcement(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str], _mock_hook
+    ):
+        """QA M1: re-running plain `mpg setup` (e.g. after an upgrade) on a
+        project that already has the hook registered must not print the
+        "New: ... Enable: --with-hook" announcement — that's genuinely
+        misleading for a project where the hook is already active."""
+        skills_link = tmp_path / ".claude" / "skills" / "modern-python-guidance"
+        skills_link.parent.mkdir(parents=True)
+        skills_link.symlink_to(tmp_path)
+        settings_path = settings_local_path(tmp_path)
+        write_settings_atomic(settings_path, merge_hook({}, sys.executable))
+
+        p_mcp, p_skills, p_rules = self._patch_all()
+        with p_mcp, p_skills, p_rules:
+            assert run_setup(project_dir=tmp_path) == 0
+        _mock_hook.assert_not_called()
+        assert "Enable: mpg setup --with-hook" not in capsys.readouterr().out
+
+    def test_existing_rules_only_also_skips_hook(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str], _mock_hook
+    ):
+        """#152 guardrail: the existing-asset check is an OR over Skills and
+        Rules — a project with only the Rules symlink (no Skills) must also
+        be treated as an existing user, not just the Skills-present case."""
+        rules_link = tmp_path / ".claude" / "rules" / "modern-python.md"
+        rules_link.parent.mkdir(parents=True)
+        rules_link.symlink_to(tmp_path)
+        p_mcp, p_skills, p_rules = self._patch_all()
+        with p_mcp, p_skills, p_rules:
+            assert run_setup(project_dir=tmp_path) == 0
+        _mock_hook.assert_not_called()
+        assert "mpg setup --with-hook" in capsys.readouterr().out
+
+    def test_with_hook_overrides_existing_assets_guardrail(self, tmp_path: Path, _mock_hook):
+        skills_link = tmp_path / ".claude" / "skills" / "modern-python-guidance"
+        skills_link.parent.mkdir(parents=True)
+        skills_link.symlink_to(tmp_path)
+        p_mcp, p_skills, p_rules = self._patch_all()
+        with p_mcp, p_skills, p_rules:
+            assert run_setup(project_dir=tmp_path, with_hook=True) == 0
+        _mock_hook.assert_called_once()
+
+    def test_no_hook_removes_instead_of_setup(self, tmp_path: Path):
+        """--no-hook is remove semantics, not skip (plan §2): it must call
+        the removal path, never setup_hook."""
+        p_mcp, p_skills, p_rules = self._patch_all()
+        with (
+            p_mcp,
+            p_skills,
+            p_rules,
+            patch("modern_python_guidance.setup_cmd.setup_hook") as m_setup_hook,
+            patch("modern_python_guidance.setup_cmd.remove_hook", return_value=True) as m_remove,
+        ):
+            assert run_setup(project_dir=tmp_path, no_hook=True) == 0
+        m_setup_hook.assert_not_called()
+        m_remove.assert_called_once()
+
+    def test_no_hook_and_with_hook_mutually_exclusive(self, capsys: pytest.CaptureFixture[str]):
+        code = run_setup(no_hook=True, with_hook=True)
+        assert code == 1
+        assert "mutually exclusive" in capsys.readouterr().err
+
+    def test_hook_failure_causes_exit_1(self, tmp_path: Path):
+        p_mcp, p_skills, p_rules = self._patch_all()
+        with (
+            p_mcp,
+            p_skills,
+            p_rules,
+            patch("modern_python_guidance.setup_cmd.setup_hook", return_value=False),
+        ):
+            assert run_setup(project_dir=tmp_path) == 1
 
     def test_mutual_exclusion(self, capsys: pytest.CaptureFixture[str]):
         code = run_setup(mcp_only=True, skills_only=True)
@@ -1092,6 +1204,8 @@ class TestCliIntegration:
         assert "--skills-only" in r.stdout
         assert "--scope" in r.stdout
         assert "--dry-run" in r.stdout
+        assert "--no-hook" in r.stdout
+        assert "--with-hook" in r.stdout
 
     def test_setup_dry_run_skills_only(self):
         """Smoke test: --skills-only --dry-run runs without errors."""
@@ -1103,6 +1217,31 @@ class TestCliIntegration:
         )
         assert r.returncode == 0
         assert "Would link" in r.stdout
+
+    def test_setup_dry_run_registers_hook_end_to_end(self, tmp_path: Path):
+        """#152: real CLI subprocess, no mocks — a fresh --project-dir with
+        --skills-only --dry-run must show the hook dry-run message too
+        (hook is not mcp-only-gated, and this project has no prior assets
+        so the existing-assets guardrail does not suppress it)."""
+        r = subprocess.run(
+            [*BIN, "setup", "--skills-only", "--project-dir", str(tmp_path), "--dry-run"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        assert r.returncode == 0
+        assert "Would write hook entry to" in r.stdout
+        assert "claude-post-tool-use" in r.stdout
+
+    def test_setup_no_hook_and_with_hook_mutual_exclusion_cli(self):
+        r = subprocess.run(
+            [*BIN, "setup", "--no-hook", "--with-hook", "--dry-run"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        assert r.returncode != 0
+        assert "mutually exclusive" in r.stderr
 
     def test_setup_mutual_exclusion_cli(self):
         """--mcp-only and --skills-only together errors at CLI level."""
