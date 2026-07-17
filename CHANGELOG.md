@@ -9,6 +9,7 @@ All notable changes to this project will be documented in this file.
 - `mpg setup` now registers a PostToolUse hook by default, closing the gap where MCP guides were never consulted during real Python development (0 calls across 894 `.py` edits). An existing project (Skills/Rules already present) gets an announcement instead of a silent behavior change unless `--with-hook` is passed; `--no-hook` actively removes an existing registration. (#152)
 - Hook output switches from exit 2/stderr to exit 0 + `hookSpecificOutput.additionalContext`, carrying more compliance weight with Claude; raw source lines are no longer echoed (only `guide_id` + line number), narrowing the indirect-prompt-injection surface a full source excerpt would open.
 - Rules file, SKILL.md, and the `search_guides` MCP tool description now include a proactive nudge to consult the full 41-guide catalog when writing Python outside the 5 embedded high-frequency patterns. (#152)
+- `bench/run-v6.sh` + `bench/score_v6.py`: a new benchmark harness measuring whether an organic, multi-turn `.py`-editing session that never mentions mpg/MCP by name actually reaches the guide catalog (real MCP `tool_use`/CLI invocations, not grep-over-text), stratified by guidance condition (none / rules+skills+MCP / +hook). Validated end-to-end with a single live PoC session; the full measurement campaign is a separate, cost-approved follow-up. (#152)
 
 ### Fixed
 
