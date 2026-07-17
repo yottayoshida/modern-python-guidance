@@ -14,6 +14,10 @@ Pre-generation design patterns that Ruff cannot auto-fix. Apply these transforma
 - `session.query(User).filter()` → `session.execute(select(User).where())` (SQLAlchemy 2.0)
 - `subprocess.run(f"cmd {arg}", shell=True)` → `subprocess.run(["cmd", arg], check=True)`
 
+## Beyond these 5 patterns
+
+Writing Python outside them (FastAPI, Django, httpx, pytest, or anything in the 41-guide catalog below)? Call `mcp__mpg__search_guides` before committing to a pattern.
+
 ## All 41 guides by category
 
 - **async** (3): `async-timeout-context`, `exception-groups`, `taskgroup-over-gather`

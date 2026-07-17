@@ -121,6 +121,10 @@ Pre-generation design patterns that Ruff cannot auto-fix. Apply these transforma
 - `session.query(User).filter()` → `session.execute(select(User).where())` (SQLAlchemy 2.0)
 - `subprocess.run(f"cmd {arg}", shell=True)` → `subprocess.run(["cmd", arg], check=True)`
 
+## Beyond these 5 patterns
+
+Writing Python outside them (FastAPI, Django, httpx, pytest, or anything in the 41-guide catalog below)? Call `mcp__mpg__search_guides` before committing to a pattern.
+
 ## All 41 guides by category
 
 - **async** (3): `async-timeout-context`, `exception-groups`, `taskgroup-over-gather`
@@ -342,6 +346,36 @@ def setup_mcp(
     return True
 
 
+def _print_flattened_symlink_error(
+    link_path: Path,
+    root: Path,
+    *,
+    kind: str,
+    remove_cmd: str,
+    extra_note: str = "",
+) -> None:
+    """Shared migration-guidance message for setup_skills/setup_rules when a
+    non-symlink occupies the path mpg manages.
+
+    A common real-world cause is a symlink flattened into a real file/dir by
+    tooling that doesn't preserve symlinks (git checkout on some platforms,
+    backup/sync scripts) — not an old mpg version writing content directly,
+    since both delivery paths have been symlink-only since their
+    introduction. Shared between the two call sites so the wording can't
+    drift the way #164's duplicated cwd computation did.
+    """
+    print(f"Error: {link_path.relative_to(root)} exists and is not a symlink.", file=sys.stderr)
+    print(
+        f"This {kind} is not a symlink mpg manages. A common cause is a "
+        f"symlink that got flattened into a real {kind} by tooling that "
+        f"doesn't preserve symlinks (git checkout on some platforms, "
+        f"backup/sync scripts).{extra_note}",
+        file=sys.stderr,
+    )
+    print(f"Remove it manually: {remove_cmd}", file=sys.stderr)
+    print("Then re-run: mpg setup", file=sys.stderr)
+
+
 def setup_skills(
     *,
     project_dir: Path | None = None,
@@ -370,13 +404,11 @@ def setup_skills(
         # Stale or broken symlink — replace
         link_path.unlink()
     elif link_path.exists():
-        print(
-            f"Error: {link_path.relative_to(root)} exists and is not a symlink.",
-            file=sys.stderr,
-        )
-        print(
-            f"Remove it manually: rm -rf {shlex.quote(str(link_path))}",
-            file=sys.stderr,
+        _print_flattened_symlink_error(
+            link_path,
+            root,
+            kind="path",
+            remove_cmd=f"rm -rf {shlex.quote(str(link_path))}",
         )
         return False
 
@@ -422,13 +454,14 @@ def setup_rules(
             return True
         link_path.unlink()
     elif link_path.exists():
-        print(
-            f"Error: {link_path.relative_to(root)} exists and is not a symlink.",
-            file=sys.stderr,
-        )
-        print(
-            f"Remove it manually: rm {shlex.quote(str(link_path))}",
-            file=sys.stderr,
+        _print_flattened_symlink_error(
+            link_path,
+            root,
+            kind="file",
+            remove_cmd=f"rm {shlex.quote(str(link_path))}",
+            extra_note=(
+                " Its content will be replaced by the up-to-date rule once removed and re-linked."
+            ),
         )
         return False
 
