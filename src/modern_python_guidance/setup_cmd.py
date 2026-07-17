@@ -131,10 +131,12 @@ def _build_rule_text() -> str:
     return RULE_FRONTMATTER + "\n\n" + _THIN_RULE_BODY
 
 
-def _run_claude_mcp(cmd: list[str]) -> subprocess.CompletedProcess[bytes] | None:
+def _run_claude_mcp(
+    cmd: list[str], cwd: str | None = None
+) -> subprocess.CompletedProcess[bytes] | None:
     """Run a claude mcp subcommand; report timeout/OSError and return None."""
     try:
-        return subprocess.run(cmd, capture_output=True, timeout=30)
+        return subprocess.run(cmd, capture_output=True, timeout=30, cwd=cwd)
     except subprocess.TimeoutExpired:
         print("Error: 'claude mcp' command timed out after 30 seconds.", file=sys.stderr)
         return None
@@ -185,7 +187,23 @@ def _effective_scope(stdout: bytes) -> str | None:
     return None
 
 
-def _warn_if_shadowed(scope: str, claude: str, project_dir: Path | None = None) -> None:
+def _resolve_cwd(project_dir: Path | None) -> str | None:
+    """Resolve the subprocess cwd for project-bound ``claude mcp`` calls.
+
+    Local/project scopes are bound to the project directory ``claude`` runs
+    in, so every ``claude mcp`` call setup issues (add, remove, retry-add,
+    and the advisory shadow check) must share this same resolution — a
+    second, independent computation is how #164 happened (the shadow check
+    ran in ``project_dir`` while add/remove silently inherited the caller's
+    cwd instead).
+
+    Returns None (inherit the caller's cwd) when no ``--project-dir`` was
+    given, or when the given path doesn't exist yet (nothing to cwd into).
+    """
+    return str(project_dir) if project_dir is not None and project_dir.is_dir() else None
+
+
+def _warn_if_shadowed(scope: str, claude: str, cwd: str | None) -> None:
     """Warn when a higher-precedence scope shadows the entry just written.
 
     Advisory only: never changes setup's outcome, and never issues mutating
@@ -193,14 +211,9 @@ def _warn_if_shadowed(scope: str, claude: str, project_dir: Path | None = None) 
     a get failure right after a successful add is anomalous and gets a
     one-line note (without a remove command), while unparseable output is
     silently skipped (#131).
-
-    Local/project scopes are bound to the project directory ``claude``
-    runs in, so when setup targets another project (``--project-dir``)
-    the check runs there — that is where shadowing would bite.
     """
     if scope not in _SCOPE_PRECEDENCE:
         return
-    cwd = str(project_dir) if project_dir is not None and project_dir.is_dir() else None
     result = _run_claude_mcp_quiet([claude, "mcp", "get", MCP_SERVER_NAME], cwd=cwd)
     if result is None or result.returncode != 0:
         print(
@@ -256,9 +269,11 @@ def setup_mcp(
 
     launch = [sys.executable, "-m", "modern_python_guidance", "mcp"]
     args = ["mcp", "add", "--scope", scope, MCP_SERVER_NAME, "--", *launch]
+    cwd = _resolve_cwd(project_dir)
 
     if dry_run:
-        print(f"Would run: claude {shlex.join(args)}")
+        where = f" in {cwd}" if cwd is not None else ""
+        print(f"Would run{where}: claude {shlex.join(args)}")
         return True
 
     claude = shutil.which("claude")
@@ -272,7 +287,7 @@ def setup_mcp(
         return False
 
     add_cmd = [claude, *args]
-    result = _run_claude_mcp(add_cmd)
+    result = _run_claude_mcp(add_cmd, cwd=cwd)
     if result is None:
         return False
 
@@ -282,7 +297,7 @@ def setup_mcp(
         # other reason (timeout, permissions), so a broken retry cannot leave
         # the user with no registration at all.
         remove_cmd = [claude, "mcp", "remove", "--scope", scope, MCP_SERVER_NAME]
-        removed = _run_claude_mcp(remove_cmd)
+        removed = _run_claude_mcp(remove_cmd, cwd=cwd)
         if removed is None or removed.returncode != 0:
             print(
                 f"Error: could not replace the existing '{MCP_SERVER_NAME}' registration.",
@@ -291,7 +306,7 @@ def setup_mcp(
             if removed is not None:
                 _print_stderr(removed)
             return False
-        result = _run_claude_mcp(add_cmd)
+        result = _run_claude_mcp(add_cmd, cwd=cwd)
         if result is None:
             return False
 
@@ -310,7 +325,7 @@ def setup_mcp(
 
     print(f"MCP server registered with Claude Code ({scope} scope).")
     print(f"Registered launch: {shlex.join(launch)}")
-    _warn_if_shadowed(scope, claude, project_dir)
+    _warn_if_shadowed(scope, claude, cwd)
     return True
 
 

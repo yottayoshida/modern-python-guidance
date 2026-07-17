@@ -16,6 +16,7 @@ from modern_python_guidance.setup_cmd import (
     _find_project_root,
     _find_rule_source,
     _find_skills_dir,
+    _resolve_cwd,
     run_setup,
     setup_mcp,
     setup_rules,
@@ -285,6 +286,34 @@ class TestWarnIfShadowed:
         assert m.call_args_list[-1].kwargs.get("cwd") is None
 
 
+# --- _resolve_cwd ---
+
+
+class TestResolveCwd:
+    """#164: the single source of truth every `claude mcp` call in setup_mcp
+    (add/remove/retry-add) and the shadow check share. Exercised directly
+    here since it's a pure function; setup_mcp-level tests only need to
+    confirm the *wiring* (that its result reaches every call), not
+    re-derive this branching for each input shape."""
+
+    def test_none_project_dir(self):
+        assert _resolve_cwd(None) is None
+
+    def test_existing_dir(self, tmp_path: Path):
+        assert _resolve_cwd(tmp_path) == str(tmp_path)
+
+    def test_missing_dir(self, tmp_path: Path):
+        assert _resolve_cwd(tmp_path / "does-not-exist") is None
+
+    def test_file_not_a_dir(self, tmp_path: Path):
+        """`is_dir()` is the correct check, not `exists()` — a file path
+        passed through to `subprocess.run(cwd=...)` would raise
+        NotADirectoryError at runtime instead of degrading gracefully."""
+        project_file = tmp_path / "not-a-directory"
+        project_file.write_text("")
+        assert _resolve_cwd(project_file) is None
+
+
 # --- _find_skills_dir ---
 
 
@@ -438,7 +467,10 @@ class TestSetupMcp:
             ok = setup_mcp(dry_run=True)
         assert ok is True
         assert mock_run.call_count == 0
-        assert "Would run" in capsys.readouterr().out
+        out = capsys.readouterr().out
+        assert "Would run" in out
+        # #164: no --project-dir given -> no false claim of a cwd target.
+        assert out.startswith("Would run: claude")
 
     def test_dry_run_without_claude(self, capsys: pytest.CaptureFixture[str]):
         """dry-run succeeds even when claude is not installed."""
@@ -509,6 +541,66 @@ class TestSetupMcp:
         assert m.call_args_list[2][0][0] == _expected_add_argv("user")
         assert m.call_args_list[3][0][0] == ["/usr/bin/claude", "mcp", "get", "mpg"]
         assert "MCP server registered" in capsys.readouterr().out
+
+    def test_project_dir_cwd_used_for_add(self, tmp_path: Path):
+        """#164: local-scope add must run in --project-dir, not the caller's cwd."""
+        with (
+            patch("modern_python_guidance.setup_cmd.shutil.which", return_value="/usr/bin/claude"),
+            patch("modern_python_guidance.setup_cmd.subprocess.run") as m,
+        ):
+            m.side_effect = [_ADD_OK, _get_result("local")]
+            ok = setup_mcp(scope="local", project_dir=tmp_path)
+        assert ok is True
+        add_call = m.call_args_list[0]
+        assert add_call[0][0] == _expected_add_argv("local")
+        assert add_call.kwargs.get("cwd") == str(tmp_path)
+
+    def test_project_dir_cwd_used_for_remove_and_retry_add(self, tmp_path: Path):
+        """#164: duplicate-entry replacement (remove + retry add) must share
+        the same target cwd as the initial add, not silently fall back to
+        the caller's cwd partway through the sequence."""
+        with (
+            patch("modern_python_guidance.setup_cmd.shutil.which", return_value="/usr/bin/claude"),
+            patch("modern_python_guidance.setup_cmd.subprocess.run") as m,
+        ):
+            m.side_effect = [
+                subprocess.CompletedProcess([], 1, stderr=b"MCP server mpg already exists"),
+                subprocess.CompletedProcess([], 0, stderr=b""),
+                subprocess.CompletedProcess([], 0, stderr=b""),
+                _get_result("local"),
+            ]
+            ok = setup_mcp(scope="local", project_dir=tmp_path)
+        assert ok is True
+        assert m.call_count == 4
+        for call in m.call_args_list:
+            assert call.kwargs.get("cwd") == str(tmp_path)
+
+    def test_dry_run_shows_target_project_dir(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ):
+        """#164: dry-run output must name the project directory that will
+        receive the local registration, not just the bare command."""
+        with patch(
+            "modern_python_guidance.setup_cmd.shutil.which", return_value="/usr/bin/claude"
+        ):
+            setup_mcp(scope="local", project_dir=tmp_path, dry_run=True)
+        out = capsys.readouterr().out
+        assert f"Would run in {tmp_path}" in out
+
+    def test_dry_run_missing_project_dir_omits_cwd_prefix(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ):
+        """#164: dry-run must not claim a nonexistent --project-dir as the
+        registration target — the message must match what will actually
+        happen (fall back to the caller's cwd), not the raw --project-dir
+        the user typed."""
+        with patch(
+            "modern_python_guidance.setup_cmd.shutil.which", return_value="/usr/bin/claude"
+        ):
+            setup_mcp(scope="local", project_dir=tmp_path / "does-not-exist", dry_run=True)
+        out = capsys.readouterr().out
+        assert out.startswith("Would run: claude")
+        assert "does-not-exist" not in out
 
     def test_other_failure_does_not_remove(self, capsys: pytest.CaptureFixture[str]):
         """#118: a non-duplicate add failure must NOT delete the existing entry."""
