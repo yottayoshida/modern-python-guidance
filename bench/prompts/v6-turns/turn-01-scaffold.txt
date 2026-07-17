@@ -1,0 +1,9 @@
+Build a small task-tracking REST API in this directory. Requirements:
+
+- FastAPI app with routes for creating, listing, updating, and deleting tasks
+- Pydantic models for the request/response schemas (title, description, due date, done flag)
+- SQLite persistence via SQLAlchemy, with a Task model
+- A notifier module that posts a webhook (async HTTP client) whenever a task is marked done
+- pytest tests covering the endpoints, including at least one edge case (missing fields, invalid due date, updating a nonexistent task)
+
+Structure it across multiple files (e.g. models, schemas, routes, db, notifier, tests) rather than one giant file. I want this to be genuinely production-quality, not a toy: proper input validation, sensible error responses, and tests that actually exercise the edge cases you write. Run the test suite yourself at the end and make sure everything passes before you're done.

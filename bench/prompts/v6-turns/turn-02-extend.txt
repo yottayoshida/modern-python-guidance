@@ -1,0 +1,8 @@
+This is coming along well. Now extend it:
+
+1. Add JWT-based authentication -- a login endpoint that issues a token, and require it on the task-mutating routes.
+2. Add a background job that runs periodically (every few minutes) and deletes tasks that have been marked done for more than 30 days.
+3. Add a simple rate limiter middleware so a single client can't hammer the create-task endpoint.
+4. Load configurable settings (webhook URL, rate limit, cleanup interval) from pyproject.toml instead of hardcoding them.
+
+Expand the test suite to cover the new auth flow and the rate limiter. Run the tests again yourself and fix anything that breaks.
