@@ -57,6 +57,31 @@ def _claim(*, status: str = "historical-unverified") -> dict:
     }
 
 
+def _promoted_claim() -> dict:
+    claim = _claim(status="promoted")
+    claim["prompt_paths"] = [
+        {
+            "path": "bench/prompts/v5-a-terse.txt",
+            "sha256": _sha256("bench/prompts/v5-a-terse.txt"),
+        }
+    ]
+    claim["raw_inputs"] = [
+        {
+            "condition": "control",
+            "run_id": "fixture-run",
+            "path": "tests/fixtures/benchmark-raw/control.json",
+            "sha256": _sha256("tests/fixtures/benchmark-raw/control.json"),
+        },
+        {
+            "condition": "treatment",
+            "run_id": "fixture-run",
+            "path": "tests/fixtures/benchmark-raw/treatment.json",
+            "sha256": _sha256("tests/fixtures/benchmark-raw/treatment.json"),
+        },
+    ]
+    return claim
+
+
 def _manifest(*claims: dict) -> dict:
     return {"schema_version": 1, "benchmark": "V5", "claims": list(claims)}
 
@@ -100,12 +125,19 @@ def test_claim_requires_unique_ids_and_known_status() -> None:
 
 
 def test_promoted_claim_requires_hashed_raw_inputs() -> None:
-    claim = _claim(status="promoted")
+    claim = _promoted_claim()
+    claim["raw_inputs"] = []
 
     with pytest.raises(ClaimValidationError, match="raw_inputs"):
         validate_manifest(_manifest(claim), REPO_ROOT)
 
-    claim["raw_inputs"] = [{"path": "bench/prompts/v5-a-terse.txt"}]
+    claim["raw_inputs"] = [
+        {
+            "condition": "control",
+            "run_id": "fixture-run",
+            "path": "bench/prompts/v5-a-terse.txt",
+        }
+    ]
     with pytest.raises(ClaimValidationError, match="sha256"):
         validate_manifest(_manifest(claim), REPO_ROOT)
 
@@ -119,8 +151,15 @@ def test_promoted_claim_requires_hashed_raw_inputs() -> None:
     ],
 )
 def test_promoted_claim_rejects_unsafe_or_untracked_raw_paths(path: str) -> None:
-    claim = _claim(status="promoted")
-    claim["raw_inputs"] = [{"path": path, "sha256": "0" * 64}]
+    claim = _promoted_claim()
+    claim["raw_inputs"] = [
+        {
+            "condition": "control",
+            "run_id": "fixture-run",
+            "path": path,
+            "sha256": "0" * 64,
+        }
+    ]
 
     with pytest.raises(ClaimValidationError, match="raw_inputs"):
         validate_manifest(_manifest(claim), REPO_ROOT)
@@ -130,9 +169,11 @@ def test_promoted_claim_rejects_existing_untracked_raw_file() -> None:
     raw_path = REPO_ROOT / "bench" / "claims" / "untracked-test-output.json"
     raw_path.write_text("temporary raw output", encoding="utf-8")
     try:
-        claim = _claim(status="promoted")
+        claim = _promoted_claim()
         claim["raw_inputs"] = [
             {
+                "condition": "control",
+                "run_id": "fixture-run",
                 "path": "bench/claims/untracked-test-output.json",
                 "sha256": hashlib.sha256(raw_path.read_bytes()).hexdigest(),
             }
@@ -145,26 +186,15 @@ def test_promoted_claim_rejects_existing_untracked_raw_file() -> None:
 
 
 def test_promoted_claim_rejects_hash_mismatch() -> None:
-    claim = _claim(status="promoted")
-    claim["raw_inputs"] = [
-        {
-            "path": "bench/prompts/v5-a-terse.txt",
-            "sha256": "0" * 64,
-        }
-    ]
+    claim = _promoted_claim()
+    claim["raw_inputs"][0]["sha256"] = "0" * 64
 
     with pytest.raises(ClaimValidationError, match="sha256 mismatch"):
         validate_manifest(_manifest(claim), REPO_ROOT)
 
 
 def test_promoted_claim_requires_immutable_scorer_commit() -> None:
-    claim = _claim(status="promoted")
-    claim["raw_inputs"] = [
-        {
-            "path": "bench/prompts/v5-a-terse.txt",
-            "sha256": _sha256("bench/prompts/v5-a-terse.txt"),
-        }
-    ]
+    claim = _promoted_claim()
 
     with pytest.raises(ClaimValidationError, match="scorer version"):
         validate_manifest(_manifest(claim), REPO_ROOT)
@@ -175,6 +205,14 @@ def test_promoted_claim_requires_immutable_scorer_commit() -> None:
 
     claim["scorer"]["version"] = "git:" + _git_head()
     validate_manifest(_manifest(claim), REPO_ROOT)
+
+
+def test_promoted_claim_rejects_prompt_hash_drift() -> None:
+    claim = _promoted_claim()
+    claim["prompt_paths"][0]["sha256"] = "0" * 64
+
+    with pytest.raises(ClaimValidationError, match=r"prompt_paths.*sha256 mismatch"):
+        validate_manifest(_manifest(claim), REPO_ROOT)
 
 
 def test_renderer_is_deterministic_and_contains_no_unmanaged_numeric_claims() -> None:

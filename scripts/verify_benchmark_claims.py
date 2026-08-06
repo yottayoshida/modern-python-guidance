@@ -85,10 +85,22 @@ def _repo_relative_path(
 
 
 def _validate_raw_input(
-    raw_input: Any, *, repo_root: Path, tracked: set[str], context: str
+    raw_input: Any,
+    *,
+    repo_root: Path,
+    tracked: set[str],
+    context: str,
+    require_provenance: bool,
 ) -> None:
     if not isinstance(raw_input, dict):
         _fail(f"{context} must be an object")
+    if require_provenance:
+        condition = _require(raw_input, "condition", context)
+        if condition not in {"control", "treatment"}:
+            _fail(f"{context}.condition must be 'control' or 'treatment'")
+        run_id = _require(raw_input, "run_id", context)
+        if not isinstance(run_id, str) or not run_id:
+            _fail(f"{context}.run_id must be a non-empty string")
     raw_path = _require(raw_input, "path", context)
     sha256 = _require(raw_input, "sha256", context)
     _, resolved = _repo_relative_path(
@@ -203,25 +215,49 @@ def validate_manifest(manifest: dict[str, Any], repo_root: Path) -> None:
         if not isinstance(prompt_paths, list) or not prompt_paths:
             _fail(f"{context}.prompt_paths must be a non-empty list")
         for prompt_index, prompt_path in enumerate(prompt_paths):
-            _repo_relative_path(
-                prompt_path,
-                repo_root=repo_root,
-                tracked=tracked,
-                context=f"{context}.prompt_paths[{prompt_index}]",
-            )
+            prompt_context = f"{context}.prompt_paths[{prompt_index}]"
+            if status == "promoted":
+                if not isinstance(prompt_path, dict):
+                    _fail(f"{prompt_context} must include path and sha256")
+                prompt_value = _require(prompt_path, "path", prompt_context)
+                prompt_sha = _require(prompt_path, "sha256", prompt_context)
+                _, prompt_file = _repo_relative_path(
+                    prompt_value,
+                    repo_root=repo_root,
+                    tracked=tracked,
+                    context=prompt_context,
+                )
+                if not isinstance(prompt_sha, str) or not SHA256_RE.fullmatch(prompt_sha):
+                    _fail(f"{prompt_context} sha256 must be 64 lowercase hexadecimal characters")
+                actual = hashlib.sha256(prompt_file.read_bytes()).hexdigest()
+                if actual != prompt_sha:
+                    _fail(f"{prompt_context} sha256 mismatch for {prompt_value!r}")
+            else:
+                _repo_relative_path(
+                    prompt_path,
+                    repo_root=repo_root,
+                    tracked=tracked,
+                    context=prompt_context,
+                )
 
         raw_inputs = _require(claim, "raw_inputs", context)
         if not isinstance(raw_inputs, list):
             _fail(f"{context}.raw_inputs must be a list")
         if status == "promoted" and not raw_inputs:
             _fail(f"{context}.raw_inputs is required for promoted claims")
+        raw_conditions: set[str] = set()
         for raw_index, raw_input in enumerate(raw_inputs):
+            if status == "promoted" and isinstance(raw_input, dict):
+                raw_conditions.add(raw_input.get("condition", ""))
             _validate_raw_input(
                 raw_input,
                 repo_root=repo_root,
                 tracked=tracked,
                 context=f"{context}.raw_inputs[{raw_index}]",
+                require_provenance=status == "promoted",
             )
+        if status == "promoted" and raw_conditions != {"control", "treatment"}:
+            _fail(f"{context}.raw_inputs must include both control and treatment conditions")
         _validate_scorer(
             _require(claim, "scorer", context),
             status=status,
@@ -255,6 +291,12 @@ def _escape_table(value: Any) -> str:
 
 def _format_percent(value: float | int) -> str:
     return f"{float(value):.1f}%"
+
+
+def _prompt_paths_display(claim: dict[str, Any]) -> str:
+    return ", ".join(
+        item["path"] if isinstance(item, dict) else item for item in claim["prompt_paths"]
+    )
 
 
 def render_readme_block(manifest: dict[str, Any]) -> str:
@@ -315,7 +357,7 @@ def render_source_block(manifest: dict[str, Any]) -> str:
                     str(claim["sample_size_per_condition"]),
                     _escape_table(claim["workload"]),
                     _escape_table(claim["treatment_delivery"]),
-                    _escape_table(", ".join(claim["prompt_paths"])),
+                    _escape_table(_prompt_paths_display(claim)),
                     _escape_table(claim["scorer"]["path"]),
                     _format_percent(claim["control_percent"]),
                     _format_percent(claim["treatment_percent"]),
