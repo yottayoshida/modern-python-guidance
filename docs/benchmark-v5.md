@@ -1,25 +1,52 @@
-# Benchmark V5: mpg lifts modern-Python adoption by up to 19pp on vague prompts
+# Benchmark V5: historical directional content-efficacy evidence
 
 Models: Claude Opus 4.6 / 4.8 / Fable 5 | Updated: 2026-06-10 | Scorer: AST-based (`bench/score_v5.py`)
 
+> **Promotion status:** The cells below are historical and `historical-unverified` in
+> [`bench/claims/v5.json`](../bench/claims/v5.json). The original raw run directories
+> and immutable scorer commit were not recorded in this repository, so these numbers
+> are retained for audit history but are not promoted as product-level effectiveness
+> claims. The default `mpg setup` end-to-end effectiveness is not yet measured.
+
 ## Key finding
 
-Scores below are "strict modern rate": among the Python patterns the model used, what percentage followed the modern idiom? (Formula: `MODERN / (MODERN + OUTDATED)`, excluding items where neither pattern appeared.)
+The source-of-truth table below is generated from the claim manifest. It records
+directional content-efficacy evidence for one workload and one treatment shape; it
+does not measure the effectiveness of every way mpg can deliver guidance.
 
-| Prompt style | N | Control | With mpg | Delta |
-|-------------|---|---------|----------|-------|
-| **Terse** (2 sentences) | 3 | 79% | 98% | **+19pp** |
-| **Normal** (file specs) | 3 | 93% | 100% | **+7pp** |
+<!-- mpg-benchmark-source:start -->
+| Claim ID | Status | Model | Prompt | N/condition | Workload | Treatment delivery | Prompt path | Scorer path | Control | With mpg | Delta |
+|---|---|---|---|---:|---|---|---|---|---:|---:|---:|
+| v5-fable-5-terse-a | historical-unverified | Claude Fable 5 | terse, two sentences | 3 | Variant A FastAPI web application | complete SKILL.md body copied into a Rules file | bench/prompts/v5-a-terse.txt | bench/score_v5.py | 87.0% | 94.9% | 7.9pp |
+| v5-opus-4-6-normal-a | historical-unverified | Claude Opus 4.6 | normal, file specifications | 10 | Variant A FastAPI web application | complete SKILL.md body copied into a Rules file | bench/prompts/v5-a-normal.txt | bench/score_v5.py | 90.0% | 95.0% | 5.0pp |
+| v5-opus-4-6-terse-a | historical-unverified | Claude Opus 4.6 | terse, two sentences | 3 | Variant A FastAPI web application | complete SKILL.md body copied into a Rules file | bench/prompts/v5-a-terse.txt | bench/score_v5.py | 86.0% | 94.6% | 8.6pp |
+| v5-opus-4-8-normal-a | historical-unverified | Claude Opus 4.8 | normal, file specifications | 3 | Variant A FastAPI web application | complete SKILL.md body copied into a Rules file | bench/prompts/v5-a-normal.txt | bench/score_v5.py | 93.3% | 100.0% | 6.7pp |
+| v5-opus-4-8-terse-a | historical-unverified | Claude Opus 4.8 | terse, two sentences | 3 | Variant A FastAPI web application | complete SKILL.md body copied into a Rules file | bench/prompts/v5-a-terse.txt | bench/score_v5.py | 78.9% | 98.3% | 19.4pp |
+<!-- mpg-benchmark-source:end -->
 
-mpg guidance has the biggest impact when prompts are vague. Opus 4.8 writes modern Python with detailed instructions, but falls back to outdated patterns with minimal prompts. mpg substantially reduces that gap.
+Scores are "strict modern rate": among the Python patterns the model used, what percentage followed the modern idiom? (Formula: `MODERN / (MODERN + OUTDATED)`, excluding items where neither pattern appeared.)
 
-## What this means
+The generated source table above is the only retained numeric summary for the
+`v5-opus-4-8-terse-a` and `v5-opus-4-8-normal-a` manifest rows. Both rows are
+`historical-unverified` because their raw run directories and immutable scorer commit
+were not recorded; they are not eligible for a promoted product claim.
 
-With detailed prompts (file structure, function signatures), Opus 4.8 already writes 93% modern code. Guidance adds only +7pp — the model is already good enough.
+In this historical cell, the treatment/control gap is larger for the terse prompt.
+That directional observation is limited to the named model, workload, metric, and
+full-content Rules treatment; it is not a claim about unspecified agents or projects.
 
-With terse prompts ("build a FastAPI web crawler with SQLAlchemy and httpx"), the model drops to 79% modern. It falls back to `asyncio.gather` instead of `TaskGroup`, skips `TypeIs`, omits `ParamSpec`. mpg guidance pushes it back to 98%.
+## Historical interpretation (not a product claim)
 
-In our experience, real-world prompts tend to be closer to terse than to normal — most developers don't specify function signatures or library patterns. mpg fills the gap between what the model can do (with guidance) and what it does by default (without).
+For the archived detailed-prompt cell, see manifest row `v5-opus-4-8-normal-a` for
+the recorded control/treatment values and traceability status. The cell is small and
+unverified.
+
+For the archived terse-prompt cell, see manifest row `v5-opus-4-8-terse-a` for the
+recorded control/treatment values and traceability status. The metric excludes
+patterns the model did not emit, so it is not a completeness score.
+
+Do not extrapolate these cells to other models, workloads, prompt styles, or delivery
+methods. Default `mpg setup` end-to-end effectiveness is not yet measured.
 
 ## How the benchmark works
 
@@ -29,6 +56,25 @@ Each run sends a prompt to Claude Code (`claude -p`) twice:
 
 Generated code is parsed by a Python AST scorer that checks 32 pattern items (Variant A: FastAPI + async ecosystem). Each item is classified as MODERN, OUTDATED, VALID_ALT, or NONE.
 
+## Delivery and measurement scope
+
+Content efficacy and shipped delivery effectiveness are different measurements. The
+product exposes five delivery shapes, but the historical V5 cells above measure only
+the first row:
+
+| Delivery shape | What this evidence says | Measurement status |
+|---|---|---|
+| Full-content Rules injection | The complete `SKILL.md` body was copied into a Rules file for treatment runs. | V5 historical directional evidence; raw inputs unverified. |
+| Shipped thin Rules | The packaged Rules file is a smaller delivery artifact than the full skill body. | Not measured for strict-modern-rate uplift. |
+| MCP retrieval | An agent retrieves selected guides through `search_guides`/`retrieve_guides`. | Not measured for strict-modern-rate uplift in V5. |
+| Skill activation | An agent activates the packaged Agent Skill according to its own session behavior. | Not measured for strict-modern-rate uplift in V5. |
+| Hook/check | `mpg setup` registers the PostToolUse hook and `mpg check` scans edited files. | Not measured for strict-modern-rate uplift. |
+
+The V6 harness is designed to exercise real `mpg setup` conditions, catalog reach, and
+hook firing. Those are delivery/reach measurements, not evidence that a hook raises
+the strict-modern-rate score. Default `mpg setup` end-to-end effectiveness remains
+**not yet measured**; no unrun harness is treated as evidence.
+
 ### Prompt designs
 
 **Normal**: specifies 7 files with function-level descriptions. "Write a function `crawl(urls)` that fetches URLs concurrently using httpx. Use structured concurrency for concurrent fetches." No pattern names mentioned.
@@ -37,22 +83,28 @@ Generated code is parsed by a Python AST scorer that checks 32 pattern items (Va
 
 Neither prompt mentions specific pattern names (no "TaskGroup", no "field_validator").
 
-## Per-item analysis (Normal, N=3, Opus 4.8)
+## Per-item analysis (archival qualitative notes)
+
+The item-level notes below are retained as context from the original run, not as
+independent promoted result cells. Numeric outcome counts are intentionally omitted;
+the generated source table and manifest are the only retained numeric evidence.
 
 ### Items where guidance helps
 
 | Item | Pattern | Control | Treatment |
 |------|---------|---------|-----------|
-| TY6 | TypeIs over TypeGuard | 0/3 | 3/3 |
-| PD2 | model_validate/model_dump | 0/3 | 3/3 |
-| TY5 | ParamSpec decorators | 0/3 | 3/3 |
-| AS1 | TaskGroup over gather | 2/3 | 3/3 |
-| FA2 | Annotated Depends | 2/3 | 3/3 |
-| TY3 | Type parameter syntax | 2/3 | 3/3 |
+| TY6 | TypeIs over TypeGuard | rarely present in control notes | present in treatment notes |
+| PD2 | model_validate/model_dump | rarely present in control notes | present in treatment notes |
+| TY5 | ParamSpec decorators | rarely present in control notes | present in treatment notes |
+| AS1 | TaskGroup over gather | mixed control notes | present in treatment notes |
+| FA2 | Annotated Depends | mixed control notes | present in treatment notes |
+| TY3 | Type parameter syntax | mixed control notes | present in treatment notes |
 
 ### Saturated (modern without guidance)
 
-20 of 32 items score MODERN in both conditions. The model already knows these: `list[]` over `typing.List`, `pathlib` over `os.path`, Pydantic V2 config, SQLAlchemy 2.0 `select()`, etc.
+The original notes described a saturated group that was modern in both conditions.
+Examples included `list[]` over `typing.List`, `pathlib` over `os.path`, Pydantic V2
+config, and SQLAlchemy 2.0 `select()`.
 
 ### Stubborn (guidance doesn't help)
 
@@ -61,44 +113,50 @@ Neither prompt mentions specific pattern names (no "TaskGroup", no "field_valida
 | DS1 | Frozen dataclass with slots | Model omits `slots=True` consistently |
 | PD3 | field_serializer | Prompt doesn't elicit serialization code |
 
-## Model comparison (4.6 vs 4.8 vs Fable 5)
+## Archival model comparison (all rows historical-unverified)
 
-| Model | Prompt | Control | Treatment | Delta |
-|-------|--------|---------|-----------|-------|
-| Opus 4.6 | Normal (N=10) | 90.0% | 95.0% | +5.0pp |
-| Opus 4.6 | Terse (N=3) | 86.0% | 94.6% | +8.6pp |
-| Opus 4.8 | Normal (N=3) | 93.3% | 100.0% | +6.7pp |
-| Opus 4.8 | Terse (N=3) | 78.9% | 98.3% | +19.4pp |
-| **Fable 5** | **Terse (N=3)** | **87.0%** | **94.9%*** | **+7.9pp*** |
+The generated source table above is the canonical comparison for the five manifest
+rows: `v5-opus-4-6-normal-a`, `v5-opus-4-6-terse-a`, `v5-opus-4-8-normal-a`,
+`v5-opus-4-8-terse-a`, and `v5-fable-5-terse-a`. Their model, prompt, sample,
+workload, delivery, prompt path, scorer path, and traceability status are all
+recorded there.
 
-\* All treatment OUTDATED hits in the Fable 5 runs were SL3 scorer false positives (legitimate `rstrip("\n")` / `rstrip("/")` char-set strips flagged as outdated). The scorer was fixed in [#129](https://github.com/yottayoshida/modern-python-guidance/issues/129); the raw figures above come from the pre-fix scorer, and the corrected figures (all 3 treatment runs 100%, delta +13.0pp) match what the post-fix scorer reports.
+The Fable 5 row retains the existing scorer caveat: legitimate character-set strips
+were previously flagged by SL3, and the scorer was fixed in [#129](https://github.com/yottayoshida/modern-python-guidance/issues/129).
 
-Opus 4.8 with detailed instructions is better than 4.6 (Control 93.3% vs 90.0%). But with terse instructions, 4.8 is worse (78.9% vs 86.0%). The model improved at following detailed specs but became more reliant on explicit instruction for pattern choices.
+The archived model rows should not be used to rank models or infer behavior outside
+the named workload and delivery shape.
 
-mpg guidance on 4.8 Terse (98%) outperforms both models without guidance.
+The archived Opus 4.8 terse row has the largest recorded delta in the source table;
+its unverified status and narrow workload prevent a product-wide comparison.
 
-### Fable 5 findings (Terse, N=3, 2026-06-10)
+### Fable 5 findings (archival notes, 2026-06-10)
 
-Fable 5 reverses the 4.8 terse regression: its no-guidance baseline (87.0%) beats both Opus 4.8 (78.9%) and Opus 4.6 (86.0%). The headroom for guidance shrinks accordingly, but guidance still closes the gap to 100% (corrected for #129).
+The archived Fable 5 terse row is a separate historical cell. Its raw scorer caveat
+and missing run artifacts mean it cannot establish a general model ranking or a
+promoted effectiveness claim.
 
-Control failures concentrate on a small stubborn set rather than spreading across items:
+The original notes identified a small stubborn set rather than failures spread across
+all items:
 
 | Item | Pattern | Control failures | Treatment |
 |------|---------|------------------|-----------|
-| AS1 | TaskGroup over gather | 3/3 (systematic) | fixed 3/3 |
-| FA2 | Annotated Depends | 2/3 | fixed |
-| DS1 | Frozen dataclass with slots | 1/3 | fixed |
-| FA3 | FastAPI typed state | 1/3 | fixed |
+| AS1 | TaskGroup over gather | systematic control failure | fixed in treatment notes |
+| FA2 | Annotated Depends | repeated control failure | fixed in treatment notes |
+| DS1 | Frozen dataclass with slots | repeated control failure | fixed in treatment notes |
+| FA3 | FastAPI typed state | repeated control failure | fixed in treatment notes |
 
 `asyncio.gather` over `TaskGroup` (AS1) remains the one fully systematic habit, carried over from both Opus generations. On Fable 5 the value of mpg shifts from broad uplift to targeted correction of these few stubborn patterns.
 
-Run variance is low: control scored 88.9% / 88.9% / 83.3%, treatment 95.0% / 95.0% / 94.7% (raw).
+Run variance observations from the original notes are retained only as qualitative
+context; no additional numeric cell is promoted without a manifest row and raw-input
+traceability.
 
 ## Limitations
 
 - **Three models tested**: Opus 4.6, Opus 4.8, and Fable 5 (terse only). Other models/versions may differ; Fable 5 normal-granularity runs not yet done
 - **Single app type**: FastAPI web app only. CLI, data pipeline, library not covered
-- **N=3**: small sample. Directional signal is clear but not statistically rigorous
+- **Small samples**: directional notes are not statistically rigorous
 - **Normal prompt is generous**: specifies file structure and function signatures, more detailed than typical usage
 - **Strict metric excludes NONE**: a high strict score means "among patterns the model used, most are modern" — not "the model used all patterns"
 

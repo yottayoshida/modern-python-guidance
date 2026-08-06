@@ -51,6 +51,9 @@ jobs:
       - name: Run linter
         run: ruff check src/ tests/
 
+      - name: Verify benchmark claim blocks
+        run: python scripts/verify_benchmark_claims.py --check
+
       - name: Run tests
         run: pytest --tb=short -q --cov --cov-report=term-missing
 

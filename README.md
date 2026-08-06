@@ -9,11 +9,15 @@ Stop your AI from writing `typing.List`, `@validator`, and `setup.py`. 41 versio
 
 ## Highlights
 
-- **Measurable impact**: AI writes modern Python 98% of the time with mpg, vs 79% without — even with vague prompts (Opus 4.8, [V5 benchmark details](docs/benchmark-v5.md))
+- **Evidence status**: Historical V5 content-efficacy evidence is documented with its model, prompt, sample, metric, and delivery scope; it is not a product-wide effectiveness claim ([V5 benchmark details](docs/benchmark-v5.md))
 - **41 guides** across stdlib, Pydantic, FastAPI, Django, SQLAlchemy, pytest, and toolchain
 - **Version- and dependency-aware**: filters Python-version-incompatible guidance and qualifies framework/tool guidance from project evidence
 - **4 delivery methods**: MCP server, CLI, Agent Skills, and Rules (auto-injects on `.py` file touch)
 - **Not Ruff**: Ruff auto-fixes syntax (`List` → `list`). mpg guides design decisions that Ruff can't touch — `TaskGroup` over `gather`, Pydantic V2 migration, SQLAlchemy 2.0 style
+
+<!-- mpg-benchmark-claims:start -->
+Benchmark evidence status: historical V5 cells remain documented for audit, but no traceable numeric product claim is currently promoted. Default `mpg setup` end-to-end effectiveness has not yet been measured.
+<!-- mpg-benchmark-claims:end -->
 
 > **Note:** The tool itself requires Python 3.11+ to run. Guides cover patterns from Python 3.9 onward, and `--python-version` filters guides for your target environment.
 

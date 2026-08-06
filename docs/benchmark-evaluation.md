@@ -2,6 +2,13 @@
 
 Issue: #8
 
+> **Evidence scope:** The historical V5 content-efficacy cells and their traceability
+> status are maintained in [`docs/benchmark-v5.md`](benchmark-v5.md) and the canonical
+> [`bench/claims/v5.json`](../bench/claims/v5.json). They do not generalize to every
+> delivery path. Full-content Rules injection, the shipped thin Rules file, MCP
+> retrieval, Skill activation, and hook/check delivery must be evaluated separately;
+> default `mpg setup` end-to-end effectiveness is **not yet measured**.
+
 ## Hypothesis
 
 Embedding BAD/GOOD patterns in SKILL.md (pre-generation injection) reduces outdated Python patterns in AI-generated code, particularly for patterns that Ruff cannot auto-fix.

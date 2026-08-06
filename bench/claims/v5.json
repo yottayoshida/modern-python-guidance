@@ -1,0 +1,106 @@
+{
+  "schema_version": 1,
+  "benchmark": "V5",
+  "claims": [
+    {
+      "id": "v5-fable-5-terse-a",
+      "status": "historical-unverified",
+      "model": "Claude Fable 5",
+      "prompt_style": "terse, two sentences",
+      "sample_size_per_condition": 3,
+      "workload": "Variant A FastAPI web application",
+      "metric": {
+        "name": "strict modern rate",
+        "formula": "MODERN / (MODERN + OUTDATED)",
+        "excludes": ["NONE", "VALID_ALT"]
+      },
+      "treatment_delivery": "complete SKILL.md body copied into a Rules file",
+      "prompt_paths": ["bench/prompts/v5-a-terse.txt"],
+      "raw_inputs": [],
+      "scorer": {"path": "bench/score_v5.py", "version": "unrecorded"},
+      "control_percent": 87.0,
+      "treatment_percent": 94.9,
+      "delta_percentage_points": 7.9
+    },
+    {
+      "id": "v5-opus-4-6-normal-a",
+      "status": "historical-unverified",
+      "model": "Claude Opus 4.6",
+      "prompt_style": "normal, file specifications",
+      "sample_size_per_condition": 10,
+      "workload": "Variant A FastAPI web application",
+      "metric": {
+        "name": "strict modern rate",
+        "formula": "MODERN / (MODERN + OUTDATED)",
+        "excludes": ["NONE", "VALID_ALT"]
+      },
+      "treatment_delivery": "complete SKILL.md body copied into a Rules file",
+      "prompt_paths": ["bench/prompts/v5-a-normal.txt"],
+      "raw_inputs": [],
+      "scorer": {"path": "bench/score_v5.py", "version": "unrecorded"},
+      "control_percent": 90.0,
+      "treatment_percent": 95.0,
+      "delta_percentage_points": 5.0
+    },
+    {
+      "id": "v5-opus-4-6-terse-a",
+      "status": "historical-unverified",
+      "model": "Claude Opus 4.6",
+      "prompt_style": "terse, two sentences",
+      "sample_size_per_condition": 3,
+      "workload": "Variant A FastAPI web application",
+      "metric": {
+        "name": "strict modern rate",
+        "formula": "MODERN / (MODERN + OUTDATED)",
+        "excludes": ["NONE", "VALID_ALT"]
+      },
+      "treatment_delivery": "complete SKILL.md body copied into a Rules file",
+      "prompt_paths": ["bench/prompts/v5-a-terse.txt"],
+      "raw_inputs": [],
+      "scorer": {"path": "bench/score_v5.py", "version": "unrecorded"},
+      "control_percent": 86.0,
+      "treatment_percent": 94.6,
+      "delta_percentage_points": 8.6
+    },
+    {
+      "id": "v5-opus-4-8-normal-a",
+      "status": "historical-unverified",
+      "model": "Claude Opus 4.8",
+      "prompt_style": "normal, file specifications",
+      "sample_size_per_condition": 3,
+      "workload": "Variant A FastAPI web application",
+      "metric": {
+        "name": "strict modern rate",
+        "formula": "MODERN / (MODERN + OUTDATED)",
+        "excludes": ["NONE", "VALID_ALT"]
+      },
+      "treatment_delivery": "complete SKILL.md body copied into a Rules file",
+      "prompt_paths": ["bench/prompts/v5-a-normal.txt"],
+      "raw_inputs": [],
+      "scorer": {"path": "bench/score_v5.py", "version": "unrecorded"},
+      "control_percent": 93.3,
+      "treatment_percent": 100.0,
+      "delta_percentage_points": 6.7
+    },
+    {
+      "id": "v5-opus-4-8-terse-a",
+      "status": "historical-unverified",
+      "model": "Claude Opus 4.8",
+      "prompt_style": "terse, two sentences",
+      "sample_size_per_condition": 3,
+      "workload": "Variant A FastAPI web application",
+      "metric": {
+        "name": "strict modern rate",
+        "formula": "MODERN / (MODERN + OUTDATED)",
+        "excludes": ["NONE", "VALID_ALT"]
+      },
+      "treatment_delivery": "complete SKILL.md body copied into a Rules file",
+      "prompt_paths": ["bench/prompts/v5-a-terse.txt"],
+      "raw_inputs": [],
+      "scorer": {"path": "bench/score_v5.py", "version": "unrecorded"},
+      "control_percent": 78.9,
+      "treatment_percent": 98.3,
+      "delta_percentage_points": 19.4
+    }
+  ]
+}

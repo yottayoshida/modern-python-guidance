@@ -150,6 +150,28 @@ remains applicable and qualified. Coverage describes guide-level detector
 capability; same-line presentation deduplication can still surface one finding
 for multiple overlapping detectors.
 
+## Benchmark claim promotion
+
+Benchmark evidence is a separate contract from detector capability. The canonical
+V5 claim records live in `bench/claims/v5.json` and are validated by
+`scripts/verify_benchmark_claims.py`. Every claim names its model, prompt style,
+sample size, workload, metric denominator, and treatment delivery. Historical cells
+may be retained as `historical-unverified`, but only a `promoted` cell can feed a
+numeric README claim.
+
+Promotion requires repository-tracked raw inputs with SHA-256 hashes and an immutable
+`git:<40-hex-commit>` scorer version that contains the scorer path. Absolute paths,
+path traversal, untracked artifacts, hash mismatches, and mutable scorer references
+are rejected. The verifier never invokes a benchmark runner or network client. Its
+`--write` mode renders the exact README claim block and V5 source-table block;
+`--check` is read-only and fails on drift.
+
+V5 measures only full-content Rules injection. Shipped thin Rules, MCP retrieval,
+Skill activation, and hook/check delivery are distinct product paths; their strict
+modern-rate uplift is not inferred from V5. Default `mpg setup` end-to-end
+effectiveness is explicitly **not yet measured**. The V6 harness can measure catalog
+reach and hook firing, but an unrun harness is not evidence of pattern-adoption uplift.
+
 ## Search algorithm
 
 ### Primary search (weighted keyword)
