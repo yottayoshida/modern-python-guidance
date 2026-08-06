@@ -56,9 +56,45 @@ class TestSearch:
         r = run_cli("search", "pydantic validator", "--format", "json")
         assert r.returncode == 0
         data = json.loads(r.stdout)
-        assert set(data[0].keys()) == extract_design_md_keys("search")
+        assert extract_design_md_keys("search") <= set(data[0].keys())
         assert isinstance(data[0]["tags"], list)
         assert "→" in data[0]["snippet"]
+
+    def test_search_hides_proven_incompatible_dependencies_by_default(self, tmp_path):
+        (tmp_path / "pyproject.toml").write_text(
+            '[project]\nname = "fixture"\nversion = "0"\ndependencies = ["pydantic==1.10.15"]\n'
+        )
+        r = run_cli(
+            "search",
+            "pydantic",
+            "--project-dir",
+            str(tmp_path),
+            "--limit",
+            "50",
+            "--format",
+            "json",
+        )
+        assert r.returncode == 0
+        assert "pydantic-v2-config" not in {item["id"] for item in json.loads(r.stdout)}
+
+    def test_search_include_incompatible_reports_dependency_status(self, tmp_path):
+        (tmp_path / "pyproject.toml").write_text(
+            '[project]\nname = "fixture"\nversion = "0"\ndependencies = ["pydantic==1.10.15"]\n'
+        )
+        r = run_cli(
+            "search",
+            "pydantic",
+            "--project-dir",
+            str(tmp_path),
+            "--include-incompatible",
+            "--limit",
+            "50",
+            "--format",
+            "json",
+        )
+        assert r.returncode == 0
+        result = next(item for item in json.loads(r.stdout) if item["id"] == "pydantic-v2-config")
+        assert result["dependency_compatibility"]["status"] == "incompatible"
 
 
 class TestRetrieve:
@@ -127,7 +163,7 @@ class TestList:
         r = run_cli("list", "--format", "json")
         assert r.returncode == 0
         data = json.loads(r.stdout)
-        assert set(data[0].keys()) == extract_design_md_keys("list")
+        assert extract_design_md_keys("list") <= set(data[0].keys())
 
     def test_list_category_filter(self):
         r = run_cli("list", "--category", "typing", "--format", "json")
@@ -155,6 +191,13 @@ class TestList:
         r = run_cli("list", "--format", "human")
         assert r.returncode == 0
         assert "[typing]" in r.stdout
+
+    def test_list_dependency_override_filters_and_json_is_additive(self):
+        r = run_cli("list", "--dependency-version", "package:pydantic=1.10.15", "--format", "json")
+        assert r.returncode == 0
+        data = json.loads(r.stdout)
+        assert "pydantic-v2-config" not in {item["id"] for item in data}
+        assert "dependency_compatibility" in data[0]
 
 
 class TestDetectVersion:
@@ -237,6 +280,31 @@ class TestCheck:
     def test_check_file_not_found(self, tmp_path):
         r = run_cli("check", str(tmp_path / "nonexistent.py"), "--format", "json")
         assert r.returncode == 2
+
+    def test_check_project_v1_suppresses_pydantic_v2_and_unknown_is_annotated(self, tmp_path):
+        p = tmp_path / "sample.py"
+        p.write_text(
+            "from pydantic import BaseModel, validator\n\n"
+            "@validator('field')\n"
+            "def validate(value):\n"
+            "    return value\n"
+        )
+        (tmp_path / "pyproject.toml").write_text(
+            '[project]\nname = "fixture"\nversion = "0"\ndependencies = ["pydantic==1.10.15"]\n'
+        )
+        v1 = run_cli("check", str(p), "--project-dir", str(tmp_path), "--format", "json")
+        assert v1.returncode == 0
+        assert "pydantic-v2-validators" not in v1.stdout
+
+        (tmp_path / "pyproject.toml").write_text('[project]\nname = "fixture"\nversion = "0"\n')
+        unknown = run_cli("check", str(p), "--project-dir", str(tmp_path), "--format", "json")
+        assert unknown.returncode == 1
+        match = next(
+            item
+            for item in json.loads(unknown.stdout)["matches"]
+            if item["guide_id"] == "pydantic-v2-validators"
+        )
+        assert match["dependency_compatibility"]["status"] == "unknown"
 
     def test_check_python_version_filter(self, tmp_path):
         p = tmp_path / "sample.py"
@@ -322,6 +390,24 @@ class TestHook:
         context = json.loads(r.stdout)["hookSpecificOutput"]["additionalContext"]
         assert sys.executable in context
         assert "retrieve_guides" in context
+
+    def test_hook_suppresses_proven_incompatible_and_qualifies_unknown(self, tmp_path):
+        p = tmp_path / "bad.py"
+        p.write_text("@validator('field')\ndef validate(value):\n    return value\n")
+        (tmp_path / "pyproject.toml").write_text(
+            '[project]\nname = "fixture"\nversion = "0"\ndependencies = ["pydantic==1.10.15"]\n'
+        )
+        stdin = json.dumps({"tool_input": {"file_path": str(p)}})
+        incompatible = self._run_hook(stdin)
+        assert incompatible.returncode == 0
+        assert incompatible.stdout == ""
+
+        (tmp_path / "pyproject.toml").write_text('[project]\nname = "fixture"\nversion = "0"\n')
+        unknown = self._run_hook(stdin)
+        assert unknown.returncode == 0
+        context = json.loads(unknown.stdout)["hookSpecificOutput"]["additionalContext"]
+        assert "dependency compatibility unknown; verify before applying" in context
+        assert "apply the modern form" not in context
 
     def test_hook_non_py(self, tmp_path):
         p = tmp_path / "file.js"

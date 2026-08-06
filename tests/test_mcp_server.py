@@ -142,7 +142,7 @@ class TestSearchGuides:
             },
         )
         data = json.loads(responses[1]["result"]["content"][0]["text"])
-        assert set(data[0].keys()) == extract_design_md_keys("search")
+        assert extract_design_md_keys("search") <= set(data[0].keys())
         assert isinstance(data[0]["tags"], list)
         assert isinstance(data[0]["python"], str)
         assert isinstance(data[0]["frequency"], str)
@@ -343,7 +343,7 @@ class TestListGuides:
             },
         )
         data = json.loads(responses[1]["result"]["content"][0]["text"])
-        assert set(data[0].keys()) == extract_design_md_keys("list")
+        assert extract_design_md_keys("list") <= set(data[0].keys())
 
     def test_list_with_category_filter(self):
         responses = _run_mcp(
