@@ -48,7 +48,7 @@ fastapi = "^0.100"
     (tmp_path / "poetry.lock").write_text(
         """[[package]]
 name = "fastapi"
-version = "0.112.0"
+version = "0.100.6"
 """
     )
 

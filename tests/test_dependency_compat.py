@@ -201,6 +201,27 @@ def test_override_precedes_conflicting_lock_evidence() -> None:
     assert result.status == "confirmed"
 
 
+def test_lock_version_conflicting_with_active_declared_range_is_unknown() -> None:
+    result = assess_dependencies(
+        package_requirements=("pydantic>=2",),
+        tool_requirements=(),
+        context=_context(
+            DependencyFact(
+                kind="package",
+                name="pydantic",
+                version=None,
+                specifier="<2",
+                source="project.dependencies",
+            ),
+            DependencyFact(
+                kind="package", name="pydantic", version="2.7.4", specifier=None, source="uv.lock"
+            ),
+        ),
+    )
+
+    assert result.status == "unknown"
+
+
 def test_tool_requirements_use_the_same_tri_state_logic() -> None:
     confirmed = assess_dependencies(
         package_requirements=(),

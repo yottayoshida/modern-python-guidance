@@ -120,6 +120,17 @@ def _assess_requirement(
             selected,
             f"Conflicting {priority} evidence for {kind} {requirement.name}",
         )
+    if priority == "lock":
+        declaration_status = _check_lock_declarations(facts)
+        if declaration_status != "consistent":
+            return (
+                "unknown",
+                selected,
+                (
+                    "Lock evidence conflicts with or cannot validate active declaration "
+                    f"for {requirement.name}"
+                ),
+            )
 
     fact = selected[0]
     if fact.version is not None:
@@ -173,6 +184,34 @@ def _assess_requirement(
         selected,
         f"Declared range {fact.specifier} overlaps or cannot prove {requirement.specifier}",
     )
+
+
+def _check_lock_declarations(
+    facts: tuple[DependencyFact, ...],
+) -> Literal["consistent", "conflicting", "unsupported"]:
+    declarations = tuple(fact for fact in facts if _source_priority(fact.source) == 2)
+    if not declarations:
+        return "consistent"
+    if _conflicts(declarations):
+        return "conflicting"
+    lock_versions = tuple(
+        fact.version for fact in facts if _source_priority(fact.source) == 3 and fact.version
+    )
+    if len(set(lock_versions)) != 1:
+        return "conflicting"
+    for declaration in declarations:
+        if not declaration.specifier:
+            continue
+        try:
+            if _to_interval(declaration.specifier) is None:
+                return "unsupported"
+            version = Version(lock_versions[0])
+            compatible = version in SpecifierSet(declaration.specifier)
+        except (InvalidVersion, InvalidSpecifier, StopIteration):
+            return "unsupported"
+        if not compatible:
+            return "conflicting"
+    return "consistent"
 
 
 def _select_evidence(facts: tuple[DependencyFact, ...]) -> tuple[tuple[DependencyFact, ...], str]:
