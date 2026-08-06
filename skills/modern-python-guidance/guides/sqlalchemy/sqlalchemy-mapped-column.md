@@ -13,6 +13,8 @@ aliases:
   - declarative-base
 python: ">=3.9"
 frequency: high
+applies-to-packages:
+  - sqlalchemy>=2
 detect-patterns:
   - "from sqlalchemy import .*\bColumn\b"
   - "declarative_base\("

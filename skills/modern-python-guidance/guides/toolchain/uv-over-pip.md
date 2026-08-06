@@ -16,6 +16,8 @@ aliases:
   - venv
 python: ">=3.8"
 frequency: high
+applies-to-tools:
+  - uv
 detect-patterns:
 ---
 

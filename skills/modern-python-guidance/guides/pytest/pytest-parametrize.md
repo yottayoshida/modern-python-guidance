@@ -12,6 +12,8 @@ aliases:
   - test-loop
 python: ">=3.9"
 frequency: high
+applies-to-packages:
+  - pytest>=2
 detect-patterns:
 ---
 

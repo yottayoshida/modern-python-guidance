@@ -13,6 +13,8 @@ aliases:
   - legacy-query
 python: ">=3.9"
 frequency: high
+applies-to-packages:
+  - sqlalchemy>=1.4
 detect-patterns:
   - "\.query\([A-Z]"
 ---

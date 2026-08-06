@@ -13,6 +13,8 @@ aliases:
   - model_validator
 python: ">=3.9"
 frequency: high
+applies-to-packages:
+  - pydantic>=2
 detect-patterns:
   - "@validator\("
   - "@root_validator"

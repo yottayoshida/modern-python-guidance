@@ -113,6 +113,12 @@ pep: 585
 |-------|------|-------------|
 | `aliases` | list | Alternate names (old API names, etc.) |
 | `pep` | int or list | Related PEP numbers |
+| `applies-to-packages` | list | Applicable third-party package requirements, e.g. `"fastapi>=0.95"` |
+| `applies-to-tools` | list | Applicable development-tool requirements, e.g. `"ruff"` |
+
+The applicability fields are optional and default to empty lists. Each entry uses
+`packaging.requirements.Requirement` syntax; direct URLs, extras, and environment
+markers are rejected so the metadata remains deterministic and machine-readable.
 
 ### Body sections
 

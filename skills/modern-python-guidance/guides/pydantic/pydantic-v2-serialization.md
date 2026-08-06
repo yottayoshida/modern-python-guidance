@@ -13,6 +13,8 @@ aliases:
   - json_encoders
 python: ">=3.9"
 frequency: medium
+applies-to-packages:
+  - pydantic>=2
 detect-patterns:
   - "json_encoders"
 ---

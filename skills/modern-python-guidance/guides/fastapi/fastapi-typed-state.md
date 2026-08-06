@@ -13,6 +13,9 @@ aliases:
   - typed state
 python: ">=3.9"
 frequency: medium
+applies-to-packages:
+  - fastapi>=0.94
+  - starlette>=0.26
 detect-patterns:
 ---
 
