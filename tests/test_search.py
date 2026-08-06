@@ -4,9 +4,10 @@ from pathlib import Path
 
 import pytest
 
+from modern_python_guidance.dependency_compat import DependencyContext, DependencyFact
 from modern_python_guidance.frontmatter import GuideMeta
 from modern_python_guidance.guide_index import Guide, GuideIndex, _extract_snippet, build_index
-from modern_python_guidance.search import WEIGHT_BODY, search
+from modern_python_guidance.search import WEIGHT_BODY, SearchResult, search
 
 GUIDES_DIR = Path(__file__).parent.parent / "skills" / "modern-python-guidance" / "guides"
 
@@ -51,6 +52,112 @@ class TestVersionFilter:
         results = search(index, "asyncio taskgroup", python_version="3.11")
         ids = [r.guide_id for r in results]
         assert "taskgroup-over-gather" in ids
+
+
+def _context(*facts: DependencyFact) -> DependencyContext:
+    by_name: dict[tuple[str, str], tuple[DependencyFact, ...]] = {}
+    for fact in facts:
+        by_name[(fact.kind, fact.name)] = (fact,)
+    return DependencyContext(by_name)
+
+
+class TestDependencyApplicability:
+    def test_no_dependency_context_is_dependency_neutral(self, index):
+        result = next(
+            result
+            for result in search(index, "pydantic", limit=50)
+            if result.guide_id == "pydantic-v2-config"
+        )
+
+        assert result.dependency_assessment.status == "confirmed"
+
+    def test_search_result_old_positional_shape_uses_default_assessment(self):
+        meta = GuideMeta(
+            id="legacy",
+            title="Legacy",
+            category="test",
+            layer=1,
+            tags=["legacy"],
+            python=">=3.9",
+            frequency="low",
+        )
+
+        result = SearchResult("legacy", 1.0, meta, 1, False, "snippet")
+
+        assert result.dependency_assessment.status == "confirmed"
+
+    def test_incompatible_guides_are_hidden_unless_requested(self, index):
+        context = _context(DependencyFact("package", "pydantic", "1.10.15", None, "uv.lock"))
+
+        visible = search(index, "pydantic", dependency_context=context, limit=50)
+        included = search(
+            index,
+            "pydantic",
+            dependency_context=context,
+            include_incompatible=True,
+            limit=50,
+        )
+
+        assert "pydantic-v2-config" not in {result.guide_id for result in visible}
+        config_result = next(
+            result for result in included if result.guide_id == "pydantic-v2-config"
+        )
+        assert config_result.dependency_assessment.status == "incompatible"
+
+    def test_unknown_dependency_evidence_remains_visible(self, index):
+        results = search(index, "pydantic", dependency_context=DependencyContext({}), limit=50)
+
+        config_result = next(
+            result for result in results if result.guide_id == "pydantic-v2-config"
+        )
+        assert config_result.dependency_assessment.status == "unknown"
+
+    def test_multiple_requirements_use_and_semantics(self):
+        meta = GuideMeta(
+            id="two-dependencies",
+            title="Two Dependencies",
+            category="test",
+            layer=2,
+            tags=["joint"],
+            python=">=3.9",
+            frequency="high",
+            applies_to_packages=["pydantic>=2", "fastapi>=0.95"],
+        )
+        index = GuideIndex(
+            guides={
+                meta.id: Guide(
+                    meta=meta,
+                    body="",
+                    source_path="synthetic.md",
+                    body_tokens=frozenset(),
+                )
+            }
+        )
+        only_pydantic = _context(DependencyFact("package", "pydantic", "2.7", None, "uv.lock"))
+        both = _context(
+            DependencyFact("package", "pydantic", "2.7", None, "uv.lock"),
+            DependencyFact("package", "fastapi", "0.110", None, "uv.lock"),
+        )
+
+        only_pydantic_result = search(index, "joint", dependency_context=only_pydantic)[0]
+        both_result = search(index, "joint", dependency_context=both)[0]
+        assert only_pydantic_result.dependency_assessment.status == "unknown"
+        assert both_result.dependency_assessment.status == "confirmed"
+
+    def test_fuzzy_fallback_applies_incompatibility_filter(self, index):
+        context = _context(DependencyFact("package", "pydantic", "1.10.15", None, "uv.lock"))
+
+        hidden = search(index, "pydntic", dependency_context=context, limit=50)
+        included = search(
+            index,
+            "pydntic",
+            dependency_context=context,
+            include_incompatible=True,
+            limit=50,
+        )
+
+        assert "pydantic-v2-config" not in {result.guide_id for result in hidden}
+        assert "pydantic-v2-config" in {result.guide_id for result in included}
 
 
 class TestFuzzyFallback:

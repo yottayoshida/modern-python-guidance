@@ -8,6 +8,11 @@ from typing import Any
 
 from modern_python_guidance import __version__
 from modern_python_guidance.compat import token_estimate, version_compatible
+from modern_python_guidance.dependency_compat import (
+    DependencyAssessment,
+    DependencyContext,
+    assess_dependencies,
+)
 from modern_python_guidance.guide_index import Guide, GuideIndex
 
 MAX_ID_LEN = 200
@@ -28,6 +33,7 @@ def retrieve(
     guide_ids: list[str],
     *,
     python_version: str | None = None,
+    dependency_context: DependencyContext | None = None,
 ) -> list[dict[str, Any]]:
     results: list[dict[str, Any]] = []
 
@@ -35,7 +41,13 @@ def retrieve(
         guide = index.get(guide_id)
         if guide is None:
             continue
-        results.append(_render(guide, python_version=python_version))
+        results.append(
+            _render(
+                guide,
+                python_version=python_version,
+                dependency_context=dependency_context,
+            )
+        )
 
     return results
 
@@ -45,15 +57,27 @@ def retrieve_json(
     guide_ids: list[str],
     *,
     python_version: str | None = None,
+    dependency_context: DependencyContext | None = None,
 ) -> str:
-    results = retrieve(index, guide_ids, python_version=python_version)
+    results = retrieve(
+        index,
+        guide_ids,
+        python_version=python_version,
+        dependency_context=dependency_context,
+    )
     return json.dumps(results, indent=2, ensure_ascii=False)
 
 
-def _render(guide: Guide, *, python_version: str | None = None) -> dict[str, Any]:
+def _render(
+    guide: Guide,
+    *,
+    python_version: str | None = None,
+    dependency_context: DependencyContext | None = None,
+) -> dict[str, Any]:
     ver_match = True
     if python_version:
         ver_match = version_compatible(guide.meta.python, python_version)
+    assessment = _assess_guide(guide, dependency_context)
 
     return {
         "id": guide.meta.id,
@@ -66,4 +90,35 @@ def _render(guide: Guide, *, python_version: str | None = None) -> dict[str, Any
         "content": guide.body,
         "token_estimate": token_estimate(guide.body),
         "source": f"modern-python-guidance v{__version__}",
+        "dependency_requirements": {
+            "packages": list(guide.meta.applies_to_packages),
+            "tools": list(guide.meta.applies_to_tools),
+        },
+        "dependency_compatibility": {
+            "status": assessment.status,
+            "evidence": [
+                {
+                    "kind": fact.kind,
+                    "name": fact.name,
+                    "version": fact.version,
+                    "specifier": fact.specifier,
+                    "source": fact.source,
+                }
+                for fact in assessment.evidence
+            ],
+            "reasons": list(assessment.reasons),
+        },
     }
+
+
+def _assess_guide(
+    guide: Guide, dependency_context: DependencyContext | None
+) -> DependencyAssessment:
+    requirements = tuple(guide.meta.applies_to_packages) + tuple(guide.meta.applies_to_tools)
+    if dependency_context is None:
+        return DependencyAssessment("confirmed", requirements, (), ())
+    return assess_dependencies(
+        package_requirements=guide.meta.applies_to_packages,
+        tool_requirements=guide.meta.applies_to_tools,
+        context=dependency_context,
+    )

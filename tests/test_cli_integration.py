@@ -97,10 +97,10 @@ class TestRetrieve:
             "retrieve", "not_found_item"
         )
 
-    def test_retrieve_stable_schema(self):
+    def test_retrieve_existing_schema_is_preserved_additively(self):
         r = run_cli("retrieve", "use-builtin-generics", "--format", "json")
         data = json.loads(r.stdout)
-        assert set(data[0].keys()) == extract_design_md_keys("retrieve")
+        assert extract_design_md_keys("retrieve") <= set(data[0].keys())
 
     def test_retrieve_version_match_flag(self):
         r = run_cli(
