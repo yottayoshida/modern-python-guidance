@@ -1323,6 +1323,7 @@ class TestCliIntegration:
         assert "--mcp-only" in r.stdout
         assert "--skills-only" in r.stdout
         assert "--scope" in r.stdout
+        assert "Target project for local MCP and project artifacts" in r.stdout
         assert "--dry-run" in r.stdout
         assert "--no-hook" in r.stdout
         assert "--with-hook" in r.stdout

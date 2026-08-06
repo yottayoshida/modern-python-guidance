@@ -80,7 +80,7 @@ mpg setup --skills-only
 | `--mcp-only` | MCP registration only |
 | `--skills-only` | Project-local artifacts only (Skills + Rules) |
 | `--scope {user,local}` | MCP scope (default: user) |
-| `--project-dir PATH` | Target project for Skills/Rules symlinks |
+| `--project-dir PATH` | Target project for local MCP and project artifacts |
 | `--dry-run` | Show what would be done |
 | `--no-hook` | Don't register the PostToolUse hook (removes it if already present) |
 | `--with-hook` | Register the hook even if this project already has mpg artifacts |
@@ -99,10 +99,12 @@ mpg uninstall --dry-run  # preview what would be removed
 |------|---------|
 | `--mcp-only` | MCP deregistration only |
 | `--skills-only` | Project-local artifacts only (Skills + Rules) |
-| `--project-dir PATH` | Target project for Skills/Rules symlinks |
+| `--project-dir PATH` | Target project for local MCP and project artifacts |
 | `--dry-run` | Show what would be done |
 
 `mpg uninstall` clears the MCP registration from every scope `setup` can write to (user and local), removes only the symlinks mpg created (never their targets or other files), removes mpg's PostToolUse hook entry from `.claude/settings.local.json` (leaving any other tools' hooks untouched), and is idempotent — running it on an already-clean state is a harmless no-op.
+
+When `--scope local` is used, `--project-dir` is also the cwd for every MCP add, replacement, health-check, and removal operation. A missing target is created before local setup; uninstall fails closed for a missing explicit target instead of touching the caller's local registration. User-scope MCP operations remain global and do not use this path.
 
 </details>
 
