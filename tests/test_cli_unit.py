@@ -83,11 +83,16 @@ class TestCmdSearch:
         data = json.loads(capsys.readouterr().out)
         assert isinstance(data, list)
         assert len(data) >= 1
+        assert data[0]["target_python"] == {
+            "version": "3.11",
+            "source": "project.requires-python",
+        }
 
     def test_human_output(self, capsys):
         main(argv=["search", "typing", "--format", "human"])
         out = capsys.readouterr().out
         assert "use-builtin-generics" in out
+        assert "Target Python: 3.11 (source: project.requires-python)" in out
 
     def test_no_match_exits_1(self, capsys):
         with pytest.raises(SystemExit, match="1"):
@@ -152,6 +157,10 @@ class TestCmdRetrieve:
         data = json.loads(capsys.readouterr().out)
         assert isinstance(data, list)
         assert data[0]["id"] == "use-builtin-generics"
+        assert data[0]["target_python"] == {
+            "version": "3.11",
+            "source": "project.requires-python",
+        }
 
     def test_human_output(self, capsys):
         main(argv=["retrieve", "use-builtin-generics", "--format", "human"])
@@ -238,6 +247,10 @@ class TestCmdList:
         data = json.loads(capsys.readouterr().out)
         assert isinstance(data, list)
         assert len(data) >= 10
+        assert data[0]["target_python"] == {
+            "version": "3.11",
+            "source": "project.requires-python",
+        }
 
     def test_human_output(self, capsys):
         main(argv=["list", "--format", "human"])
@@ -273,6 +286,14 @@ class TestCmdDetectVersion:
         out = capsys.readouterr().out.strip()
         assert out  # should return some version string
 
+    def test_json_output_reports_source(self, tmp_path, capsys):
+        (tmp_path / ".python-version").write_text("3.12\n")
+        main(argv=["detect-version", "--project-dir", str(tmp_path), "--format", "json"])
+        assert json.loads(capsys.readouterr().out) == {
+            "python_version": "3.12",
+            "source": ".python-version",
+        }
+
 
 class TestCmdCheck:
     def test_json_output(self, tmp_path, capsys):
@@ -282,6 +303,10 @@ class TestCmdCheck:
             main(argv=["check", str(p), "--format", "json"])
         data = json.loads(capsys.readouterr().out)
         assert data["summary"]["total_matches"] >= 1
+        assert data["target_python"] == {
+            "version": "3.11",
+            "source": "project.requires-python",
+        }
 
     def test_human_output(self, tmp_path, capsys):
         p = tmp_path / "bad.py"
@@ -419,7 +444,7 @@ class TestCmdHookVersionDetection:
             self._run_hook(monkeypatch, p)
         context = json.loads(capsys.readouterr().out)["hookSpecificOutput"]["additionalContext"]
         assert "union-syntax" in context
-        assert "[target: py3.10]" in context
+        assert "[target: py3.10; source: project.requires-python]" in context
 
     def test_no_config_defaults_to_311(self, tmp_path, capsys, monkeypatch):
         """Spec (plan #117): no usable config anywhere -> filter on DEFAULT_VERSION 3.11."""
@@ -428,7 +453,7 @@ class TestCmdHookVersionDetection:
         with pytest.raises(SystemExit, match="0"):
             self._run_hook(monkeypatch, p)
         context = json.loads(capsys.readouterr().out)["hookSpecificOutput"]["additionalContext"]
-        assert "[target: py3.11]" in context
+        assert "[target: py3.11; source: default]" in context
 
     def test_malformed_pyproject_clean_file_silent(self, tmp_path, capsys, monkeypatch):
         (tmp_path / "pyproject.toml").write_text("this is [not valid toml")
@@ -480,10 +505,11 @@ class TestCmdHookVersionDetection:
     def test_python_version_file_detected(self, tmp_path, capsys, monkeypatch):
         (tmp_path / ".python-version").write_text("3.9\n")
         p = tmp_path / "bad.py"
-        p.write_text(self.UNION_BAD)
+        p.write_text("from typing import List\n")
         with pytest.raises(SystemExit, match="0"):
             self._run_hook(monkeypatch, p)
-        assert capsys.readouterr().err == ""
+        context = json.loads(capsys.readouterr().out)["hookSpecificOutput"]["additionalContext"]
+        assert "[target: py3.9; source: .python-version]" in context
 
     def test_relative_file_path_resolved(self, tmp_path, capsys, monkeypatch):
         (tmp_path / "pyproject.toml").write_text(
@@ -511,7 +537,7 @@ class TestCmdHookVersionDetection:
         with pytest.raises(SystemExit, match="0"):
             self._run_hook(monkeypatch, p)
         context = json.loads(capsys.readouterr().out)["hookSpecificOutput"]["additionalContext"]
-        assert "[target: py3.10]" in context
+        assert "[target: py3.10; source: project.requires-python]" in context
 
     def test_malformed_child_falls_back_to_parent_config(self, tmp_path, capsys, monkeypatch):
         """Positive observation: the parent's 3.8 suppresses union-syntax, proving
@@ -561,7 +587,7 @@ class TestCmdHookVersionDetection:
         with pytest.raises(SystemExit, match="0"):
             self._run_hook(monkeypatch, p)
         context = json.loads(capsys.readouterr().out)["hookSpecificOutput"]["additionalContext"]
-        assert "[target: py3.11]" in context
+        assert "[target: py3.11; source: default]" in context
 
     def test_git_boundary_blocks_parent_config(self, tmp_path, capsys, monkeypatch):
         """#132: .git boundary prevents the hook from leaking to parent config."""
@@ -574,7 +600,7 @@ class TestCmdHookVersionDetection:
         with pytest.raises(SystemExit, match="0"):
             self._run_hook(monkeypatch, p)
         context = json.loads(capsys.readouterr().out)["hookSpecificOutput"]["additionalContext"]
-        assert "[target: py3.11]" in context
+        assert "[target: py3.11; source: default]" in context
 
     def test_logger_level_restored_after_hook(self, tmp_path, monkeypatch):
         """The hook-wide logger silencing is restored even across sys.exit."""

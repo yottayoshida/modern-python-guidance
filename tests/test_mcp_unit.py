@@ -181,6 +181,35 @@ class TestToolFunctions:
         data = json.loads(r["content"][0]["text"])
         assert isinstance(data, list)
         assert len(data) >= 1
+        assert data[0]["target_python"] == {
+            "version": "3.11",
+            "source": "project.requires-python",
+        }
+
+    def test_search_auto_detects_relative_project_dir(self, tmp_path, monkeypatch):
+        project = tmp_path / "project"
+        project.mkdir()
+        (project / "pyproject.toml").write_text(
+            '[project]\nname = "fixture"\nversion = "0"\nrequires-python = ">=3.9"\n'
+        )
+        monkeypatch.chdir(tmp_path)
+        result = mcp._tool_search({"query": "asyncio taskgroup", "project_dir": "project"})
+        data = json.loads(result["content"][0]["text"])
+        assert data
+        assert all(
+            item["target_python"] == {"version": "3.9", "source": "project.requires-python"}
+            for item in data
+        )
+
+    def test_retrieve_explicit_version_overrides_project(self, tmp_path, monkeypatch):
+        (tmp_path / ".python-version").write_text("3.9\n")
+        monkeypatch.chdir(tmp_path)
+        result = mcp._tool_retrieve(
+            {"guide_ids": ["taskgroup-over-gather"], "python_version": "3.12"}
+        )
+        data = json.loads(result["content"][0]["text"])
+        assert data[0]["version_match"] is True
+        assert data[0]["target_python"] == {"version": "3.12", "source": "explicit"}
 
     def test_search_with_filters(self):
         r = mcp._tool_search(
@@ -281,6 +310,10 @@ class TestToolFunctions:
         data = json.loads(r["content"][0]["text"])
         assert isinstance(data, list)
         assert len(data) >= 10
+        assert data[0]["target_python"] == {
+            "version": "3.11",
+            "source": "project.requires-python",
+        }
 
     def test_list_category_filter(self):
         r = mcp._tool_list({"category": "stdlib"})
@@ -304,7 +337,16 @@ class TestToolFunctions:
         (tmp_path / "pyproject.toml").write_text('[project]\nrequires-python = ">=3.12"\n')
         r = mcp._tool_detect_version({"project_dir": None})
         data = json.loads(r["content"][0]["text"])
-        assert "python_version" in data
+        assert data == {"python_version": "3.12", "source": "project.requires-python"}
+
+    def test_detect_version_reports_python_version_file_source(self, tmp_path, monkeypatch):
+        monkeypatch.chdir(tmp_path)
+        (tmp_path / ".python-version").write_text("3.12\n")
+        r = mcp._tool_detect_version({})
+        assert json.loads(r["content"][0]["text"]) == {
+            "python_version": "3.12",
+            "source": ".python-version",
+        }
 
     def test_detect_version_confined(self, tmp_path, monkeypatch):
         monkeypatch.chdir(tmp_path)

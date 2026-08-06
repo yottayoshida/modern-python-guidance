@@ -3,19 +3,26 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
+from pathlib import Path
 
 from conftest import extract_design_md_keys
 
 from modern_python_guidance import __version__
 
 BIN = [sys.executable, "-m", "modern_python_guidance"]
+REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
-def run_cli(*args: str) -> subprocess.CompletedProcess[str]:
+def run_cli(*args: str, cwd: Path | None = None) -> subprocess.CompletedProcess[str]:
+    env = os.environ.copy()
+    env["PYTHONPATH"] = str(REPO_ROOT / "src") + os.pathsep + env.get("PYTHONPATH", "")
     return subprocess.run(
         [*BIN, *args],
+        cwd=cwd,
+        env=env,
         capture_output=True,
         text=True,
         timeout=10,
@@ -30,6 +37,18 @@ class TestSearch:
         assert isinstance(data, list)
         assert len(data) >= 1
         assert data[0]["id"] == "use-builtin-generics"
+        assert data[0]["target_python"] == {
+            "version": "3.11",
+            "source": "project.requires-python",
+        }
+
+    def test_search_auto_detects_pep621_and_filters(self, tmp_path: Path):
+        (tmp_path / "pyproject.toml").write_text(
+            '[project]\nname = "fixture"\nversion = "0"\nrequires-python = ">=3.9"\n'
+        )
+        r = run_cli("search", "asyncio taskgroup", "--format", "json", cwd=tmp_path)
+        assert r.returncode == 0
+        assert "taskgroup-over-gather" not in {item["id"] for item in json.loads(r.stdout)}
 
     def test_search_human_format(self):
         r = run_cli("search", "typing", "--format", "human")
@@ -108,6 +127,36 @@ class TestRetrieve:
         assert "## BAD" in guide["content"]
         assert "## GOOD" in guide["content"]
         assert guide["source"].startswith("modern-python-guidance v")
+        assert guide["target_python"] == {
+            "version": "3.11",
+            "source": "project.requires-python",
+        }
+
+    def test_retrieve_auto_detects_python_version_file(self, tmp_path: Path):
+        (tmp_path / ".python-version").write_text("3.9\n")
+        r = run_cli(
+            "retrieve", "taskgroup-over-gather", "--format", "json", cwd=tmp_path
+        )
+        assert r.returncode == 0
+        guide = json.loads(r.stdout)[0]
+        assert guide["version_match"] is False
+        assert guide["target_python"] == {"version": "3.9", "source": ".python-version"}
+
+    def test_retrieve_explicit_version_overrides_project(self, tmp_path: Path):
+        (tmp_path / ".python-version").write_text("3.9\n")
+        r = run_cli(
+            "retrieve",
+            "taskgroup-over-gather",
+            "--python-version",
+            "3.12",
+            "--format",
+            "json",
+            cwd=tmp_path,
+        )
+        assert r.returncode == 0
+        guide = json.loads(r.stdout)[0]
+        assert guide["version_match"] is True
+        assert guide["target_python"] == {"version": "3.12", "source": "explicit"}
 
     def test_retrieve_multiple(self):
         r = run_cli("retrieve", "use-builtin-generics,fastapi-lifespan", "--format", "json")
@@ -158,6 +207,23 @@ class TestList:
         data = json.loads(r.stdout)
         assert isinstance(data, list)
         assert len(data) >= 5
+        assert data[0]["target_python"] == {
+            "version": "3.11",
+            "source": "project.requires-python",
+        }
+
+    def test_list_auto_detects_poetry(self, tmp_path: Path):
+        (tmp_path / "pyproject.toml").write_text(
+            '[tool.poetry.dependencies]\npython = "^3.10"\n'
+        )
+        r = run_cli("list", "--format", "json", cwd=tmp_path)
+        assert r.returncode == 0
+        data = json.loads(r.stdout)
+        assert data
+        assert data[0]["target_python"] == {
+            "version": "3.10",
+            "source": "poetry.dependencies.python",
+        }
 
     def test_list_stable_schema(self):
         r = run_cli("list", "--format", "json")
@@ -206,6 +272,15 @@ class TestDetectVersion:
         assert r.returncode == 0
         assert r.stdout.strip() == "3.11"
 
+    def test_detect_json_reports_source(self, tmp_path):
+        (tmp_path / ".python-version").write_text("3.12\n")
+        r = run_cli("detect-version", "--project-dir", str(tmp_path), "--format", "json")
+        assert r.returncode == 0
+        assert json.loads(r.stdout) == {
+            "python_version": "3.12",
+            "source": ".python-version",
+        }
+
 
 class TestPipeOutput:
     def test_no_ansi_in_json_output(self):
@@ -228,6 +303,10 @@ class TestCheck:
         assert data["summary"]["total_matches"] >= 2
         ids = data["summary"]["guide_ids"]
         assert "no-pickle" in ids
+        assert data["target_python"] == {
+            "version": "3.11",
+            "source": "project.requires-python",
+        }
 
     def test_check_clean_file(self, tmp_path):
         p = tmp_path / "clean.py"

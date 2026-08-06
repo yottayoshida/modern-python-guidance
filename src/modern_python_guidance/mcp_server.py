@@ -5,23 +5,31 @@ from __future__ import annotations
 import json
 import logging
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 
 from packaging.utils import canonicalize_name
 from packaging.version import InvalidVersion, Version
 
 from modern_python_guidance import __version__
-from modern_python_guidance.compat import VERSION_RE
+from modern_python_guidance.compat import VERSION_RE, version_compatible
 from modern_python_guidance.dependency_compat import DependencyContext, assess_dependencies
 from modern_python_guidance.guide_index import GuideIndex, build_index
 from modern_python_guidance.project_dependencies import find_dependency_context
 from modern_python_guidance.retrieve import retrieve, suggest_ids
 from modern_python_guidance.search import search
-from modern_python_guidance.version_detect import detect_version
+from modern_python_guidance.version_detect import PythonVersionResolution, resolve_python_version
 
 log = logging.getLogger(__name__)
 
 _index: GuideIndex | None = None
+
+
+@dataclass(frozen=True)
+class _ToolContext:
+    project_dir: Path
+    python: PythonVersionResolution
+    dependencies: DependencyContext
 
 
 def _get_index() -> GuideIndex:
@@ -125,7 +133,9 @@ TOOLS = [
             "Call this when writing or reviewing Python outside the ~5 high-frequency "
             "patterns already embedded in your project rules (FastAPI, Django, "
             "httpx, pytest, etc.); the full catalog has 41 guides. Unknown dependency "
-            "compatibility is not confirmation; do not apply incompatible guidance."
+            "compatibility is not confirmation; do not apply incompatible guidance. The "
+            "target Python is resolved automatically from project_dir and disclosed in "
+            "each result; python_version overrides automatic resolution."
         ),
         "inputSchema": {
             "type": "object",
@@ -181,7 +191,9 @@ TOOLS = [
             "Retrieve full content of one or more guides by ID. Returns the complete "
             "BAD/GOOD pattern with explanation, version compatibility, and token estimate. "
             "Call search_guides first to find guide IDs. Unknown dependency compatibility is "
-            "not confirmation; do not apply incompatible guidance."
+            "not confirmation; do not apply incompatible guidance. The target Python is "
+            "resolved automatically from project_dir and disclosed in each result; "
+            "python_version overrides automatic resolution."
         ),
         "inputSchema": {
             "type": "object",
@@ -217,7 +229,9 @@ TOOLS = [
             "List all available guides with metadata. Returns IDs, titles, categories, "
             "layers, and Python version requirements. Use to browse the full catalog "
             "or filter by category/version. Unknown dependency compatibility is not confirmation; "
-            "do not apply incompatible guidance."
+            "do not apply incompatible guidance. The target Python is resolved automatically "
+            "from project_dir and disclosed in each result; python_version overrides automatic "
+            "resolution."
         ),
         "inputSchema": {
             "type": "object",
@@ -256,8 +270,8 @@ TOOLS = [
         "name": "detect_python_version",
         "description": (
             "Detect the target Python version for a project by reading pyproject.toml "
-            "and .python-version. Returns a version string like '3.12'. Use this to "
-            "determine which version to pass to search_guides and retrieve_guides."
+            "and .python-version. Returns the resolved version and its stable source label. "
+            "Guidance tools resolve this automatically; use this tool to audit the decision."
         ),
         "inputSchema": {
             "type": "object",
@@ -355,7 +369,15 @@ def _validate_bool(value: object, name: str, *, optional: bool = False) -> str |
     return None
 
 
-def _dependency_context(arguments: dict) -> tuple[DependencyContext | None, str | None]:
+def _resolve_tool_context(arguments: dict) -> tuple[_ToolContext | None, str | None]:
+    pv = arguments.get("python_version")
+    error = _validate_type(pv, "python_version", str, optional=True)
+    if error:
+        return None, error
+    error = _validate_python_version(pv)
+    if error:
+        return None, error
+
     project_dir_str = arguments.get("project_dir")
     error = _validate_type(project_dir_str, "project_dir", str, optional=True)
     if error:
@@ -386,7 +408,9 @@ def _dependency_context(arguments: dict) -> tuple[DependencyContext | None, str 
         if key in overrides:
             return None, f"duplicate dependency override for {key}"
         overrides[key] = version
-    return find_dependency_context(project_dir, overrides), None
+    dependencies = find_dependency_context(project_dir, overrides)
+    python = resolve_python_version(explicit_version=pv, project_dir=project_dir)
+    return _ToolContext(project_dir, python, dependencies), None
 
 
 def _dependency_fields(packages: list[str], tools: list[str], assessment: object) -> dict:
@@ -417,14 +441,6 @@ def _tool_search(arguments: dict) -> dict:
     if not query:
         return _tool_result("query is required", is_error=True)
 
-    pv = arguments.get("python_version")
-    err = _validate_type(pv, "python_version", str, optional=True)
-    if err:
-        return _tool_result(err, is_error=True)
-    err = _validate_python_version(pv)
-    if err:
-        return _tool_result(err, is_error=True)
-
     raw_limit = arguments.get("limit")
     if raw_limit is None:
         raw_limit = 10
@@ -442,7 +458,7 @@ def _tool_search(arguments: dict) -> dict:
     err = _validate_bool(include_incompatible, "include_incompatible")
     if err:
         return _tool_result(err, is_error=True)
-    dependency_context, err = _dependency_context(arguments)
+    context, err = _resolve_tool_context(arguments)
     if err:
         return _tool_result(err, is_error=True)
 
@@ -450,10 +466,10 @@ def _tool_search(arguments: dict) -> dict:
     results = search(
         index,
         query,
-        python_version=pv,
+        python_version=context.python.version,
         category=category,
         limit=limit,
-        dependency_context=dependency_context,
+        dependency_context=context.dependencies,
         include_incompatible=include_incompatible,
     )
 
@@ -470,6 +486,7 @@ def _tool_search(arguments: dict) -> dict:
             "token_estimate": r.token_estimate,
             "fuzzy": r.fuzzy,
             "snippet": r.snippet,
+            "target_python": context.python.as_dict(),
             **_dependency_fields(
                 r.meta.applies_to_packages, r.meta.applies_to_tools, r.dependency_assessment
             ),
@@ -492,20 +509,19 @@ def _tool_retrieve(arguments: dict) -> dict:
     if len(guide_ids) > limit:
         return _tool_result(f"guide_ids exceeds maximum of {limit}", is_error=True)
 
-    pv = arguments.get("python_version")
-    err = _validate_type(pv, "python_version", str, optional=True)
-    if err:
-        return _tool_result(err, is_error=True)
-    err = _validate_python_version(pv)
-    if err:
-        return _tool_result(err, is_error=True)
-
-    dependency_context, err = _dependency_context(arguments)
+    context, err = _resolve_tool_context(arguments)
     if err:
         return _tool_result(err, is_error=True)
 
     index = _get_index()
-    results = retrieve(index, guide_ids, python_version=pv, dependency_context=dependency_context)
+    results = retrieve(
+        index,
+        guide_ids,
+        python_version=context.python.version,
+        dependency_context=context.dependencies,
+    )
+    for result in results:
+        result["target_python"] = context.python.as_dict()
 
     found_ids = {r["id"] for r in results}
     missing = [gid for gid in guide_ids if gid not in found_ids]
@@ -518,14 +534,6 @@ def _tool_retrieve(arguments: dict) -> dict:
 
 
 def _tool_list(arguments: dict) -> dict:
-    pv = arguments.get("python_version")
-    err = _validate_type(pv, "python_version", str, optional=True)
-    if err:
-        return _tool_result(err, is_error=True)
-    err = _validate_python_version(pv)
-    if err:
-        return _tool_result(err, is_error=True)
-
     category = arguments.get("category")
     err = _validate_type(category, "category", str, optional=True)
     if err:
@@ -534,7 +542,7 @@ def _tool_list(arguments: dict) -> dict:
     err = _validate_bool(include_incompatible, "include_incompatible")
     if err:
         return _tool_result(err, is_error=True)
-    dependency_context, err = _dependency_context(arguments)
+    context, err = _resolve_tool_context(arguments)
     if err:
         return _tool_result(err, is_error=True)
     index = _get_index()
@@ -542,10 +550,7 @@ def _tool_list(arguments: dict) -> dict:
 
     if category:
         metas = [m for m in metas if m.category == category]
-    if pv:
-        from modern_python_guidance.compat import version_compatible
-
-        metas = [m for m in metas if version_compatible(m.python, pv)]
+    metas = [m for m in metas if version_compatible(m.python, context.python.version)]
 
     assessed = [
         (
@@ -553,7 +558,7 @@ def _tool_list(arguments: dict) -> dict:
             assess_dependencies(
                 package_requirements=meta.applies_to_packages,
                 tool_requirements=meta.applies_to_tools,
-                context=dependency_context,
+                context=context.dependencies,
             ),
         )
         for meta in metas
@@ -574,6 +579,7 @@ def _tool_list(arguments: dict) -> dict:
             "layer": m.layer,
             "python": m.python,
             "frequency": m.frequency,
+            "target_python": context.python.as_dict(),
             **_dependency_fields(m.applies_to_packages, m.applies_to_tools, assessment),
         }
         for m, assessment in assessed
@@ -582,16 +588,17 @@ def _tool_list(arguments: dict) -> dict:
 
 
 def _tool_detect_version(arguments: dict) -> dict:
-    project_dir_str = arguments.get("project_dir")
-    err = _validate_type(project_dir_str, "project_dir", str, optional=True)
+    context, err = _resolve_tool_context(arguments)
     if err:
         return _tool_result(err, is_error=True)
-    result = _confine_path(project_dir_str)
-    if isinstance(result, str):
-        return _tool_result(result, is_error=True)
-
-    version = detect_version(project_dir=result)
-    return _tool_result(json.dumps({"python_version": version}))
+    return _tool_result(
+        json.dumps(
+            {
+                "python_version": context.python.version,
+                "source": context.python.source,
+            }
+        )
+    )
 
 
 # --- Server main loop ---
