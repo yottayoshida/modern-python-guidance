@@ -34,11 +34,13 @@ def detect_dependency_context(
         warnings.append(f"Project directory is not readable: {project_dir}")
         return _context(facts, warnings)
 
-    pyproject = _read_toml(root / "pyproject.toml", warnings)
+    pyproject_path = _safe_evidence_file(root, "pyproject.toml", warnings)
+    pyproject = _read_toml(pyproject_path, warnings) if pyproject_path is not None else None
     if pyproject is not None:
         _append_pyproject_facts(pyproject, facts, warnings)
     for filename in ("uv.lock", "poetry.lock"):
-        lock = _read_toml(root / filename, warnings)
+        lock_path = _safe_evidence_file(root, filename, warnings)
+        lock = _read_toml(lock_path, warnings) if lock_path is not None else None
         if lock is not None:
             _append_lock_facts(lock, filename, facts, warnings)
     _warn_ambiguous_locks(facts, warnings)
@@ -56,7 +58,9 @@ def find_dependency_context(
     for depth, directory in enumerate((current, *current.parents)):
         if depth > _MAX_WALK_DEPTH:
             break
-        if any((directory / filename).is_file() for filename in _EVIDENCE_FILES):
+        if any(
+            _safe_evidence_file(directory, filename) is not None for filename in _EVIDENCE_FILES
+        ):
             context = detect_dependency_context(directory, overrides)
             return context
         if (directory / ".git").exists():
@@ -72,6 +76,24 @@ def _as_directory(path: Path) -> Path | None:
     if resolved.is_file():
         return resolved.parent
     return resolved if resolved.is_dir() else None
+
+
+def _safe_evidence_file(
+    root: Path, filename: str, warnings: list[str] | None = None
+) -> Path | None:
+    """Return an evidence file only when its resolved target stays inside *root*."""
+    candidate = root / filename
+    try:
+        resolved = candidate.resolve()
+        resolved.relative_to(root)
+    except (OSError, RuntimeError, ValueError):
+        if warnings is not None and candidate.exists():
+            warnings.append(f"Skipped evidence file outside project root: {filename}")
+        return None
+    try:
+        return resolved if resolved.is_file() else None
+    except OSError:
+        return None
 
 
 def _read_toml(path: Path, warnings: list[str]) -> dict[object, object] | None:

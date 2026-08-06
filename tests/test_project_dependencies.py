@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from modern_python_guidance.dependency_compat import assess_dependencies
 from modern_python_guidance.project_dependencies import (
     _MAX_FILE_SIZE,
@@ -281,3 +283,31 @@ def test_starting_at_a_file_uses_its_parent_and_does_not_leave_boundary(tmp_path
     module.write_text("")
 
     assert _status(find_dependency_context(module), "httpx>=0.23") == "confirmed"
+
+
+@pytest.mark.parametrize(
+    ("filename", "content"),
+    [
+        ("pyproject.toml", '[project]\ndependencies = ["pydantic>=2"]\n'),
+        ("uv.lock", '[[package]]\nname = "pydantic"\nversion = "2.10.0"\n'),
+        ("poetry.lock", '[[package]]\nname = "pydantic"\nversion = "2.10.0"\n'),
+    ],
+)
+def test_external_evidence_symlink_is_not_read_or_selected(
+    tmp_path: Path, filename: str, content: str
+) -> None:
+    project = tmp_path / "project"
+    project.mkdir()
+    (project / ".git").mkdir()
+    external = tmp_path / f"external-{filename}"
+    external.write_text(content)
+    (project / filename).symlink_to(external)
+
+    detected = detect_dependency_context(project)
+    assert detected.facts == {}
+    assert any("outside project root" in warning for warning in detected.warnings)
+
+    nested = project / "src"
+    nested.mkdir()
+    found = find_dependency_context(nested)
+    assert found.facts == {}

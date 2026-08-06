@@ -62,6 +62,19 @@ class _Skip(Exception):
     """Raised to skip a malformed message without terminating the server."""
 
 
+class _DuplicateJsonKey(ValueError):
+    """Raised by the JSON decoder before duplicate object keys are collapsed."""
+
+
+def _reject_duplicate_keys(pairs: list[tuple[str, object]]) -> dict[str, object]:
+    result: dict[str, object] = {}
+    for key, value in pairs:
+        if key in result:
+            raise _DuplicateJsonKey(key)
+        result[key] = value
+    return result
+
+
 def _read_message(stream: object = None) -> dict | None:
     buf = stream or sys.stdin
     while True:
@@ -72,7 +85,9 @@ def _read_message(stream: object = None) -> dict | None:
         if line:
             break
     try:
-        return json.loads(line)
+        return json.loads(line, object_pairs_hook=_reject_duplicate_keys)
+    except _DuplicateJsonKey as exc:
+        raise _Skip(f"duplicate JSON object key: {exc}") from exc
     except json.JSONDecodeError as exc:
         raise _Skip(f"invalid JSON: {exc}") from exc
 

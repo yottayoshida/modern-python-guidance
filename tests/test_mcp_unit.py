@@ -52,6 +52,11 @@ class TestFraming:
         with pytest.raises(mcp._Skip, match="invalid JSON"):
             mcp._read_message(stream)
 
+    def test_read_message_rejects_duplicate_json_object_keys(self):
+        stream = io.StringIO('{"key": 1, "key": 2}\n')
+        with pytest.raises(mcp._Skip, match="duplicate JSON object key"):
+            mcp._read_message(stream)
+
     def test_write_message(self):
         out = io.StringIO()
         mcp._write_message({"result": 42}, out)

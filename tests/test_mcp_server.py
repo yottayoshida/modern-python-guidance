@@ -65,6 +65,17 @@ class TestInitialize:
         assert "tools" in result["capabilities"]
         assert result["serverInfo"]["name"] == "modern-python-guidance"
 
+    def test_duplicate_dependency_version_key_is_rejected_without_last_value_wins(self):
+        raw_request = (
+            b'{"jsonrpc":"2.0","id":1,"method":"tools/call","params":'
+            b'{"name":"search_guides","arguments":{"query":"pydantic",'
+            b'"dependency_versions":{"package:pydantic":"1.10.15",'
+            b'"package:pydantic":"2.10.0"}}}}\n'
+        )
+        proc = subprocess.run(BIN, input=raw_request, capture_output=True, timeout=10)
+        assert proc.returncode == 0
+        assert proc.stdout == b""
+
 
 class TestToolsList:
     def test_lists_four_tools(self):
