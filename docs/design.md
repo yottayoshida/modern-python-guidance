@@ -65,6 +65,7 @@ LLMs frequently generate outdated Python patterns: `typing.List` instead of `lis
 | `dependency_compat.py` | Conservative `confirmed` / `incompatible` / `unknown` assessment of guide package and tool requirements |
 | `project_dependencies.py` | Bounded, read-only project evidence collection from `pyproject.toml`, `uv.lock`, and `poetry.lock` |
 | `guide_index.py` | Discovers guide files via `rglob("*.md")`, parses each with `frontmatter.py`, builds an in-memory `GuideIndex`. Finds guides via `importlib.resources` (installed) or source tree fallback (development) |
+| `detection_coverage.py` | Derives effective regex/AST detection capability and target-specific detectable/advisory-only coverage used by the scanner, CLI, MCP, and documentation contracts |
 | `search.py` | Weighted keyword search (tag=10, alias=8, title=5, category=3) with frequency boost. Falls back to fuzzy matching via `difflib.SequenceMatcher.ratio()` when no exact matches are found |
 | `retrieve.py` | Renders guide content as JSON with version-match flag and token estimate |
 | `version_detect.py` | Detects target Python version from `--python-version` flag, `pyproject.toml` (`requires-python`), `.python-version` file, or default (3.11) |
@@ -134,6 +135,20 @@ Each guide body contains:
 - `## Why` — Explanation of why the modern pattern is better
 - `## Version Notes` — Python version requirements and migration path
 - `## References` — Links to PEPs, documentation, etc.
+
+### Detection capability
+
+Detection status is derived from the effective detector inputs, not stored as a
+second frontmatter flag. A guide is `detectable` when the scanner has at least
+one valid regex pattern (including the BAD-block fallback for legacy metadata)
+or one `detect-names` AST target. Otherwise it is `advisory-only`. CLI/MCP
+search, retrieve, and list metadata expose the additive shape
+`detection: {status, methods}`. `mpg check` derives a target-specific coverage
+summary using the same Python-version and dependency filters as the scanner;
+proven-incompatible guides are excluded, while unknown dependency evidence
+remains applicable and qualified. Coverage describes guide-level detector
+capability; same-line presentation deduplication can still surface one finding
+for multiple overlapping detectors.
 
 ## Search algorithm
 
@@ -214,6 +229,12 @@ search/list. This is additive: search/list/retrieve remain arrays and older JSON
 and retrieval content are unchanged. Each non-empty result item now includes
 `target_python`; check JSON includes it once at the top level.
 
+`mpg check --format json` adds `summary.coverage` with the catalog total,
+target-applicable total, detectable/advisory-only counts, and sorted
+`advisory_only_ids`. Human check output and finding-bearing PostToolUse context
+show the same compact scope line. Clean `--quiet` and clean hook invocations
+remain byte-silent; silence is not a certificate for advisory-only guidance.
+
 ## Output format
 
 The CLI defaults to JSON when piped and human-readable when attached to a TTY. The `--format` flag overrides this.
@@ -241,6 +262,7 @@ First result of `mpg search "builtin generics" --format json` (the full output i
     "fuzzy": false,
     "snippet": "from typing import Generic, TypeVar → class Stack[T]:",
     "target_python": {"version": "3.11", "source": "default"},
+    "detection": {"status": "detectable", "methods": ["regex", "ast-name"]},
     "dependency_requirements": {"packages": [], "tools": []},
     "dependency_compatibility": {"status": "confirmed", "evidence": [], "reasons": []}
   }
@@ -269,6 +291,7 @@ When all requested IDs are found, the output is a bare array (captured from `mpg
     "token_estimate": 261,
     "source": "modern-python-guidance v<version>",
     "target_python": {"version": "3.11", "source": "default"},
+    "detection": {"status": "detectable", "methods": ["regex", "ast-name"]},
     "dependency_requirements": {"packages": [], "tools": []},
     "dependency_compatibility": {"status": "confirmed", "evidence": [], "reasons": []}
   }
@@ -300,6 +323,7 @@ When one or more requested IDs are not found, the shape changes to an envelope (
     "python": ">=3.9",
     "frequency": "high",
     "target_python": {"version": "3.11", "source": "default"},
+    "detection": {"status": "detectable", "methods": ["regex", "ast-name"]},
     "dependency_requirements": {"packages": [], "tools": []},
     "dependency_compatibility": {"status": "confirmed", "evidence": [], "reasons": []}
   }
@@ -332,7 +356,18 @@ is retained and must be verified before applying the guide.
       }
     }
   ],
-  "summary": {"total_matches": 1, "unique_guides": 1, "guide_ids": ["pydantic-v2-validators"]}
+  "summary": {
+    "total_matches": 1,
+    "unique_guides": 1,
+    "guide_ids": ["pydantic-v2-validators"],
+    "coverage": {
+      "catalog_guides": 41,
+      "applicable_guides": 41,
+      "detectable_guides": 26,
+      "advisory_only_guides": 15,
+      "advisory_only_ids": ["dataclass-modern", "..."]
+    }
+  }
 }
 ```
 

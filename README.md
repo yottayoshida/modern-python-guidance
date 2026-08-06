@@ -26,7 +26,7 @@ pip install modern-python-guidance
 mpg setup
 ```
 
-This registers the MCP server, links Agent Skills, creates a Rules file (`.claude/rules/modern-python.md`), and registers a PostToolUse hook in one command. The Rules file auto-injects modern Python guidance whenever you touch Python-related files, and the hook actively checks every edited `.py` file against the full 41-guide catalog (see [PostToolUse hook](#posttooluse-hook) below). Start a new Claude Code session afterwards — newly registered MCP servers, skills, rules, and hooks take effect on the next launch.
+This registers the MCP server, links Agent Skills, creates a Rules file (`.claude/rules/modern-python.md`), and registers a PostToolUse hook in one command. The Rules file auto-injects modern Python guidance whenever you touch Python-related files, and the hook checks each edited `.py` file against the guides with a detector applicable to the target project (see [PostToolUse hook](#posttooluse-hook) below). Advisory-only gaps are disclosed through CLI/MCP metadata. Start a new Claude Code session afterwards — newly registered MCP servers, skills, rules, and hooks take effect on the next launch.
 
 ### CLI
 
@@ -145,7 +145,7 @@ mpg search "pydantic validator" --dependency-version package:pydantic=2.7.4
 | **2 — frameworks** | pydantic, fastapi, httpx, django, sqlalchemy, pytest | 18 | Pydantic V2 migration, SQLAlchemy 2.0 style, `Annotated[Depends]` |
 | **3 — toolchain** | toolchain | 5 | `uv` over `pip`, `ruff` over flake8, `pickle` avoidance |
 
-Run `mpg list` to see all 41 guides, or [browse them on GitHub](skills/modern-python-guidance/guides/).
+Run `mpg list` to see the 41-guide catalog, or [browse it on GitHub](skills/modern-python-guidance/guides/).
 
 ## Version-aware filtering
 
@@ -199,7 +199,15 @@ same rule and annotates remaining unknown findings in JSON/human output.
 
 ## PostToolUse hook
 
-`mpg setup` registers a [PostToolUse hook](https://docs.anthropic.com/en/docs/claude-code/hooks) by default (see [Quick start](#quick-start) above) — no manual `.claude/settings.local.json` editing needed. It checks every `.py` file Claude edits or writes against the full 41-guide catalog and surfaces findings via `hookSpecificOutput.additionalContext`, so Claude receives them as part of its own context rather than as a raw stderr error.
+`mpg setup` registers a [PostToolUse hook](https://docs.anthropic.com/en/docs/claude-code/hooks) by default (see [Quick start](#quick-start) above) — no manual `.claude/settings.local.json` editing needed. It checks every `.py` file Claude edits or writes against the detector-capable guides applicable to the target project and surfaces findings via `hookSpecificOutput.additionalContext`, so Claude receives them as part of its own context rather than as a raw stderr error.
+
+<!-- mpg-check-coverage:start -->
+`mpg check` and the PostToolUse hook automatically check only guides with a detector for the target Python/dependency context. The current catalog has 26 detectable guides out of 41; 15 are advisory-only and are not claimed as actively checked.
+Advisory-only guides: `dataclass-modern`, `dict-merge-operator`, `django-check-constraints`, `exception-groups`, `fastapi-typed-state`, `httpx-streaming`, `match-case-patterns`, `override-decorator`, `pytest-parametrize`, `pytest-raises-match`, `removeprefix-removesuffix`, `ruff-over-flake8`, `sqlalchemy-async-session`, `template-strings`, `uv-over-pip`.
+A clean automatic check does not certify advisory-only guidance. Use `mpg list --format json` or MCP metadata to inspect each guide's detection status.
+<!-- mpg-check-coverage:end -->
+
+This capability contract is distinct from [#152](https://github.com/yottayoshida/modern-python-guidance/issues/152): #181 describes which guides can produce automatic findings after activation, while #152 measures whether an organic development session reaches the catalog at all.
 
 A few things worth knowing about how it behaves:
 

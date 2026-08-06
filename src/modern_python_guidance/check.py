@@ -23,6 +23,8 @@ from modern_python_guidance.dependency_compat import (
 )
 from modern_python_guidance.detection_coverage import (
     _auto_extract_patterns as _effective_auto_extract_patterns,
+)
+from modern_python_guidance.detection_coverage import (
     effective_regex_patterns,
 )
 from modern_python_guidance.guide_index import Guide, GuideIndex

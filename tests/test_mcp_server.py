@@ -390,8 +390,7 @@ class TestListGuides:
             },
         )
         data = {
-            item["id"]: item
-            for item in json.loads(responses[1]["result"]["content"][0]["text"])
+            item["id"]: item for item in json.loads(responses[1]["result"]["content"][0]["text"])
         }
 
         assert data["use-builtin-generics"]["detection"] == {

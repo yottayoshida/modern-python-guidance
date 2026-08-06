@@ -342,9 +342,10 @@ class TestCheck:
         assert data["summary"]["total_matches"] == 0
         coverage = data["summary"]["coverage"]
         assert coverage["catalog_guides"] == 41
-        assert coverage["detectable_guides"] + coverage["advisory_only_guides"] == coverage[
-            "applicable_guides"
-        ]
+        assert (
+            coverage["detectable_guides"] + coverage["advisory_only_guides"]
+            == coverage["applicable_guides"]
+        )
         assert len(coverage["advisory_only_ids"]) == coverage["advisory_only_guides"]
 
     def test_check_human_reports_scope(self, tmp_path):

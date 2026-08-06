@@ -164,9 +164,7 @@ def test_real_catalog_has_expected_detection_buckets() -> None:
 
 
 def test_detection_metadata_is_json_ready_and_stable() -> None:
-    guide = _guide(
-        _meta("both", detect_patterns=[r"legacy"], detect_names=["pkg.legacy"])
-    )
+    guide = _guide(_meta("both", detect_patterns=[r"legacy"], detect_names=["pkg.legacy"]))
 
     assert detection_metadata(guide) == {
         "detection": {"status": "detectable", "methods": ["regex", "ast-name"]}
