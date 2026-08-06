@@ -11,7 +11,7 @@ Stop your AI from writing `typing.List`, `@validator`, and `setup.py`. 41 versio
 
 - **Measurable impact**: AI writes modern Python 98% of the time with mpg, vs 79% without — even with vague prompts (Opus 4.8, [V5 benchmark details](docs/benchmark-v5.md))
 - **41 guides** across stdlib, Pydantic, FastAPI, Django, SQLAlchemy, pytest, and toolchain
-- **Version-aware**: auto-detects your project's Python version and filters guides accordingly
+- **Version- and dependency-aware**: filters Python-version-incompatible guidance and qualifies framework/tool guidance from project evidence
 - **4 delivery methods**: MCP server, CLI, Agent Skills, and Rules (auto-injects on `.py` file touch)
 - **Not Ruff**: Ruff auto-fixes syntax (`List` → `list`). mpg guides design decisions that Ruff can't touch — `TaskGroup` over `gather`, Pydantic V2 migration, SQLAlchemy 2.0 style
 
@@ -127,6 +127,12 @@ mpg check app.py --exit-zero  # always exit 0
 
 # JSON output (default when piped, explicit with --format)
 mpg search "typing" --format json | jq '.[0].id'
+
+# Read dependency evidence from another project; hide proven-incompatible guides by default
+mpg search "pydantic validator" --project-dir ../my-app
+
+# Supply an exact target-environment override when files cannot prove it
+mpg search "pydantic validator" --dependency-version package:pydantic=2.7.4
 ```
 
 ## Guide coverage
@@ -156,6 +162,33 @@ Guides specify their minimum Python version. The CLI auto-detects your project's
 mpg list --python-version 3.9
 # Excludes: TaskGroup (3.11+), match/case (3.10+), etc.
 ```
+
+## Dependency-aware applicability
+
+Framework and toolchain guides declare machine-readable `applies-to-packages` and/or
+`applies-to-tools` metadata. Every declared requirement must be proven (**AND**
+semantics). `mpg search` and `mpg list` hide guidance that is proven
+**incompatible** by default; use `--include-incompatible` to inspect it. `retrieve`
+always returns an explicitly requested guide so migration work can be reviewed.
+
+Use `--project-dir PATH` to read the nearest project evidence, and repeat
+`--dependency-version KIND:NAME=VERSION` for an exact target-environment override.
+The MCP `search_guides`, `retrieve_guides`, and `list_guides` tools expose the same
+`project_dir` (relative to the MCP server), `dependency_versions` object, and
+`include_incompatible` option where filtering applies.
+
+Results contain additive `dependency_requirements` and `dependency_compatibility`
+objects. Status is deliberately conservative:
+
+- **confirmed**: all requirements are proven compatible;
+- **incompatible**: at least one requirement is proven incompatible;
+- **unknown**: evidence is absent, ambiguous, conditional, or cannot safely prove a range.
+
+Unknown is not confirmation. Do not infer the target environment from the interpreter
+running mpg, a `[tool.uv]`/`[tool.ruff]` table, optional or dependency-group entries,
+or an unrooted/ambiguous lockfile. The PostToolUse hook suppresses known-incompatible
+findings and asks for verification when status is unknown; `mpg check` follows the
+same rule and annotates remaining unknown findings in JSON/human output.
 
 ## PostToolUse hook
 

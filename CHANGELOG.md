@@ -6,6 +6,7 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- Dependency-aware applicability for framework and toolchain guides: package/tool requirements are machine-readable metadata with AND semantics, assessed as `confirmed`, `incompatible`, or `unknown` from bounded project evidence. `search`/`list` hide only known-incompatible guidance by default; CLI/MCP overrides and additive JSON evidence/status fields make the decision inspectable. `check` and the PostToolUse hook suppress known-incompatible findings and qualify unknown ones. (closes #179)
 - `mpg setup` now registers a PostToolUse hook by default, closing the gap where MCP guides were never consulted during real Python development (0 calls across 894 `.py` edits). An existing project (Skills/Rules already present) gets an announcement instead of a silent behavior change unless `--with-hook` is passed; `--no-hook` actively removes an existing registration. (#152)
 - Hook output switches from exit 2/stderr to exit 0 + `hookSpecificOutput.additionalContext`, carrying more compliance weight with Claude; raw source lines are no longer echoed (only `guide_id` + line number), narrowing the indirect-prompt-injection surface a full source excerpt would open.
 - Rules file, SKILL.md, and the `search_guides` MCP tool description now include a proactive nudge to consult the full 41-guide catalog when writing Python outside the 5 embedded high-frequency patterns. (#152)
@@ -19,6 +20,7 @@ All notable changes to this project will be documented in this file.
 
 ### Docs
 
+- README and design documentation now cover dependency metadata, evidence precedence and lock-root limits, conservative status semantics, CLI/MCP controls, hook behavior, and additive output contracts. (closes #179)
 - README documents the PostToolUse hook's actual shipped behavior (`additionalContext` contract, 5-match cap, `--no-hook`/`--with-hook` semantics, guide_id-only redaction rationale) and the `mpg setup` flags table.
 
 ## [0.5.10] — 2026-06-27

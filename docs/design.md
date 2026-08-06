@@ -2,11 +2,11 @@
 
 ## Problem
 
-LLMs frequently generate outdated Python patterns: `typing.List` instead of `list`, `@validator` instead of `@field_validator`, `setup.py` instead of `pyproject.toml`. These patterns compile and run, so conventional linters don't flag them. Developers (and AI coding agents) need a reference that shows the modern replacement, filtered by the project's target Python version.
+LLMs frequently generate outdated Python patterns: `typing.List` instead of `list`, `@validator` instead of `@field_validator`, `setup.py` instead of `pyproject.toml`. These patterns compile and run, so conventional linters don't flag them. Developers (and AI coding agents) need a reference that shows the modern replacement, filtered by the project's target Python version and conservatively qualified against framework/tool dependencies.
 
 ## Goals
 
-1. Provide version-aware BAD/GOOD pattern guides as a CLI tool and Agent Skills plugin
+1. Provide version- and dependency-aware BAD/GOOD pattern guides as a CLI tool and Agent Skills plugin
 2. Zero PyYAML dependency — parse guide frontmatter with a strict YAML subset
 3. Single runtime dependency (`packaging`) for version specifier parsing
 4. Deterministic, reproducible search results
@@ -62,6 +62,8 @@ LLMs frequently generate outdated Python patterns: `typing.List` instead of `lis
 |--------|---------------|
 | `cli.py` | Argument parsing, output formatting (JSON/human), TTY detection, SIGPIPE handling |
 | `frontmatter.py` | Strict YAML-subset parser. Only `key: value` and `  - item` constructs. Rejects everything else with line-numbered errors |
+| `dependency_compat.py` | Conservative `confirmed` / `incompatible` / `unknown` assessment of guide package and tool requirements |
+| `project_dependencies.py` | Bounded, read-only project evidence collection from `pyproject.toml`, `uv.lock`, and `poetry.lock` |
 | `guide_index.py` | Discovers guide files via `rglob("*.md")`, parses each with `frontmatter.py`, builds an in-memory `GuideIndex`. Finds guides via `importlib.resources` (installed) or source tree fallback (development) |
 | `search.py` | Weighted keyword search (tag=10, alias=8, title=5, category=3) with frequency boost. Falls back to fuzzy matching via `difflib.SequenceMatcher.ratio()` when no exact matches are found |
 | `retrieve.py` | Renders guide content as JSON with version-match flag and token estimate |
@@ -119,6 +121,9 @@ pep: 585
 The applicability fields are optional and default to empty lists. Each entry uses
 `packaging.requirements.Requirement` syntax; direct URLs, extras, and environment
 markers are rejected so the metadata remains deterministic and machine-readable.
+All listed package and tool requirements use **AND** semantics: a guide is confirmed
+only when every requirement is confirmed, and one proven mismatch makes it
+incompatible.
 
 ### Body sections
 
@@ -164,6 +169,38 @@ Fuzzy results are marked with `fuzzy: true` in the output.
 4. `.python-version` file (pyenv/asdf convention)
 5. Default: `3.11`
 
+## Dependency applicability
+
+Dependency evidence is deliberately read-only and conservative. mpg never imports a
+target package, executes project code, accesses the network, or treats its own
+interpreter as target-project evidence. `find_dependency_context()` searches upward at
+most 40 directories for the nearest evidence root and stops at `.git`; only files
+directly inside that root are considered. TOML reads are capped at 1 MiB,
+malformed/oversized files become warnings, and symlinks resolving outside the root are
+skipped.
+
+Evidence precedence is an exact CLI/MCP override, then an unambiguous `uv.lock` or
+`poetry.lock` exact version, then active main dependency declarations
+(`[project].dependencies`, Poetry main dependencies, or build-system tool
+requirements). A lock entry is confirming only when the same package has an active
+main root declaration; a transitive, optional, conditional, or unrooted lock entry is
+not proof. Conflicting facts, multiple lock versions, optional dependencies,
+dependency groups, environment markers, bare tool configuration tables, and
+unsupported PEP 440 ranges remain `unknown` rather than being guessed.
+
+The three statuses are `confirmed` (all guide requirements proven), `incompatible`
+(at least one proven mismatch), and `unknown` (anything else). `search` and `list`
+omit only proven-incompatible guides by default; `--include-incompatible` restores
+them for inspection. `retrieve` preserves explicit IDs and reports their status.
+`check` and the PostToolUse hook suppress proven-incompatible matches, retain unknown
+matches with qualification, and never tell an agent to apply an unknown pattern.
+
+CLI `search`, `list`, `retrieve`, and `check` accept `--project-dir PATH` and
+repeatable `--dependency-version KIND:NAME=VERSION`; search/list additionally accept
+`--include-incompatible`. The matching MCP tools accept a CWD-confined relative
+`project_dir`, `dependency_versions` object, and `include_incompatible` for
+search/list. This is additive: older JSON fields and retrieval content are unchanged.
+
 ## Output format
 
 The CLI defaults to JSON when piped and human-readable when attached to a TTY. The `--format` flag overrides this.
@@ -189,10 +226,16 @@ First result of `mpg search "builtin generics" --format json` (the full output i
     "score": 15.5,
     "token_estimate": 273,
     "fuzzy": false,
-    "snippet": "from typing import Generic, TypeVar → class Stack[T]:"
+    "snippet": "from typing import Generic, TypeVar → class Stack[T]:",
+    "dependency_requirements": {"packages": [], "tools": []},
+    "dependency_compatibility": {"status": "confirmed", "evidence": [], "reasons": []}
   }
 ]
 ```
+
+For a non-empty assessment, each `dependency_compatibility.evidence` item is an
+additive observation with `kind`, canonicalized `name`, exact `version` or declared
+`specifier`, and `source` (for example `{"kind":"package","name":"pydantic","version":"2.7.4","specifier":null,"source":"override"}`).
 
 ### JSON schema (retrieve)
 
@@ -210,7 +253,9 @@ When all requested IDs are found, the output is a bare array (captured from `mpg
     "version_match": true,
     "content": "## BAD\n...\n## GOOD\n...",
     "token_estimate": 261,
-    "source": "modern-python-guidance v<version>"
+    "source": "modern-python-guidance v<version>",
+    "dependency_requirements": {"packages": [], "tools": []},
+    "dependency_compatibility": {"status": "confirmed", "evidence": [], "reasons": []}
   }
 ]
 ```
@@ -238,9 +283,40 @@ When one or more requested IDs are not found, the shape changes to an envelope (
     "category": "typing",
     "layer": 1,
     "python": ">=3.9",
-    "frequency": "high"
+    "frequency": "high",
+    "dependency_requirements": {"packages": [], "tools": []},
+    "dependency_compatibility": {"status": "confirmed", "evidence": [], "reasons": []}
   }
 ]
+```
+
+### JSON schema (check)
+
+`mpg check app.py --format json` retains its top-level shape and adds dependency
+status to every remaining match. A known-incompatible match is omitted; `unknown`
+is retained and must be verified before applying the guide.
+
+```json
+{
+  "file": "app.py",
+  "mpg_version": "<version>",
+  "matches": [
+    {
+      "line": 4,
+      "source_line": "@validator(\"name\")",
+      "guide_id": "pydantic-v2-validators",
+      "guide_title": "Use Pydantic V2 field_validator Instead of validator",
+      "category": "pydantic",
+      "frequency": "high",
+      "snippet": "@validator → @field_validator",
+      "dependency_compatibility": {
+        "status": "unknown",
+        "reasons": ["No project evidence for package pydantic"]
+      }
+    }
+  ],
+  "summary": {"total_matches": 1, "unique_guides": 1, "guide_ids": ["pydantic-v2-validators"]}
+}
 ```
 
 ## Guide layers

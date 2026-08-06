@@ -16,6 +16,14 @@ Pre-generation design patterns that Ruff cannot auto-fix. Apply these transforma
 - Upgrading Python version (check which new features are available)
 - Replacing legacy tooling (setup.py, flake8, pip)
 
+## Dependency applicability
+
+Before applying a framework or tool pattern, inspect project evidence or explicit overrides with `mpg search ... --project-dir .` / `--dependency-version KIND:NAME=VERSION`, or the equivalent MCP arguments. Requirements use AND semantics.
+
+- `confirmed`: evidence proves every required dependency; apply only after the guide's other caveats.
+- `incompatible`: never auto-apply known-incompatible guidance.
+- `unknown`: not confirmation; verify the target environment before changing code. Do not infer it from mpg's interpreter, optional/group dependencies, or an ambiguous lockfile.
+
 ## Embedded patterns (high-frequency, Ruff-uncovered)
 
 ### Pydantic V2 (>=3.9)
