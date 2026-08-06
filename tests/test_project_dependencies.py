@@ -7,6 +7,13 @@ import pytest
 from modern_python_guidance.dependency_compat import assess_dependencies
 from modern_python_guidance.project_dependencies import (
     _MAX_FILE_SIZE,
+    _append_lock_facts,
+    _append_overrides,
+    _append_poetry_dependency,
+    _append_requirement_list,
+    _parse_override_key,
+    _poetry_specifier,
+    _read_toml,
     detect_dependency_context,
     find_dependency_context,
 )
@@ -311,3 +318,81 @@ def test_external_evidence_symlink_is_not_read_or_selected(
     nested.mkdir()
     found = find_dependency_context(nested)
     assert found.facts == {}
+
+
+def test_unreadable_or_missing_project_returns_only_valid_overrides(tmp_path: Path) -> None:
+    missing = tmp_path / "missing"
+
+    context = detect_dependency_context(missing, overrides={"pydantic": "2.7", "uv": None})
+
+    assert _status(context, "pydantic>=2") == "confirmed"
+    assert any("not readable" in warning for warning in context.warnings)
+    assert any("invalid dependency override" in warning for warning in context.warnings)
+    assert find_dependency_context(missing, overrides={"pydantic": "2.7"}).facts
+
+
+def test_override_key_and_dependency_input_validation_is_conservative() -> None:
+    assert _parse_override_key(("tool", "ruff")) == ("tool", "ruff")
+    assert _parse_override_key(("invalid", "ruff")) is None
+    assert _parse_override_key(("tool", "")) is None
+    assert _parse_override_key(()) is None
+    assert _parse_override_key(42) is None
+    assert _parse_override_key("tool:") is None
+    assert _parse_override_key("package:pydantic") == ("package", "pydantic")
+    assert _parse_override_key("pydantic") == ("package", "pydantic")
+
+    facts = []
+    warnings: list[str] = []
+    _append_overrides(facts, warnings, {"tool:": "1", "pydantic": "", 3: "2"})
+    _append_requirement_list("pydantic>=2", "project.dependencies", facts, warnings)
+    _append_requirement_list([3, "not a requirement @@@"], "project.dependencies", facts, warnings)
+
+    assert not facts
+    assert len(warnings) == 6
+
+
+def test_poetry_and_lock_schema_errors_are_warnings_not_evidence() -> None:
+    facts = []
+    warnings: list[str] = []
+    _append_poetry_dependency("pydantic", {}, facts, warnings)
+    _append_poetry_dependency("pydantic", "^invalid", facts, warnings)
+    _append_poetry_dependency("pydantic", "~2", facts, warnings)
+    _append_lock_facts({"package": "not a list"}, "uv.lock", facts, warnings)
+    _append_lock_facts(
+        {"package": ["not a table", {"name": "pydantic"}]}, "uv.lock", facts, warnings
+    )
+
+    assert facts == []
+    assert len(warnings) == 6
+    assert _poetry_specifier("") is None
+    assert _poetry_specifier("*") is None
+    assert _poetry_specifier("^0.2.3") == ">=0.2.3,<0.3"
+    assert _poetry_specifier("~2.4") == ">=2.4,<2.5"
+    assert _poetry_specifier("=>2") is None
+
+
+def test_read_toml_handles_invalid_utf8_and_os_errors(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    invalid_utf8 = tmp_path / "invalid.toml"
+    invalid_utf8.write_bytes(b"\xff")
+    warnings: list[str] = []
+
+    assert _read_toml(invalid_utf8, warnings) is None
+    assert "UnicodeDecodeError" in warnings[-1]
+
+    readable = tmp_path / "readable.toml"
+    readable.write_text("[project]\n")
+
+    def fail_open(*_args: object, **_kwargs: object) -> None:
+        raise OSError
+
+    monkeypatch.setattr(Path, "open", fail_open)
+    assert _read_toml(readable, warnings) is None
+    assert "OSError" in warnings[-1]
+
+
+def test_poetry_constraint_edge_cases_do_not_crash_or_claim_support() -> None:
+    assert _poetry_specifier("^") is None
+    assert _poetry_specifier("~1") is None
+    assert _poetry_specifier("~=2.0") == "~=2.0"
