@@ -224,6 +224,40 @@ def _resolve_cwd(project_dir: Path | None) -> str | None:
     return str(project_dir) if project_dir is not None and project_dir.is_dir() else None
 
 
+def _prepare_project_dir(
+    project_dir: Path | None,
+    *,
+    required: bool,
+    dry_run: bool,
+) -> bool:
+    """Ensure a required project target exists before any external mutation."""
+    if not required or project_dir is None:
+        return True
+
+    if project_dir.exists():
+        if project_dir.is_dir():
+            return True
+        print(
+            f"Error: project directory '{project_dir}' exists but is not a directory.",
+            file=sys.stderr,
+        )
+        return False
+
+    print(
+        f"Warning: directory '{project_dir}' does not exist and will be created.",
+        file=sys.stderr,
+    )
+    if dry_run:
+        return True
+
+    try:
+        project_dir.mkdir(parents=True, exist_ok=True)
+    except OSError as e:
+        print(f"Error: failed to create project directory '{project_dir}': {e}", file=sys.stderr)
+        return False
+    return True
+
+
 def _warn_if_shadowed(scope: str, claude: str, cwd: str | None) -> None:
     """Warn when a higher-precedence scope shadows the entry just written.
 
@@ -290,7 +324,21 @@ def setup_mcp(
 
     launch = [sys.executable, "-m", "modern_python_guidance", "mcp"]
     args = ["mcp", "add", "--scope", scope, MCP_SERVER_NAME, "--", *launch]
-    cwd = _resolve_cwd(project_dir)
+    if scope == "local":
+        cwd = _resolve_cwd(project_dir)
+        if project_dir is not None and cwd is None:
+            if dry_run:
+                cwd = str(project_dir)
+            else:
+                print(
+                    "Error: local MCP registration requires an existing directory for "
+                    f"--project-dir '{project_dir}'. Run 'mpg setup' to create it "
+                    "before registering the local server.",
+                    file=sys.stderr,
+                )
+                return False
+    else:
+        cwd = None
 
     if dry_run:
         where = f" in {cwd}" if cwd is not None else ""
@@ -588,11 +636,13 @@ def run_setup(
     do_rules = not mcp_only
     do_hook = not mcp_only
 
-    if project_dir is not None and (do_skills or do_rules) and not project_dir.exists():
-        print(
-            f"Warning: directory '{project_dir}' does not exist and will be created.",
-            file=sys.stderr,
-        )
+    requires_project_dir = do_skills or do_rules or (do_mcp and scope == "local")
+    if not _prepare_project_dir(
+        project_dir,
+        required=requires_project_dir,
+        dry_run=dry_run,
+    ):
+        return 1
 
     # Resolved once and reused for the existing-asset snapshot, setup_hook,
     # and remove_hook below — each independently re-walks via

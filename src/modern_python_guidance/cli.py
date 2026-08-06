@@ -184,7 +184,7 @@ def main(argv: list[str] | None = None) -> None:
     p_setup.add_argument(
         "--project-dir",
         type=Path,
-        help="Project directory for Skills/Rules symlinks",
+        help="Target project for local MCP and project artifacts",
     )
     p_setup.add_argument("--dry-run", action="store_true", help="Show what would be done")
     p_setup.add_argument(
@@ -212,7 +212,7 @@ def main(argv: list[str] | None = None) -> None:
     p_uninstall.add_argument(
         "--project-dir",
         type=Path,
-        help="Project directory for Skills/Rules symlinks",
+        help="Target project for local MCP and project artifacts",
     )
     p_uninstall.add_argument("--dry-run", action="store_true", help="Show what would be done")
 

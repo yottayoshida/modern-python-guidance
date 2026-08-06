@@ -17,6 +17,8 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- `mpg setup --scope local --project-dir X` now creates `X` before registering the local MCP server, including `--mcp-only`; dry-run previews the target without creating it, and user-scope registration remains global. (#167)
+- `mpg uninstall --project-dir X` now removes local MCP registration from `X` while keeping user-scope removal global. If an explicit target is missing, local cleanup fails closed instead of falling back to the caller's cwd. (#166)
 - `mpg setup --scope local --project-dir X` now runs every `claude mcp` call (add, remove, retry-add) in `X`, not the caller's cwd — previously only the advisory shadowing check resolved `project_dir` into a cwd, so mutating calls could silently register `mpg` somewhere other than the target project. (closes #164)
 - README's example PostToolUse hook `matcher` used an unrecognized expression form that Claude Code evaluated as an unanchored regex matching every tool; corrected to `"Edit|Write"`.
 - `setup_rules`/`setup_skills`'s non-symlink blocker message incorrectly attributed a flattened rule/skill file to "an older mpg version" that never existed — both delivery paths have been symlink-only since introduction. Corrected to describe symlink-flattening (git checkout on some platforms, backup/sync tooling) as the actual cause; the message is now shared between both call sites.

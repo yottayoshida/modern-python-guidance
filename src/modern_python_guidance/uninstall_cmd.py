@@ -12,6 +12,7 @@ from modern_python_guidance.hook_config import remove_hook
 from modern_python_guidance.setup_cmd import (
     MCP_SERVER_NAME,
     _find_project_root,
+    _resolve_cwd,
     _rules_file_path,
     _skills_link_path,
 )
@@ -33,17 +34,35 @@ _REMOVE_SCOPES = ("local", "user")
 _NOT_IN_SCOPE_MARKER = "-scoped MCP server found"
 
 
-def uninstall_mcp(*, dry_run: bool = False) -> bool:
+def uninstall_mcp(
+    *,
+    project_dir: Path | None = None,
+    dry_run: bool = False,
+) -> bool:
     """Deregister the MCP server from Claude Code. Returns True on success.
 
     Removes the server from every scope `mpg setup` can write to (user, local),
     since the scope used at setup time is not tracked. Idempotent: scopes where
-    the server is absent are a no-op.
+    the server is absent are a no-op. When an explicit project directory is
+    unavailable, local cleanup fails closed instead of inheriting the caller's
+    cwd; the independent user-scope cleanup is still attempted.
     """
+    local_cwd = _resolve_cwd(project_dir)
+    local_target_unavailable = project_dir is not None and local_cwd is None
+
     if dry_run:
-        for scope in _REMOVE_SCOPES:
-            print(f"Would run: claude mcp remove {MCP_SERVER_NAME} -s {scope}")
-        return True
+        if local_target_unavailable:
+            print(
+                "Error: cannot preview local MCP removal because the explicit "
+                f"--project-dir '{project_dir}' is unavailable. Restore or create "
+                "the directory, then rerun 'mpg uninstall'.",
+                file=sys.stderr,
+            )
+        else:
+            local_where = f" in {local_cwd}" if local_cwd is not None else ""
+            print(f"Would run{local_where}: claude mcp remove {MCP_SERVER_NAME} -s local")
+        print(f"Would run: claude mcp remove {MCP_SERVER_NAME} -s user")
+        return not local_target_unavailable
 
     claude = shutil.which("claude")
     if claude is None:
@@ -56,10 +75,22 @@ def uninstall_mcp(*, dry_run: bool = False) -> bool:
         return False
 
     removed_any = False
+    local_failed = False
     for scope in _REMOVE_SCOPES:
+        if scope == "local" and local_target_unavailable:
+            print(
+                "Error: cannot remove the local MCP registration because the explicit "
+                f"--project-dir '{project_dir}' is unavailable. Restore or create "
+                "the directory, then rerun 'mpg uninstall'.",
+                file=sys.stderr,
+            )
+            local_failed = True
+            continue
+
         cmd = [claude, "mcp", "remove", MCP_SERVER_NAME, "-s", scope]
+        cwd = local_cwd if scope == "local" else None
         try:
-            result = subprocess.run(cmd, capture_output=True, timeout=30)
+            result = subprocess.run(cmd, capture_output=True, timeout=30, cwd=cwd)
         except subprocess.TimeoutExpired:
             print(
                 f"Error: 'claude mcp remove -s {scope}' timed out after 30 seconds.",
@@ -70,6 +101,9 @@ def uninstall_mcp(*, dry_run: bool = False) -> bool:
             # `claude` resolved on PATH but could not be executed (broken binary,
             # permissions, platform quirk). Fail gracefully instead of crashing.
             print(f"Error: failed to run 'claude mcp remove -s {scope}': {e}", file=sys.stderr)
+            if scope == "local" and project_dir is not None and not project_dir.is_dir():
+                local_failed = True
+                continue
             return False
 
         output = (result.stdout + result.stderr).decode(errors="replace").strip()
@@ -86,6 +120,12 @@ def uninstall_mcp(*, dry_run: bool = False) -> bool:
         if _NOT_IN_SCOPE_MARKER not in output:
             removed_any = True
 
+    if local_failed:
+        print(
+            "MCP server cleanup incomplete; the unavailable local scope was not touched.",
+            file=sys.stderr,
+        )
+        return False
     if removed_any:
         print("MCP server removed from Claude Code.")
     else:
@@ -220,7 +260,7 @@ def run_uninstall(
     hook_ok = True
 
     if do_mcp:
-        mcp_ok = uninstall_mcp(dry_run=dry_run)
+        mcp_ok = uninstall_mcp(project_dir=project_dir, dry_run=dry_run)
 
     if do_skills:
         skills_ok = uninstall_skills(project_dir=project_dir, dry_run=dry_run)
