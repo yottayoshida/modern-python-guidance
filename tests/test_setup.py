@@ -638,6 +638,21 @@ class TestSetupMcp:
         assert m.call_count == 0
         assert "--project-dir" in capsys.readouterr().err
 
+    def test_local_scope_file_project_dir_fails_closed(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ):
+        """A file target must not be passed to subprocess cwd."""
+        project_file = tmp_path / "project-file"
+        project_file.write_text("user data")
+        with (
+            patch("modern_python_guidance.setup_cmd.shutil.which", return_value="/usr/bin/claude"),
+            patch("modern_python_guidance.setup_cmd.subprocess.run") as m,
+        ):
+            ok = setup_mcp(scope="local", project_dir=project_file)
+        assert ok is False
+        assert m.call_count == 0
+        assert "requires an existing directory" in capsys.readouterr().err
+
     def test_other_failure_does_not_remove(self, capsys: pytest.CaptureFixture[str]):
         """#118: a non-duplicate add failure must NOT delete the existing entry."""
         with (
@@ -1279,6 +1294,17 @@ class TestRunSetup:
         m_skills.assert_not_called()
         m_rules.assert_not_called()
         m_hook.assert_not_called()
+
+    def test_local_setup_file_target_stops_before_mutation(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ):
+        """#167: an existing file is rejected before local setup mutates anything."""
+        project_file = tmp_path / "project-file"
+        project_file.write_text("user data")
+        with patch("modern_python_guidance.setup_cmd.setup_mcp", return_value=True) as m_mcp:
+            assert run_setup(scope="local", mcp_only=True, project_dir=project_file) == 1
+        assert m_mcp.call_count == 0
+        assert "not a directory" in capsys.readouterr().err
 
     def test_local_setup_dry_run_missing_project_does_not_create(
         self, tmp_path: Path, capsys: pytest.CaptureFixture[str]

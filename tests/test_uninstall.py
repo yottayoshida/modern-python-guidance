@@ -115,6 +115,20 @@ class TestUninstallMcp:
         assert mock_run.call_args_list[0].kwargs.get("cwd") is None
         assert "missing-project" in capsys.readouterr().err
 
+    def test_file_project_skips_local_but_attempts_user(self, tmp_path: Path, capsys):
+        """#166: a file target is invalid and cannot become local subprocess cwd."""
+        project_file = tmp_path / "project-file"
+        project_file.write_text("user data")
+        which_p, run_p = self._patches()
+        with which_p, run_p as mock_run:
+            mock_run.return_value = _cp(0, stdout=REMOVED_OUT)
+            ok = uninstall_mcp(project_dir=project_file)
+        assert ok is False
+        assert mock_run.call_count == 1
+        assert mock_run.call_args_list[0].args[0][-1] == "user"
+        assert mock_run.call_args_list[0].kwargs.get("cwd") is None
+        assert "project-file" in capsys.readouterr().err
+
     def test_dry_run_missing_project_skips_local_and_fails(self, tmp_path: Path, capsys):
         """#166: dry-run reports unavailable local cleanup and still shows user cleanup."""
         missing = tmp_path / "missing-project"
