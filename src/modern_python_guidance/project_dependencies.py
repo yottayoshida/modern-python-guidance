@@ -283,30 +283,26 @@ def _append_lock_facts(
             warnings.append(f"Ignored package without exact name/version from {source}")
             continue
         fact_source = source
-        if package.get("optional") is True or _has_only_conditional_declaration(facts, name):
-            fact_source = f"{source}.conditional"
+        if package.get("optional") is True or not _has_active_root_declaration(facts, name):
+            fact_source = f"{source}.unrooted"
         facts.append(DependencyFact("package", name, version, None, fact_source))
 
 
-def _has_only_conditional_declaration(facts: list[DependencyFact], name: str) -> bool:
-    matching = [
-        fact for fact in facts if fact.kind == "package" and fact.name == canonicalize_name(name)
-    ]
-    if any(fact.source in {"project.dependencies", "poetry.dependencies"} for fact in matching):
-        return False
-    return any(_is_conditional_source(fact.source) for fact in matching)
-
-
-def _is_conditional_source(source: str) -> bool:
-    return source in {"project.optional-dependencies", "dependency-groups"} or source.endswith(
-        (".marker", ".conditional")
+def _has_active_root_declaration(facts: list[DependencyFact], name: str) -> bool:
+    normalized_name = canonicalize_name(name)
+    return any(
+        fact.kind == "package"
+        and fact.name == normalized_name
+        and fact.source in {"project.dependencies", "poetry.dependencies"}
+        for fact in facts
     )
 
 
 def _warn_ambiguous_locks(facts: list[DependencyFact], warnings: list[str]) -> None:
     versions: dict[tuple[str, str, str], set[str]] = defaultdict(set)
     for fact in facts:
-        if fact.source.removesuffix(".conditional") in {"uv.lock", "poetry.lock"} and fact.version:
+        lock_source = fact.source.removesuffix(".unrooted").removesuffix(".conditional")
+        if lock_source in {"uv.lock", "poetry.lock"} and fact.version:
             versions[(fact.kind, fact.name, fact.source)].add(fact.version)
     for (_, name, source), known_versions in versions.items():
         if len(known_versions) > 1:

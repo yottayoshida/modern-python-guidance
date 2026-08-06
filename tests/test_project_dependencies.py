@@ -127,6 +127,29 @@ optional = true
     assert _status(context, "pydantic>=2") == "unknown"
 
 
+def test_lock_only_transitive_package_is_non_confirming(tmp_path: Path) -> None:
+    (tmp_path / "pyproject.toml").write_text(
+        """[project.optional-dependencies]
+api = ["fastapi>=0.95"]
+"""
+    )
+    (tmp_path / "uv.lock").write_text(
+        """[[package]]
+name = "fastapi"
+version = "0.112.0"
+
+[[package]]
+name = "starlette"
+version = "0.37.2"
+"""
+    )
+
+    context = detect_dependency_context(tmp_path)
+
+    assert _status(context, "fastapi>=0.95") == "unknown"
+    assert _status(context, "starlette>=0.26") == "unknown"
+
+
 def test_multiple_lock_versions_are_ambiguous(tmp_path: Path) -> None:
     (tmp_path / "uv.lock").write_text(
         """[[package]]
