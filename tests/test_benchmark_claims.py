@@ -14,7 +14,7 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT))
 
-from scripts.verify_benchmark_claims import (
+from scripts.verify_benchmark_claims import (  # noqa: E402
     ClaimValidationError,
     generated_block_errors,
     load_manifest,
@@ -126,6 +126,24 @@ def test_promoted_claim_rejects_unsafe_or_untracked_raw_paths(path: str) -> None
         validate_manifest(_manifest(claim), REPO_ROOT)
 
 
+def test_promoted_claim_rejects_existing_untracked_raw_file() -> None:
+    raw_path = REPO_ROOT / "bench" / "claims" / "untracked-test-output.json"
+    raw_path.write_text("temporary raw output", encoding="utf-8")
+    try:
+        claim = _claim(status="promoted")
+        claim["raw_inputs"] = [
+            {
+                "path": "bench/claims/untracked-test-output.json",
+                "sha256": hashlib.sha256(raw_path.read_bytes()).hexdigest(),
+            }
+        ]
+
+        with pytest.raises(ClaimValidationError, match="not tracked"):
+            validate_manifest(_manifest(claim), REPO_ROOT)
+    finally:
+        raw_path.unlink(missing_ok=True)
+
+
 def test_promoted_claim_rejects_hash_mismatch() -> None:
     claim = _claim(status="promoted")
     claim["raw_inputs"] = [
@@ -209,6 +227,16 @@ def test_check_detects_unmanaged_numeric_text_inside_readme_block() -> None:
     errors = generated_block_errors(manifest, changed_readme, source)
 
     assert errors == ["README benchmark claim block is stale"]
+
+
+def test_check_detects_unmanaged_numeric_text_outside_readme_block() -> None:
+    manifest = load_manifest(MANIFEST_PATH)
+    readme = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
+    source = (REPO_ROOT / "docs" / "benchmark-v5.md").read_text(encoding="utf-8")
+
+    errors = generated_block_errors(manifest, readme + "\nHistorical result: 42%.\n", source)
+
+    assert errors == ["README contains an unmanaged benchmark number outside its generated block"]
 
 
 def test_readme_does_not_promote_historical_numbers() -> None:

@@ -26,15 +26,10 @@ does not measure the effectiveness of every way mpg can deliver guidance.
 
 Scores are "strict modern rate": among the Python patterns the model used, what percentage followed the modern idiom? (Formula: `MODERN / (MODERN + OUTDATED)`, excluding items where neither pattern appeared.)
 
-The rounded summary below is an archival view of the `v5-opus-4-8-terse-a` and
-`v5-opus-4-8-normal-a` manifest rows. Both rows are `historical-unverified` because
-their raw run directories and immutable scorer commit were not recorded; they are
-not eligible for a promoted product claim.
-
-| Prompt style | N | Control | With mpg | Delta |
-|-------------|---|---------|----------|-------|
-| **Terse** (2 sentences) | 3 | 79% | 98% | **+19pp** |
-| **Normal** (file specs) | 3 | 93% | 100% | **+7pp** |
+The generated source table above is the only retained numeric summary for the
+`v5-opus-4-8-terse-a` and `v5-opus-4-8-normal-a` manifest rows. Both rows are
+`historical-unverified` because their raw run directories and immutable scorer commit
+were not recorded; they are not eligible for a promoted product claim.
 
 In this historical cell, the treatment/control gap is larger for the terse prompt.
 That directional observation is limited to the named model, workload, metric, and
@@ -42,12 +37,13 @@ full-content Rules treatment; it is not a claim about unspecified agents or proj
 
 ## Historical interpretation (not a product claim)
 
-For the archived detailed-prompt cell, Opus 4.8's control rate is 93.3% and its
-historical treatment rate is 100.0% (+6.7pp). The cell is small and unverified.
+For the archived detailed-prompt cell, see manifest row `v5-opus-4-8-normal-a` for
+the recorded control/treatment values and traceability status. The cell is small and
+unverified.
 
-For the archived terse-prompt cell, the control rate is 78.9% and the historical
-treatment rate is 98.3% (+19.4pp). The metric excludes patterns the model did not
-emit, so it is not a completeness score.
+For the archived terse-prompt cell, see manifest row `v5-opus-4-8-terse-a` for the
+recorded control/treatment values and traceability status. The metric excludes
+patterns the model did not emit, so it is not a completeness score.
 
 Do not extrapolate these cells to other models, workloads, prompt styles, or delivery
 methods. Default `mpg setup` end-to-end effectiveness is not yet measured.
@@ -113,20 +109,20 @@ Neither prompt mentions specific pattern names (no "TaskGroup", no "field_valida
 
 ## Archival model comparison (all rows historical-unverified)
 
-| Model | Prompt | Control | Treatment | Delta |
-|-------|--------|---------|-----------|-------|
-| Opus 4.6 | Normal (N=10) | 90.0% | 95.0% | +5.0pp |
-| Opus 4.6 | Terse (N=3) | 86.0% | 94.6% | +8.6pp |
-| Opus 4.8 | Normal (N=3) | 93.3% | 100.0% | +6.7pp |
-| Opus 4.8 | Terse (N=3) | 78.9% | 98.3% | +19.4pp |
-| **Fable 5** | **Terse (N=3)** | **87.0%** | **94.9%*** | **+7.9pp*** |
+The generated source table above is the canonical comparison for the five manifest
+rows: `v5-opus-4-6-normal-a`, `v5-opus-4-6-terse-a`, `v5-opus-4-8-normal-a`,
+`v5-opus-4-8-terse-a`, and `v5-fable-5-terse-a`. Their model, prompt, sample,
+workload, delivery, prompt path, scorer path, and traceability status are all
+recorded there.
 
-\* All treatment OUTDATED hits in the Fable 5 runs were SL3 scorer false positives (legitimate `rstrip("\n")` / `rstrip("/")` char-set strips flagged as outdated). The scorer was fixed in [#129](https://github.com/yottayoshida/modern-python-guidance/issues/129); the raw figures above come from the pre-fix scorer, and the corrected figures (all 3 treatment runs 100%, delta +13.0pp) match what the post-fix scorer reports.
+The Fable 5 row retains the existing scorer caveat: legitimate character-set strips
+were previously flagged by SL3, and the scorer was fixed in [#129](https://github.com/yottayoshida/modern-python-guidance/issues/129).
 
-Opus 4.8 with detailed instructions is better than 4.6 (Control 93.3% vs 90.0%). But with terse instructions, 4.8 is worse (78.9% vs 86.0%). The model improved at following detailed specs but became more reliant on explicit instruction for pattern choices.
+The archived model rows should not be used to rank models or infer behavior outside
+the named workload and delivery shape.
 
-The archived Opus 4.8 terse row has the largest recorded delta in this table; its
-unverified status and narrow workload prevent a product-wide comparison.
+The archived Opus 4.8 terse row has the largest recorded delta in the source table;
+its unverified status and narrow workload prevent a product-wide comparison.
 
 ### Fable 5 findings (Terse, N=3, 2026-06-10)
 
@@ -145,7 +141,9 @@ Control failures concentrate on a small stubborn set rather than spreading acros
 
 `asyncio.gather` over `TaskGroup` (AS1) remains the one fully systematic habit, carried over from both Opus generations. On Fable 5 the value of mpg shifts from broad uplift to targeted correction of these few stubborn patterns.
 
-Run variance is low: control scored 88.9% / 88.9% / 83.3%, treatment 95.0% / 95.0% / 94.7% (raw).
+Run variance observations from the original notes are retained only as qualitative
+context; no additional numeric cell is promoted without a manifest row and raw-input
+traceability.
 
 ## Limitations
 

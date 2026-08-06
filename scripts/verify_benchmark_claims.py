@@ -24,6 +24,7 @@ README_START = "<!-- mpg-benchmark-claims:start -->"
 README_END = "<!-- mpg-benchmark-claims:end -->"
 SOURCE_START = "<!-- mpg-benchmark-source:start -->"
 SOURCE_END = "<!-- mpg-benchmark-source:end -->"
+BENCHMARK_NUMBER_RE = re.compile(r"(?<![\w.])\d+(?:\.\d+)?(?:%|pp)(?!\w)")
 
 
 class ClaimValidationError(ValueError):
@@ -53,7 +54,7 @@ def _require(mapping: dict[str, Any], key: str, context: str) -> Any:
 def _tracked_paths(repo_root: Path) -> set[str]:
     try:
         output = subprocess.check_output(
-            ["git", "ls-files", "--cached", "--others", "--exclude-standard"],
+            ["git", "ls-files", "--cached"],
             cwd=repo_root,
             text=True,
         )
@@ -335,7 +336,10 @@ def _replace_block(text: str, start: str, end: str, rendered: str) -> str:
             f"expected exactly one {start!r}/{end!r} block, found {start_count}/{end_count}"
         )
     start_index = text.index(start)
-    end_index = text.index(end, start_index) + len(end)
+    try:
+        end_index = text.index(end, start_index) + len(end)
+    except ValueError as exc:
+        raise ClaimValidationError(f"{end!r} marker must follow {start!r} marker") from exc
     return text[:start_index] + rendered + text[end_index:]
 
 
@@ -351,6 +355,13 @@ def generated_block_errors(manifest: dict[str, Any], readme: str, source: str) -
     else:
         if readme != expected_readme:
             errors.append("README benchmark claim block is stale")
+        start_index = readme.index(README_START)
+        end_index = readme.index(README_END, start_index) + len(README_END)
+        outside_block = readme[:start_index] + readme[end_index:]
+        if BENCHMARK_NUMBER_RE.search(outside_block):
+            errors.append(
+                "README contains an unmanaged benchmark number outside its generated block"
+            )
 
     try:
         expected_source = _replace_block(
