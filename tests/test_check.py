@@ -11,6 +11,7 @@ from modern_python_guidance.check import (
     _MAX_FILE_SIZE,
     FREQ_RANK,
     CheckError,
+    CheckMatch,
     _auto_extract_patterns,
     _build_patterns,
     _get_patterns,
@@ -21,6 +22,7 @@ from modern_python_guidance.check import (
     check_file,
     sanitize_line,
 )
+from modern_python_guidance.dependency_compat import DependencyContext, DependencyFact
 from modern_python_guidance.guide_index import Guide, GuideIndex, build_index
 
 
@@ -111,6 +113,60 @@ class TestCheckFile:
         matches_all = check_file(p, index)
         matches_38 = check_file(p, index, python_version="3.8")
         assert len(matches_38) <= len(matches_all)
+
+
+class TestDependencyApplicability:
+    def test_check_match_old_positional_shape_uses_dependency_defaults(self):
+        match = CheckMatch(1, "old()", "legacy", "Legacy", "test", "low", "snippet")
+
+        assert match.dependency_status == "confirmed"
+        assert match.dependency_reasons == ()
+
+    @pytest.fixture
+    def pydantic_v1_context(self) -> DependencyContext:
+        return DependencyContext(
+            {
+                ("package", "pydantic"): (
+                    DependencyFact("package", "pydantic", "1.10.15", None, "uv.lock"),
+                )
+            }
+        )
+
+    def test_incompatible_regex_match_is_suppressed(
+        self, tmp_path: Path, index: GuideIndex, pydantic_v1_context: DependencyContext
+    ):
+        path = tmp_path / "pydantic_config.py"
+        path.write_text("class Config:\n    pass\n", encoding="utf-8")
+
+        matches = check_file(path, index, dependency_context=pydantic_v1_context)
+
+        assert "pydantic-v2-config" not in {match.guide_id for match in matches}
+
+    def test_incompatible_ast_match_is_suppressed(
+        self, tmp_path: Path, index: GuideIndex, pydantic_v1_context: DependencyContext
+    ):
+        path = tmp_path / "pydantic_validator.py"
+        path.write_text(
+            "from pydantic import validator\n\n"
+            "@validator('name')\n"
+            "def validate(value):\n"
+            "    return value\n",
+            encoding="utf-8",
+        )
+
+        matches = check_file(path, index, dependency_context=pydantic_v1_context)
+
+        assert "pydantic-v2-validators" not in {match.guide_id for match in matches}
+
+    def test_unknown_match_remains_annotated(self, tmp_path: Path, index: GuideIndex):
+        path = tmp_path / "pydantic_config.py"
+        path.write_text("class Config:\n    pass\n", encoding="utf-8")
+
+        matches = check_file(path, index, dependency_context=DependencyContext({}))
+
+        match = next(match for match in matches if match.guide_id == "pydantic-v2-config")
+        assert match.dependency_status == "unknown"
+        assert match.dependency_reasons
 
 
 class TestValidateFile:

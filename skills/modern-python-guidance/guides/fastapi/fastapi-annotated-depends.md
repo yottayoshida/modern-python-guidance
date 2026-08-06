@@ -13,6 +13,8 @@ aliases:
   - dependency injection
 python: ">=3.9"
 frequency: high
+applies-to-packages:
+  - fastapi>=0.95
 detect-patterns:
   - "= Depends\("
 ---

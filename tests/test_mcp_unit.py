@@ -52,6 +52,11 @@ class TestFraming:
         with pytest.raises(mcp._Skip, match="invalid JSON"):
             mcp._read_message(stream)
 
+    def test_read_message_rejects_duplicate_json_object_keys(self):
+        stream = io.StringIO('{"key": 1, "key": 2}\n')
+        with pytest.raises(mcp._Skip, match="duplicate JSON object key"):
+            mcp._read_message(stream)
+
     def test_write_message(self):
         out = io.StringIO()
         mcp._write_message({"result": 42}, out)
@@ -192,6 +197,43 @@ class TestToolFunctions:
     def test_search_invalid_version(self):
         r = mcp._tool_search({"query": "typing", "python_version": "bad"})
         assert r["isError"] is True
+
+    def test_search_strict_boolean_and_invalid_dependency_version_are_rejected(self):
+        bool_result = mcp._tool_search({"query": "pydantic", "include_incompatible": 1})
+        assert bool_result["isError"] is True
+        version_result = mcp._tool_search(
+            {"query": "pydantic", "dependency_versions": {"package:pydantic": "nope"}}
+        )
+        assert version_result["isError"] is True
+
+    def test_search_dependency_override_includes_incompatible_with_status(self):
+        result = mcp._tool_search(
+            {
+                "query": "pydantic",
+                "limit": 50,
+                "include_incompatible": True,
+                "dependency_versions": {"package:pydantic": "1.10.15"},
+            }
+        )
+        data = json.loads(result["content"][0]["text"])
+        guide = next(item for item in data if item["id"] == "pydantic-v2-config")
+        assert guide["dependency_compatibility"]["status"] == "incompatible"
+
+    def test_search_project_path_traversal_and_bad_dependency_object_are_rejected(self):
+        traversal = mcp._tool_search({"query": "typing", "project_dir": "../../.."})
+        assert traversal["isError"] is True
+        bad_object = mcp._tool_search({"query": "typing", "dependency_versions": []})
+        assert bad_object["isError"] is True
+
+    def test_retrieve_dependency_context_preserves_explicit_incompatible_id(self):
+        result = mcp._tool_retrieve(
+            {
+                "guide_ids": ["pydantic-v2-config"],
+                "dependency_versions": {"package:pydantic": "1.10.15"},
+            }
+        )
+        data = json.loads(result["content"][0]["text"])
+        assert data[0]["dependency_compatibility"]["status"] == "incompatible"
 
     def test_retrieve_empty_ids(self):
         r = mcp._tool_retrieve({"guide_ids": []})

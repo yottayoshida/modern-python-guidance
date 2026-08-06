@@ -7,9 +7,14 @@ import logging
 import sys
 from pathlib import Path
 
+from packaging.utils import canonicalize_name
+from packaging.version import InvalidVersion, Version
+
 from modern_python_guidance import __version__
 from modern_python_guidance.compat import VERSION_RE
+from modern_python_guidance.dependency_compat import DependencyContext, assess_dependencies
 from modern_python_guidance.guide_index import GuideIndex, build_index
+from modern_python_guidance.project_dependencies import find_dependency_context
 from modern_python_guidance.retrieve import retrieve, suggest_ids
 from modern_python_guidance.search import search
 from modern_python_guidance.version_detect import detect_version
@@ -57,6 +62,19 @@ class _Skip(Exception):
     """Raised to skip a malformed message without terminating the server."""
 
 
+class _DuplicateJsonKey(ValueError):
+    """Raised by the JSON decoder before duplicate object keys are collapsed."""
+
+
+def _reject_duplicate_keys(pairs: list[tuple[str, object]]) -> dict[str, object]:
+    result: dict[str, object] = {}
+    for key, value in pairs:
+        if key in result:
+            raise _DuplicateJsonKey(key)
+        result[key] = value
+    return result
+
+
 def _read_message(stream: object = None) -> dict | None:
     buf = stream or sys.stdin
     while True:
@@ -67,7 +85,9 @@ def _read_message(stream: object = None) -> dict | None:
         if line:
             break
     try:
-        return json.loads(line)
+        return json.loads(line, object_pairs_hook=_reject_duplicate_keys)
+    except _DuplicateJsonKey as exc:
+        raise _Skip(f"duplicate JSON object key: {exc}") from exc
     except json.JSONDecodeError as exc:
         raise _Skip(f"invalid JSON: {exc}") from exc
 
@@ -104,7 +124,8 @@ TOOLS = [
             "retrieving full content. Supports fuzzy matching when exact matches fail. "
             "Call this when writing or reviewing Python outside the ~5 high-frequency "
             "patterns already embedded in your project rules (FastAPI, Django, "
-            "httpx, pytest, etc.); the full catalog has 41 guides."
+            "httpx, pytest, etc.); the full catalog has 41 guides. Unknown dependency "
+            "compatibility is not confirmation; do not apply incompatible guidance."
         ),
         "inputSchema": {
             "type": "object",
@@ -132,6 +153,24 @@ TOOLS = [
                     "maximum": 50,
                     "default": 10,
                 },
+                "project_dir": {
+                    "type": "string",
+                    "description": (
+                        "Relative project directory for dependency evidence (default: server CWD)."
+                    ),
+                },
+                "dependency_versions": {
+                    "type": "object",
+                    "description": "Exact overrides keyed by package:name or tool:name.",
+                    "additionalProperties": {"type": "string"},
+                },
+                "include_incompatible": {
+                    "type": "boolean",
+                    "description": (
+                        "Include guidance proven incompatible with the project (default: false)."
+                    ),
+                    "default": False,
+                },
             },
             "required": ["query"],
         },
@@ -141,7 +180,8 @@ TOOLS = [
         "description": (
             "Retrieve full content of one or more guides by ID. Returns the complete "
             "BAD/GOOD pattern with explanation, version compatibility, and token estimate. "
-            "Call search_guides first to find guide IDs."
+            "Call search_guides first to find guide IDs. Unknown dependency compatibility is "
+            "not confirmation; do not apply incompatible guidance."
         ),
         "inputSchema": {
             "type": "object",
@@ -156,6 +196,17 @@ TOOLS = [
                     "description": "Target Python version for compatibility check (e.g. '3.12')",
                     "pattern": r"^\d+\.\d+$",
                 },
+                "project_dir": {
+                    "type": "string",
+                    "description": (
+                        "Relative project directory for dependency evidence (default: server CWD)."
+                    ),
+                },
+                "dependency_versions": {
+                    "type": "object",
+                    "description": "Exact overrides keyed by package:name or tool:name.",
+                    "additionalProperties": {"type": "string"},
+                },
             },
             "required": ["guide_ids"],
         },
@@ -165,7 +216,8 @@ TOOLS = [
         "description": (
             "List all available guides with metadata. Returns IDs, titles, categories, "
             "layers, and Python version requirements. Use to browse the full catalog "
-            "or filter by category/version."
+            "or filter by category/version. Unknown dependency compatibility is not confirmation; "
+            "do not apply incompatible guidance."
         ),
         "inputSchema": {
             "type": "object",
@@ -178,6 +230,24 @@ TOOLS = [
                     "type": "string",
                     "description": "Filter by Python version compatibility (e.g. '3.13')",
                     "pattern": r"^\d+\.\d+$",
+                },
+                "project_dir": {
+                    "type": "string",
+                    "description": (
+                        "Relative project directory for dependency evidence (default: server CWD)."
+                    ),
+                },
+                "dependency_versions": {
+                    "type": "object",
+                    "description": "Exact overrides keyed by package:name or tool:name.",
+                    "additionalProperties": {"type": "string"},
+                },
+                "include_incompatible": {
+                    "type": "boolean",
+                    "description": (
+                        "Include guidance proven incompatible with the project (default: false)."
+                    ),
+                    "default": False,
                 },
             },
         },
@@ -277,6 +347,68 @@ def _validate_type(
     return None
 
 
+def _validate_bool(value: object, name: str, *, optional: bool = False) -> str | None:
+    if optional and value is None:
+        return None
+    if not isinstance(value, bool):
+        return f"{name} must be a boolean, got {type(value).__name__}"
+    return None
+
+
+def _dependency_context(arguments: dict) -> tuple[DependencyContext | None, str | None]:
+    project_dir_str = arguments.get("project_dir")
+    error = _validate_type(project_dir_str, "project_dir", str, optional=True)
+    if error:
+        return None, error
+    project_dir = _confine_path(project_dir_str)
+    if isinstance(project_dir, str):
+        return None, project_dir
+
+    raw_versions = arguments.get("dependency_versions")
+    if raw_versions is not None and not isinstance(raw_versions, dict):
+        return None, f"dependency_versions must be an object, got {type(raw_versions).__name__}"
+    overrides: dict[str, str] = {}
+    for raw_key, raw_version in (raw_versions or {}).items():
+        if not isinstance(raw_key, str) or not isinstance(raw_version, str):
+            return None, "dependency_versions keys and values must be strings"
+        try:
+            kind, raw_name = raw_key.split(":", 1)
+        except ValueError:
+            return None, "dependency_versions keys must be package:name or tool:name"
+        name = canonicalize_name(raw_name)
+        if kind not in {"package", "tool"} or not name:
+            return None, "dependency_versions keys must use package:name or tool:name"
+        try:
+            version = str(Version(raw_version))
+        except InvalidVersion:
+            return None, f"invalid dependency version for {raw_key}: {raw_version!r}"
+        key = f"{kind}:{name}"
+        if key in overrides:
+            return None, f"duplicate dependency override for {key}"
+        overrides[key] = version
+    return find_dependency_context(project_dir, overrides), None
+
+
+def _dependency_fields(packages: list[str], tools: list[str], assessment: object) -> dict:
+    return {
+        "dependency_requirements": {"packages": list(packages), "tools": list(tools)},
+        "dependency_compatibility": {
+            "status": assessment.status,
+            "evidence": [
+                {
+                    "kind": fact.kind,
+                    "name": fact.name,
+                    "version": fact.version,
+                    "specifier": fact.specifier,
+                    "source": fact.source,
+                }
+                for fact in assessment.evidence
+            ],
+            "reasons": list(assessment.reasons),
+        },
+    }
+
+
 def _tool_search(arguments: dict) -> dict:
     query = arguments.get("query", "")
     err = _validate_type(query, "query", str)
@@ -306,8 +438,24 @@ def _tool_search(arguments: dict) -> dict:
     if err:
         return _tool_result(err, is_error=True)
 
+    include_incompatible = arguments.get("include_incompatible", False)
+    err = _validate_bool(include_incompatible, "include_incompatible")
+    if err:
+        return _tool_result(err, is_error=True)
+    dependency_context, err = _dependency_context(arguments)
+    if err:
+        return _tool_result(err, is_error=True)
+
     index = _get_index()
-    results = search(index, query, python_version=pv, category=category, limit=limit)
+    results = search(
+        index,
+        query,
+        python_version=pv,
+        category=category,
+        limit=limit,
+        dependency_context=dependency_context,
+        include_incompatible=include_incompatible,
+    )
 
     out = [
         {
@@ -322,6 +470,9 @@ def _tool_search(arguments: dict) -> dict:
             "token_estimate": r.token_estimate,
             "fuzzy": r.fuzzy,
             "snippet": r.snippet,
+            **_dependency_fields(
+                r.meta.applies_to_packages, r.meta.applies_to_tools, r.dependency_assessment
+            ),
         }
         for r in results
     ]
@@ -349,8 +500,12 @@ def _tool_retrieve(arguments: dict) -> dict:
     if err:
         return _tool_result(err, is_error=True)
 
+    dependency_context, err = _dependency_context(arguments)
+    if err:
+        return _tool_result(err, is_error=True)
+
     index = _get_index()
-    results = retrieve(index, guide_ids, python_version=pv)
+    results = retrieve(index, guide_ids, python_version=pv, dependency_context=dependency_context)
 
     found_ids = {r["id"] for r in results}
     missing = [gid for gid in guide_ids if gid not in found_ids]
@@ -375,6 +530,13 @@ def _tool_list(arguments: dict) -> dict:
     err = _validate_type(category, "category", str, optional=True)
     if err:
         return _tool_result(err, is_error=True)
+    include_incompatible = arguments.get("include_incompatible", False)
+    err = _validate_bool(include_incompatible, "include_incompatible")
+    if err:
+        return _tool_result(err, is_error=True)
+    dependency_context, err = _dependency_context(arguments)
+    if err:
+        return _tool_result(err, is_error=True)
     index = _get_index()
     metas = index.all_meta()
 
@@ -385,7 +547,24 @@ def _tool_list(arguments: dict) -> dict:
 
         metas = [m for m in metas if version_compatible(m.python, pv)]
 
-    metas.sort(key=lambda m: (m.layer, m.category, m.id))
+    assessed = [
+        (
+            meta,
+            assess_dependencies(
+                package_requirements=meta.applies_to_packages,
+                tool_requirements=meta.applies_to_tools,
+                context=dependency_context,
+            ),
+        )
+        for meta in metas
+    ]
+    if not include_incompatible:
+        assessed = [
+            (meta, assessment)
+            for meta, assessment in assessed
+            if assessment.status != "incompatible"
+        ]
+    assessed.sort(key=lambda item: (item[0].layer, item[0].category, item[0].id))
 
     out = [
         {
@@ -395,8 +574,9 @@ def _tool_list(arguments: dict) -> dict:
             "layer": m.layer,
             "python": m.python,
             "frequency": m.frequency,
+            **_dependency_fields(m.applies_to_packages, m.applies_to_tools, assessment),
         }
-        for m in metas
+        for m, assessment in assessed
     ]
     return _tool_result(json.dumps(out, indent=2, ensure_ascii=False))
 

@@ -19,6 +19,8 @@ aliases:
   - formatter
 python: ">=3.7"
 frequency: high
+applies-to-tools:
+  - ruff
 detect-patterns:
 ---
 

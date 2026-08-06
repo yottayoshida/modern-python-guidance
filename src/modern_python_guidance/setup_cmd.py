@@ -113,6 +113,10 @@ _THIN_RULE_BODY = """\
 
 Pre-generation design patterns that Ruff cannot auto-fix. Apply these transformations when writing or reviewing Python code.
 
+## Dependency applicability
+
+Before a framework or tool pattern, inspect project evidence or explicit overrides with `mcp__mpg__search_guides` / `retrieve_guides` (or `mpg search ... --project-dir . --dependency-version KIND:NAME=VERSION`). Requirements use AND semantics: `confirmed` means every requirement is proven; unknown is not confirmation, so verify before changing code; never auto-apply known-incompatible guidance. Do not use mpg's interpreter, optional/group declarations, or an ambiguous lockfile as proof.
+
 ## Embedded patterns (high-frequency, Ruff-uncovered)
 
 - `from typing import List, Dict` → `list[str]`, `dict[str, int]` (>=3.9)

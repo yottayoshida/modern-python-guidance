@@ -12,6 +12,8 @@ aliases:
   - check-constraint
 python: ">=3.9"
 frequency: low
+applies-to-packages:
+  - django>=5.1
 detect-patterns:
 ---
 

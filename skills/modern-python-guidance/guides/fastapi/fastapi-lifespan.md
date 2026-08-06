@@ -14,6 +14,9 @@ aliases:
   - shutdown
 python: ">=3.9"
 frequency: high
+applies-to-packages:
+  - fastapi>=0.94
+  - starlette>=0.26
 detect-patterns:
   - "\.on_event\("
 ---

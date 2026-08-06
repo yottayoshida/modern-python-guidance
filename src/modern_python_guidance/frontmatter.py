@@ -13,6 +13,7 @@ import re
 from dataclasses import dataclass, field
 from typing import Any
 
+from packaging.requirements import InvalidRequirement, Requirement
 from packaging.specifiers import InvalidSpecifier, SpecifierSet
 
 _KEY_RE = re.compile(r"^([a-z][a-z0-9_-]*)\s*:\s*(.*)")
@@ -44,6 +45,8 @@ class GuideMeta:
     pep: list[int] = field(default_factory=list)
     detect_patterns: list[str] | None = None
     detect_names: list[str] | None = None
+    applies_to_packages: list[str] = field(default_factory=list)
+    applies_to_tools: list[str] = field(default_factory=list)
 
 
 def parse_frontmatter(text: str) -> tuple[GuideMeta, str]:
@@ -158,6 +161,9 @@ def _build_meta(raw: dict[str, Any]) -> GuideMeta:
     if not isinstance(aliases_raw, list):
         raise FrontmatterError(f"aliases must be a list, got {aliases_raw!r}")
 
+    applies_to_packages = _parse_dependency_applicability(raw, "applies-to-packages")
+    applies_to_tools = _parse_dependency_applicability(raw, "applies-to-tools")
+
     tags = raw["tags"]
     if not isinstance(tags, list) or not tags:
         raise FrontmatterError("tags must be a non-empty list")
@@ -206,6 +212,39 @@ def _build_meta(raw: dict[str, Any]) -> GuideMeta:
         frequency=freq,
         aliases=[str(a) for a in aliases_raw],
         pep=pep,
+        applies_to_packages=applies_to_packages,
+        applies_to_tools=applies_to_tools,
         detect_patterns=detect_patterns,
         detect_names=detect_names,
     )
+
+
+def _parse_dependency_applicability(raw: dict[str, Any], field_name: str) -> list[str]:
+    values = raw.get(field_name, [])
+    if not isinstance(values, list):
+        raise FrontmatterError(f"{field_name} must be a list, got {values!r}")
+
+    requirements: list[str] = []
+    for value in values:
+        if not isinstance(value, str):
+            raise FrontmatterError(f"{field_name} entries must be strings, got {value!r}")
+        requirement_text = value
+        try:
+            requirement = Requirement(requirement_text)
+        except InvalidRequirement as e:
+            raise FrontmatterError(f"invalid {field_name} entry {requirement_text!r}: {e}") from e
+        if requirement.url is not None:
+            raise FrontmatterError(
+                f"invalid {field_name} entry {requirement_text!r}: URLs are not allowed"
+            )
+        if requirement.extras:
+            raise FrontmatterError(
+                f"invalid {field_name} entry {requirement_text!r}: extras are not allowed"
+            )
+        if requirement.marker is not None:
+            raise FrontmatterError(
+                f"invalid {field_name} entry {requirement_text!r}: "
+                "environment markers are not allowed"
+            )
+        requirements.append(requirement_text)
+    return requirements

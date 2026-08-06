@@ -4,9 +4,14 @@ from __future__ import annotations
 
 import difflib
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from modern_python_guidance.compat import token_estimate, version_compatible
+from modern_python_guidance.dependency_compat import (
+    DependencyAssessment,
+    DependencyContext,
+    assess_dependencies,
+)
 from modern_python_guidance.frontmatter import GuideMeta
 from modern_python_guidance.guide_index import Guide, GuideIndex
 
@@ -31,6 +36,9 @@ class SearchResult:
     token_estimate: int
     fuzzy: bool = False
     snippet: str = ""
+    dependency_assessment: DependencyAssessment = field(
+        default_factory=lambda: DependencyAssessment("confirmed", (), (), ())
+    )
 
 
 def search(
@@ -40,6 +48,8 @@ def search(
     python_version: str | None = None,
     category: str | None = None,
     limit: int = 10,
+    dependency_context: DependencyContext | None = None,
+    include_incompatible: bool = False,
 ) -> list[SearchResult]:
     limit = max(1, limit)
     query = query[:MAX_QUERY_LEN].lower()
@@ -61,6 +71,10 @@ def search(
         if python_version and not version_compatible(meta.python, python_version):
             continue
 
+        assessment = _assess_guide(meta, dependency_context)
+        if assessment.status == "incompatible" and not include_incompatible:
+            continue
+
         score = _score(meta, tokens, guide.body_tokens, query_idents)
 
         if score > 0:
@@ -72,6 +86,7 @@ def search(
                     meta=meta,
                     token_estimate=token_estimate(guide.body),
                     snippet=guide.snippet,
+                    dependency_assessment=assessment,
                 )
             )
 
@@ -84,6 +99,8 @@ def search(
             python_version=python_version,
             category=category,
             limit=limit,
+            dependency_context=dependency_context,
+            include_incompatible=include_incompatible,
         )
 
     return results[:limit]
@@ -126,12 +143,17 @@ def _fuzzy_fallback(
     python_version: str | None = None,
     category: str | None = None,
     limit: int = FUZZY_MAX,
+    dependency_context: DependencyContext | None = None,
+    include_incompatible: bool = False,
 ) -> list[SearchResult]:
     candidates: dict[str, Guide] = {}
     for guide_id, guide in index.guides.items():
         if category and guide.meta.category != category:
             continue
         if python_version and not version_compatible(guide.meta.python, python_version):
+            continue
+        assessment = _assess_guide(guide.meta, dependency_context)
+        if assessment.status == "incompatible" and not include_incompatible:
             continue
         candidates[guide_id] = guide
 
@@ -159,6 +181,7 @@ def _fuzzy_fallback(
                 continue
             seen.add(guide_id)
             guide = candidates[guide_id]
+            assessment = _assess_guide(guide.meta, dependency_context)
             results.append(
                 SearchResult(
                     guide_id=guide_id,
@@ -167,8 +190,22 @@ def _fuzzy_fallback(
                     token_estimate=token_estimate(guide.body),
                     fuzzy=True,
                     snippet=guide.snippet,
+                    dependency_assessment=assessment,
                 )
             )
 
     results.sort(key=lambda r: (-r.score, r.guide_id))
     return results[: min(limit, FUZZY_MAX)]
+
+
+def _assess_guide(
+    meta: GuideMeta, dependency_context: DependencyContext | None
+) -> DependencyAssessment:
+    requirements = tuple(meta.applies_to_packages) + tuple(meta.applies_to_tools)
+    if dependency_context is None:
+        return DependencyAssessment("confirmed", requirements, (), ())
+    return assess_dependencies(
+        package_requirements=meta.applies_to_packages,
+        tool_requirements=meta.applies_to_tools,
+        context=dependency_context,
+    )

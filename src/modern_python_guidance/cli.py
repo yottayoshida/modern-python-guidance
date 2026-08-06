@@ -10,10 +10,15 @@ import signal
 import sys
 from pathlib import Path
 
+from packaging.utils import canonicalize_name
+from packaging.version import InvalidVersion, Version
+
 from modern_python_guidance import __version__
 from modern_python_guidance.check import CheckError, CheckMatch, check_file, sanitize_line
 from modern_python_guidance.compat import VERSION_RE, version_compatible
+from modern_python_guidance.dependency_compat import DependencyContext, assess_dependencies
 from modern_python_guidance.guide_index import build_index
+from modern_python_guidance.project_dependencies import find_dependency_context
 from modern_python_guidance.retrieve import retrieve, suggest_ids
 from modern_python_guidance.search import search as do_search
 from modern_python_guidance.version_detect import (
@@ -31,6 +36,64 @@ def _limit_type(value: str) -> int:
     if n < 1 or n > 50:
         raise argparse.ArgumentTypeError(f"must be between 1 and 50, got {n}")
     return n
+
+
+def _dependency_version_type(value: str) -> tuple[str, str, str]:
+    """Parse a CLI override without consulting the target environment."""
+    try:
+        key, raw_version = value.split("=", 1)
+        kind, raw_name = key.split(":", 1)
+    except ValueError:
+        raise argparse.ArgumentTypeError(
+            "must be KIND:NAME=VERSION (for example package:pydantic=2.10.0)"
+        ) from None
+    name = canonicalize_name(raw_name)
+    if kind not in {"package", "tool"} or not name or not raw_version:
+        raise argparse.ArgumentTypeError(
+            "kind must be package or tool and name/version must be non-empty"
+        )
+    try:
+        version = str(Version(raw_version))
+    except InvalidVersion:
+        raise argparse.ArgumentTypeError(f"invalid dependency version: {raw_version!r}") from None
+    return kind, name, version
+
+
+def _dependency_overrides(
+    values: list[tuple[str, str, str]] | None, parser: argparse.ArgumentParser
+) -> dict[str, str]:
+    overrides: dict[str, str] = {}
+    for kind, name, version in values or []:
+        key = f"{kind}:{name}"
+        if key in overrides:
+            parser.error(f"duplicate --dependency-version for {key}")
+        overrides[key] = version
+    return overrides
+
+
+def _add_dependency_arguments(
+    parser: argparse.ArgumentParser, *, include_incompatible: bool = False
+) -> None:
+    parser.add_argument(
+        "--project-dir",
+        type=Path,
+        default=Path.cwd(),
+        help="Project directory used to read dependency evidence (default: current directory)",
+    )
+    parser.add_argument(
+        "--dependency-version",
+        action="append",
+        type=_dependency_version_type,
+        dest="dependency_versions",
+        metavar="KIND:NAME=VERSION",
+        help="Exact dependency override; repeatable",
+    )
+    if include_incompatible:
+        parser.add_argument(
+            "--include-incompatible",
+            action="store_true",
+            help="Include guidance proven incompatible with project dependencies",
+        )
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -53,6 +116,7 @@ def main(argv: list[str] | None = None) -> None:
     p_search.add_argument(
         "--limit", type=_limit_type, default=10, help="Max results, 1-50 (default: 10)"
     )
+    _add_dependency_arguments(p_search, include_incompatible=True)
     p_search.add_argument(
         "--format",
         choices=["json", "human"],
@@ -70,6 +134,7 @@ def main(argv: list[str] | None = None) -> None:
         default=None,
         help="Output format (default: json when piped, human when TTY)",
     )
+    _add_dependency_arguments(p_retrieve)
 
     # list
     p_list = subparsers.add_parser("list", help="List available guides")
@@ -81,6 +146,7 @@ def main(argv: list[str] | None = None) -> None:
         default=None,
         help="Output format (default: json when piped, human when TTY)",
     )
+    _add_dependency_arguments(p_list, include_incompatible=True)
 
     # detect-version
     p_detect = subparsers.add_parser("detect-version", help="Detect project Python version")
@@ -152,6 +218,7 @@ def main(argv: list[str] | None = None) -> None:
         default=None,
         help="Output format (default: json when piped, human when TTY)",
     )
+    _add_dependency_arguments(p_check)
     p_check.add_argument(
         "--exit-zero",
         action="store_true",
@@ -175,6 +242,9 @@ def main(argv: list[str] | None = None) -> None:
     )
 
     args = parser.parse_args(argv)
+
+    if hasattr(args, "dependency_versions"):
+        args.dependency_overrides = _dependency_overrides(args.dependency_versions, parser)
 
     if args.command is None:
         parser.print_help()
@@ -215,12 +285,15 @@ def _resolve_format(args: argparse.Namespace) -> str:
 
 def _cmd_search(args: argparse.Namespace) -> None:
     index = build_index()
+    context = _dependency_context(args)
     results = do_search(
         index,
         args.query,
         python_version=args.python_version,
         category=args.category,
         limit=args.limit,
+        dependency_context=context,
+        include_incompatible=args.include_incompatible,
     )
 
     fmt = _resolve_format(args)
@@ -246,6 +319,9 @@ def _cmd_search(args: argparse.Namespace) -> None:
                 "token_estimate": r.token_estimate,
                 "fuzzy": r.fuzzy,
                 "snippet": r.snippet,
+                **_dependency_json(
+                    r.meta.applies_to_packages, r.meta.applies_to_tools, r.dependency_assessment
+                ),
             }
             for r in results
         ]
@@ -253,7 +329,12 @@ def _cmd_search(args: argparse.Namespace) -> None:
     else:
         for r in results:
             fuzzy_marker = " (fuzzy)" if r.fuzzy else ""
-            print(f"  {r.guide_id:<40} score={r.score:<6.1f} [{r.meta.category}]{fuzzy_marker}")
+            assessment = r.dependency_assessment
+            suffix = _human_dependency_suffix(assessment.status, assessment.reasons)
+            print(
+                f"  {r.guide_id:<40} score={r.score:<6.1f} [{r.meta.category}]"
+                f"{fuzzy_marker}{suffix}"
+            )
 
 
 def _cmd_retrieve(args: argparse.Namespace) -> None:
@@ -262,7 +343,12 @@ def _cmd_retrieve(args: argparse.Namespace) -> None:
     if not guide_ids:
         print("No guide IDs provided.")
         sys.exit(1)
-    results = retrieve(index, guide_ids, python_version=args.python_version)
+    results = retrieve(
+        index,
+        guide_ids,
+        python_version=args.python_version,
+        dependency_context=_dependency_context(args),
+    )
 
     found_ids = {r["id"] for r in results}
     missing = [gid for gid in guide_ids if gid not in found_ids]
@@ -306,11 +392,19 @@ def _cmd_list(args: argparse.Namespace) -> None:
     if args.python_version:
         metas = [m for m in metas if version_compatible(m.python, args.python_version)]
 
-    metas.sort(key=lambda m: (m.layer, m.category, m.id))
+    context = _dependency_context(args)
+    assessed = [
+        (m, _assess_meta(m.applies_to_packages, m.applies_to_tools, context)) for m in metas
+    ]
+    if not args.include_incompatible:
+        assessed = [
+            (m, assessment) for m, assessment in assessed if assessment.status != "incompatible"
+        ]
+    assessed.sort(key=lambda item: (item[0].layer, item[0].category, item[0].id))
 
     fmt = _resolve_format(args)
 
-    if not metas:
+    if not assessed:
         if fmt == "human":
             print("No guides found.")
         else:
@@ -326,17 +420,19 @@ def _cmd_list(args: argparse.Namespace) -> None:
                 "layer": m.layer,
                 "python": m.python,
                 "frequency": m.frequency,
+                **_dependency_json(m.applies_to_packages, m.applies_to_tools, assessment),
             }
-            for m in metas
+            for m, assessment in assessed
         ]
         print(json.dumps(out, indent=2, ensure_ascii=False))
     else:
         current_cat = None
-        for m in metas:
+        for m, assessment in assessed:
             if m.category != current_cat:
                 current_cat = m.category
                 print(f"\n[{current_cat}] (layer {m.layer})")
-            print(f"  {m.id:<40} {m.title}")
+            suffix = _human_dependency_suffix(assessment.status, assessment.reasons)
+            print(f"  {m.id:<40} {m.title}{suffix}")
 
 
 def _cmd_detect_version(args: argparse.Namespace) -> None:
@@ -380,7 +476,12 @@ def _cmd_uninstall(args: argparse.Namespace) -> None:
 def _cmd_check(args: argparse.Namespace) -> None:
     index = build_index()
     try:
-        matches = check_file(args.file, index, python_version=args.python_version)
+        matches = check_file(
+            args.file,
+            index,
+            python_version=args.python_version,
+            dependency_context=_dependency_context(args),
+        )
     except CheckError as e:
         print(f"error: {e}", file=sys.stderr)
         sys.exit(2)
@@ -409,6 +510,10 @@ def _check_json(matches: list[CheckMatch], file_path: Path) -> None:
                 "category": m.category,
                 "frequency": m.frequency,
                 "snippet": m.snippet,
+                "dependency_compatibility": {
+                    "status": m.dependency_status,
+                    "reasons": list(m.dependency_reasons),
+                },
             }
             for m in matches
         ],
@@ -432,6 +537,11 @@ def _check_human(matches: list[CheckMatch]) -> None:
         if m.snippet:
             snip = sanitize_line(m.snippet)
             print(f"{'':40}   {snip}")
+        if m.dependency_status != "confirmed":
+            reason = (
+                m.dependency_reasons[0] if m.dependency_reasons else "dependency status unknown"
+            )
+            print(f"{'':40}   [deps: {m.dependency_status}] {reason}")
 
     guide_ids = {m.guide_id for m in matches}
     unique = len(guide_ids)
@@ -499,8 +609,11 @@ def _hook_post_tool_use_inner() -> None:
 
     index = build_index()
     try:
-        matches = check_file(path, index, python_version=python_version)
-    except CheckError:
+        dependency_context = find_dependency_context(path.resolve().parent)
+        matches = check_file(
+            path, index, python_version=python_version, dependency_context=dependency_context
+        )
+    except (CheckError, OSError, RuntimeError):
         sys.exit(0)
 
     if not matches:
@@ -536,13 +649,58 @@ def _format_hook_context(matches: list[CheckMatch], python_version: str) -> str:
         lines.append(f"+{remaining} more")
 
     guide_ids = sorted({m.guide_id for m in matches})
-    lines.append(
-        f"mpg: {len(matches)} outdated pattern(s) found [target: py{python_version}]. "
-        f"If these are not intentional, apply the modern form: run "
-        f"`{sys.executable} -m modern_python_guidance retrieve {','.join(guide_ids)}` "
-        f"or call the MCP tool retrieve_guides({guide_ids})."
-    )
+    if any(match.dependency_status == "unknown" for match in matches):
+        lines.append(
+            f"mpg: {len(matches)} outdated pattern(s) found [target: py{python_version}]. "
+            "dependency compatibility unknown; verify before applying. Retrieve the guide with "
+            f"`{sys.executable} -m modern_python_guidance retrieve {','.join(guide_ids)}` "
+            f"or call the MCP tool retrieve_guides({guide_ids})."
+        )
+    else:
+        lines.append(
+            f"mpg: {len(matches)} outdated pattern(s) found [target: py{python_version}]. "
+            f"If these are not intentional, apply the modern form: run "
+            f"`{sys.executable} -m modern_python_guidance retrieve {','.join(guide_ids)}` "
+            f"or call the MCP tool retrieve_guides({guide_ids})."
+        )
     return "\n".join(lines)
+
+
+def _dependency_context(args: argparse.Namespace) -> DependencyContext:
+    return find_dependency_context(args.project_dir, getattr(args, "dependency_overrides", None))
+
+
+def _assess_meta(packages: list[str], tools: list[str], context: DependencyContext):
+    return assess_dependencies(
+        package_requirements=packages, tool_requirements=tools, context=context
+    )
+
+
+def _dependency_json(packages: list[str], tools: list[str], assessment: object) -> dict:
+    return {
+        "dependency_requirements": {"packages": list(packages), "tools": list(tools)},
+        "dependency_compatibility": {
+            "status": assessment.status,
+            "evidence": [
+                {
+                    "kind": fact.kind,
+                    "name": fact.name,
+                    "version": fact.version,
+                    "specifier": fact.specifier,
+                    "source": fact.source,
+                }
+                for fact in assessment.evidence
+            ],
+            "reasons": list(assessment.reasons),
+        },
+    }
+
+
+def _human_dependency_suffix(status: str, reasons: tuple[str, ...]) -> str:
+    if status == "confirmed":
+        return " [deps: confirmed]"
+    reason = f" {reasons[0]}" if reasons else ""
+    return f" [deps: {status}]{reason}"
 
 
 def _detect_version_for_file(file_path: Path) -> str | None:

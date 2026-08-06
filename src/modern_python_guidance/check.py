@@ -15,6 +15,12 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from modern_python_guidance.compat import version_compatible
+from modern_python_guidance.dependency_compat import (
+    DependencyAssessment,
+    DependencyContext,
+    DependencyStatus,
+    assess_dependencies,
+)
 from modern_python_guidance.guide_index import Guide, GuideIndex, _code_lines
 
 FREQ_RANK = {"high": 0, "medium": 1, "low": 2}
@@ -40,6 +46,8 @@ class CheckMatch:
     category: str
     frequency: str
     snippet: str
+    dependency_status: DependencyStatus = "confirmed"
+    dependency_reasons: tuple[str, ...] = ()
 
 
 def _mask_strings(text: str) -> tuple[frozenset[int], dict[int, str]]:
@@ -93,6 +101,7 @@ def check_file(
     index: GuideIndex,
     *,
     python_version: str | None = None,
+    dependency_context: DependencyContext | None = None,
 ) -> list[CheckMatch]:
     _validate_file(path)
     file_size = path.stat().st_size
@@ -102,8 +111,16 @@ def check_file(
     if not text:
         return []
 
-    patterns = _build_patterns(index, python_version=python_version)
-    name_guides = _build_name_guides(index, python_version=python_version)
+    patterns = _build_patterns(
+        index,
+        python_version=python_version,
+        dependency_context=dependency_context,
+    )
+    name_guides = _build_name_guides(
+        index,
+        python_version=python_version,
+        dependency_context=dependency_context,
+    )
 
     if not patterns and not name_guides:
         return []
@@ -133,6 +150,7 @@ def check_file(
                         category=guide.meta.category,
                         frequency=guide.meta.frequency,
                         snippet=guide.snippet,
+                        **_dependency_match_fields(guide, dependency_context),
                     )
                 )
                 break
@@ -143,7 +161,7 @@ def check_file(
         result = _parse_imports(text)
         if result is not None:
             aliases, tree = result
-            ast_matches = _ast_detect_names(text, tree, aliases, name_guides)
+            ast_matches = _ast_detect_names(text, tree, aliases, name_guides, dependency_context)
 
     # Merge: one match per line; AST preferred over regex on same line
     merged = _merge_matches(regex_matches, ast_matches)
@@ -177,11 +195,14 @@ def _build_patterns(
     index: GuideIndex,
     *,
     python_version: str | None = None,
+    dependency_context: DependencyContext | None = None,
 ) -> list[tuple[re.Pattern[str], Guide]]:
     entries: list[tuple[re.Pattern[str], Guide]] = []
 
     for guide in index.guides.values():
         if python_version and not version_compatible(guide.meta.python, python_version):
+            continue
+        if _assess_guide(guide, dependency_context).status == "incompatible":
             continue
 
         raw_patterns = _get_patterns(guide)
@@ -221,11 +242,14 @@ def _build_name_guides(
     index: GuideIndex,
     *,
     python_version: str | None = None,
+    dependency_context: DependencyContext | None = None,
 ) -> dict[str, Guide]:
     """Build {fqn: Guide} mapping from guides that have detect_names."""
     result: dict[str, Guide] = {}
     for guide in index.guides.values():
         if python_version and not version_compatible(guide.meta.python, python_version):
+            continue
+        if _assess_guide(guide, dependency_context).status == "incompatible":
             continue
         if guide.meta.detect_names:
             for name in guide.meta.detect_names:
@@ -280,6 +304,7 @@ def _ast_detect_names(
     tree: ast.Module,
     aliases: dict[str, str],
     name_guides: dict[str, Guide],
+    dependency_context: DependencyContext | None = None,
 ) -> list[CheckMatch]:
     """Walk AST once, resolve Name/Attribute nodes through aliases, match against detect-names."""
     lines = text.splitlines()
@@ -324,11 +349,35 @@ def _ast_detect_names(
                         category=guide.meta.category,
                         frequency=guide.meta.frequency,
                         snippet=guide.snippet,
+                        **_dependency_match_fields(guide, dependency_context),
                     )
                 )
                 break
 
     return matches
+
+
+def _assess_guide(
+    guide: Guide, dependency_context: DependencyContext | None
+) -> DependencyAssessment:
+    requirements = tuple(guide.meta.applies_to_packages) + tuple(guide.meta.applies_to_tools)
+    if dependency_context is None:
+        return DependencyAssessment("confirmed", requirements, (), ())
+    return assess_dependencies(
+        package_requirements=guide.meta.applies_to_packages,
+        tool_requirements=guide.meta.applies_to_tools,
+        context=dependency_context,
+    )
+
+
+def _dependency_match_fields(
+    guide: Guide, dependency_context: DependencyContext | None
+) -> dict[str, DependencyStatus | tuple[str, ...]]:
+    assessment = _assess_guide(guide, dependency_context)
+    return {
+        "dependency_status": assessment.status,
+        "dependency_reasons": assessment.reasons,
+    }
 
 
 def _merge_matches(

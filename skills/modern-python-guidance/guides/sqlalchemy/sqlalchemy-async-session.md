@@ -13,6 +13,8 @@ aliases:
   - async-sessionmaker
 python: ">=3.9"
 frequency: medium
+applies-to-packages:
+  - sqlalchemy>=1.4
 detect-patterns:
 ---
 

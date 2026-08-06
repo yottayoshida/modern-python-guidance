@@ -13,6 +13,8 @@ aliases:
   - large response
 python: ">=3.9"
 frequency: medium
+applies-to-packages:
+  - httpx
 detect-patterns:
 ---
 

@@ -225,6 +225,17 @@ class TestPythonSpecifiers:
         SpecifierSet(meta.python)
 
 
+class TestDependencyApplicability:
+    def test_layer_two_guides_declare_package_applicability(self, guide_file: Path):
+        text = guide_file.read_text(encoding="utf-8")
+        meta, _ = parse_frontmatter(text)
+        if meta.layer != 2:
+            return
+        assert meta.applies_to_packages, (
+            f"{meta.id}: Layer 2 guides must declare applies-to-packages"
+        )
+
+
 class TestGuideInventory:
     def test_no_duplicate_ids(self):
         seen: dict[str, Path] = {}

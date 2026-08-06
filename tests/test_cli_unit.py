@@ -35,6 +35,27 @@ class TestMainDispatch:
         with pytest.raises(SystemExit, match="0"):
             main(argv=["search", "typing"])
 
+    @pytest.mark.parametrize(
+        "value",
+        ["pydantic=2", "library:pydantic=2", "package:pydantic=not-a-version", "tool:ruff=2,0"],
+    )
+    def test_invalid_dependency_version_exits(self, capsys, value):
+        with pytest.raises(SystemExit, match="2"):
+            main(argv=["search", "typing", "--dependency-version", value])
+
+    def test_duplicate_dependency_versions_exit(self, capsys):
+        with pytest.raises(SystemExit, match="2"):
+            main(
+                argv=[
+                    "search",
+                    "typing",
+                    "--dependency-version",
+                    "package:pydantic=1",
+                    "--dependency-version",
+                    "package:pydantic=2",
+                ]
+            )
+
 
 class TestResolveFormat:
     def test_explicit_json(self):
@@ -617,6 +638,17 @@ class TestCmdHookVersionDetection:
         captured = capsys.readouterr()
         assert captured.err == ""
         assert captured.out == ""
+
+    def test_dependency_context_failure_does_not_break_hook(self, tmp_path, capsys, monkeypatch):
+        p = tmp_path / "bad.py"
+        p.write_text("from typing import List\n")
+        monkeypatch.setattr(
+            "modern_python_guidance.cli.find_dependency_context",
+            lambda *_args, **_kwargs: (_ for _ in ()).throw(OSError("unreadable")),
+        )
+        with pytest.raises(SystemExit, match="0"):
+            self._run_hook(monkeypatch, p)
+        assert capsys.readouterr().out == ""
 
 
 class TestCmdSetupUninstall:

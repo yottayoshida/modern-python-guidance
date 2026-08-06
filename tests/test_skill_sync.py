@@ -20,6 +20,7 @@ from modern_python_guidance.guide_index import build_index
 REPO_ROOT = Path(__file__).resolve().parent.parent
 SKILL_MD = REPO_ROOT / "skills" / "modern-python-guidance" / "SKILL.md"
 README_MD = REPO_ROOT / "README.md"
+RULES_MD = REPO_ROOT / "rules" / "modern-python.md"
 GUIDES_DIR = REPO_ROOT / "skills" / "modern-python-guidance" / "guides"
 
 EMBEDDED_GUIDE_IDS = [
@@ -50,6 +51,11 @@ def skill_text():
 @pytest.fixture(scope="module")
 def readme_text():
     return README_MD.read_text(encoding="utf-8")
+
+
+@pytest.fixture(scope="module")
+def rules_text():
+    return RULES_MD.read_text(encoding="utf-8")
 
 
 def _extract_backtick_ids(text: str) -> list[str]:
@@ -173,3 +179,25 @@ class TestV011TriggerKeywords:
     def test_denied_triggers_absent(self, triggers):
         found = triggers & DENIED_STANDALONE_TRIGGERS
         assert not found, f"Denied standalone triggers found: {found}"
+
+
+class TestDependencyApplicabilityGuidance:
+    """Static delivery artifacts must preserve the conservative dependency contract."""
+
+    def test_skill_requires_evidence_and_distinguishes_all_statuses(self, skill_text):
+        for phrase in (
+            "project evidence or explicit overrides",
+            "confirmed",
+            "incompatible",
+            "unknown",
+            "never auto-apply known-incompatible",
+        ):
+            assert phrase in skill_text
+
+    def test_rule_never_treats_unknown_as_confirmation(self, rules_text):
+        for phrase in (
+            "project evidence or explicit overrides",
+            "unknown is not confirmation",
+            "known-incompatible",
+        ):
+            assert phrase in rules_text

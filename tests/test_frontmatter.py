@@ -62,7 +62,111 @@ Body.
     assert meta.id == "minimal"
     assert meta.aliases == []
     assert meta.pep == []
+    assert meta.applies_to_packages == []
+    assert meta.applies_to_tools == []
     assert body == "Body."
+
+
+def test_parse_dependency_applicability_metadata():
+    text = """\
+---
+id: dependency-applicability
+title: Dependency Applicability
+category: typing
+layer: 2
+tags:
+  - test
+python: \">=3.9\"
+frequency: high
+applies-to-packages:
+  - "fastapi>=0.95"
+  - "starlette>=0.26"
+applies-to-tools:
+  - uv
+---
+
+Body.
+"""
+    meta, _ = parse_frontmatter(text)
+
+    assert meta.applies_to_packages == ["fastapi>=0.95", "starlette>=0.26"]
+    assert meta.applies_to_tools == ["uv"]
+
+
+def test_guide_meta_preserves_existing_positional_optional_fields():
+    meta = GuideMeta(
+        "positional-guide",
+        "Positional Guide",
+        "typing",
+        1,
+        ["test"],
+        ">=3.9",
+        "high",
+        [],
+        [],
+        ["legacy-pattern"],
+        ["typing.List"],
+    )
+
+    assert meta.detect_patterns == ["legacy-pattern"]
+    assert meta.detect_names == ["typing.List"]
+    assert meta.applies_to_packages == []
+    assert meta.applies_to_tools == []
+
+
+@pytest.mark.parametrize(
+    ("field", "requirement"),
+    [
+        ("applies-to-packages", "https://example.com/package.whl"),
+        ("applies-to-packages", "fastapi[all]>=0.95"),
+        ("applies-to-packages", 'fastapi>=0.95; python_version >= "3.9"'),
+        ("applies-to-tools", "git+https://example.com/tool.git"),
+    ],
+    ids=["url", "extras", "marker", "tool-url"],
+)
+def test_dependency_applicability_rejects_unsupported_requirements(field: str, requirement: str):
+    text = f"""\
+---
+id: invalid-dependency-applicability
+title: Invalid Dependency Applicability
+category: typing
+layer: 2
+tags:
+  - test
+python: \">=3.9\"
+frequency: high
+{field}:
+  - '{requirement}'
+---
+
+Body.
+"""
+
+    with pytest.raises(FrontmatterError, match=f"invalid {field} entry"):
+        parse_frontmatter(text)
+
+
+@pytest.mark.parametrize("field", ["applies-to-packages", "applies-to-tools"])
+def test_dependency_applicability_rejects_non_string_entries(field: str):
+    text = f"""\
+---
+id: non-string-dependency-applicability
+title: Non-string Dependency Applicability
+category: typing
+layer: 2
+tags:
+  - test
+python: \">=3.9\"
+frequency: high
+{field}:
+  - 42
+---
+
+Body.
+"""
+
+    with pytest.raises(FrontmatterError, match=f"{field} entries must be strings"):
+        parse_frontmatter(text)
 
 
 def test_multiple_peps():

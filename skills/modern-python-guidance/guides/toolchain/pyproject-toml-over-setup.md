@@ -14,6 +14,8 @@ aliases:
   - setuptools
 python: ">=3.7"
 frequency: high
+applies-to-tools:
+  - pip>=21.3
 pep: 621
 detect-patterns:
   - "from setuptools import"

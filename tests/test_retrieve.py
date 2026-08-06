@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 from conftest import extract_design_md_keys
 
+from modern_python_guidance.dependency_compat import DependencyContext, DependencyFact
 from modern_python_guidance.guide_index import build_index
 from modern_python_guidance.retrieve import retrieve, retrieve_json, suggest_ids
 
@@ -60,6 +61,23 @@ class TestRetrieve:
         assert len(results) == 1
         assert results[0]["version_match"] is True
 
+    def test_explicit_id_is_returned_with_incompatible_dependency_status(self, index):
+        context = DependencyContext(
+            {
+                ("package", "pydantic"): (
+                    DependencyFact("package", "pydantic", "1.10.15", None, "uv.lock"),
+                )
+            }
+        )
+
+        result = retrieve(index, ["pydantic-v2-config"], dependency_context=context)[0]
+
+        assert result["id"] == "pydantic-v2-config"
+        assert "class Config:" in result["content"]
+        assert result["dependency_requirements"] == {"packages": ["pydantic>=2"], "tools": []}
+        assert result["dependency_compatibility"]["status"] == "incompatible"
+        assert result["dependency_compatibility"]["evidence"][0]["version"] == "1.10.15"
+
 
 class TestRetrieveJSON:
     def test_valid_json(self, index):
@@ -69,10 +87,24 @@ class TestRetrieveJSON:
         assert len(parsed) == 1
         assert parsed[0]["id"] == "use-builtin-generics"
 
-    def test_stable_schema_keys(self, index):
+    def test_existing_schema_keys_are_preserved_additively(self, index):
         output = retrieve_json(index, ["use-builtin-generics"])
         parsed = json.loads(output)
-        assert set(parsed[0].keys()) == extract_design_md_keys("retrieve")
+        assert extract_design_md_keys("retrieve") <= set(parsed[0].keys())
+
+    def test_dependency_fields_are_json_serializable(self, index):
+        context = DependencyContext(
+            {
+                ("package", "pydantic"): (
+                    DependencyFact("package", "pydantic", "2.7", None, "uv.lock"),
+                )
+            }
+        )
+
+        output = retrieve_json(index, ["pydantic-v2-config"], dependency_context=context)
+        parsed = json.loads(output)
+
+        assert parsed[0]["dependency_compatibility"]["status"] == "confirmed"
 
 
 class TestSuggestIds:

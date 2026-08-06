@@ -13,6 +13,8 @@ aliases:
   - temp-directory
 python: ">=3.9"
 frequency: medium
+applies-to-packages:
+  - pytest>=3.9
 detect-patterns:
   - "def test_.*\btmpdir\b"
 ---

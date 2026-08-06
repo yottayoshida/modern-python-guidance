@@ -13,6 +13,8 @@ aliases:
   - exception-match
 python: ">=3.9"
 frequency: medium
+applies-to-packages:
+  - pytest>=2.8
 detect-patterns:
 ---
 

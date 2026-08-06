@@ -65,6 +65,17 @@ class TestInitialize:
         assert "tools" in result["capabilities"]
         assert result["serverInfo"]["name"] == "modern-python-guidance"
 
+    def test_duplicate_dependency_version_key_is_rejected_without_last_value_wins(self):
+        raw_request = (
+            b'{"jsonrpc":"2.0","id":1,"method":"tools/call","params":'
+            b'{"name":"search_guides","arguments":{"query":"pydantic",'
+            b'"dependency_versions":{"package:pydantic":"1.10.15",'
+            b'"package:pydantic":"2.10.0"}}}}\n'
+        )
+        proc = subprocess.run(BIN, input=raw_request, capture_output=True, timeout=10)
+        assert proc.returncode == 0
+        assert proc.stdout == b""
+
 
 class TestToolsList:
     def test_lists_four_tools(self):
@@ -142,7 +153,7 @@ class TestSearchGuides:
             },
         )
         data = json.loads(responses[1]["result"]["content"][0]["text"])
-        assert set(data[0].keys()) == extract_design_md_keys("search")
+        assert extract_design_md_keys("search") <= set(data[0].keys())
         assert isinstance(data[0]["tags"], list)
         assert isinstance(data[0]["python"], str)
         assert isinstance(data[0]["frequency"], str)
@@ -343,7 +354,7 @@ class TestListGuides:
             },
         )
         data = json.loads(responses[1]["result"]["content"][0]["text"])
-        assert set(data[0].keys()) == extract_design_md_keys("list")
+        assert extract_design_md_keys("list") <= set(data[0].keys())
 
     def test_list_with_category_filter(self):
         responses = _run_mcp(

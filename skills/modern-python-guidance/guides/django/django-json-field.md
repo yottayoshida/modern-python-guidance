@@ -13,6 +13,8 @@ aliases:
   - contrib-jsonfield
 python: ">=3.9"
 frequency: high
+applies-to-packages:
+  - django>=3.1
 detect-patterns:
   - "from django\.contrib\.postgres\.fields import.*JSONField"
 ---

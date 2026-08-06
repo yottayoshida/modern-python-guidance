@@ -14,6 +14,8 @@ aliases:
   - model_validate
 python: ">=3.9"
 frequency: high
+applies-to-packages:
+  - pydantic>=2
 detect-patterns:
   - "\.parse_obj\("
   - "\.parse_raw\("

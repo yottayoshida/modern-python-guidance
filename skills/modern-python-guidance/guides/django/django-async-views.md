@@ -13,6 +13,8 @@ aliases:
   - async-orm
 python: ">=3.9"
 frequency: medium
+applies-to-packages:
+  - django>=4.1
 detect-patterns:
   - "from asgiref\.sync import sync_to_async"
 ---

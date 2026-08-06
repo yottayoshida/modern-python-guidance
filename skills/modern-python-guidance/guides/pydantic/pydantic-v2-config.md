@@ -13,6 +13,8 @@ aliases:
   - ConfigDict
 python: ">=3.9"
 frequency: high
+applies-to-packages:
+  - pydantic>=2
 detect-patterns:
   - "class Config:"
 ---
