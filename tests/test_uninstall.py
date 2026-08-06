@@ -81,6 +81,53 @@ class TestUninstallMcp:
             assert "-s" in call.args[0]
             assert "--scope" not in call.args[0]
 
+    def test_project_dir_cwd_is_scope_specific(self, tmp_path: Path):
+        """#166: local removal uses the target project; user removal stays global."""
+        which_p, run_p = self._patches()
+        with which_p, run_p as mock_run:
+            mock_run.return_value = _cp(0, stdout=REMOVED_OUT)
+            ok = uninstall_mcp(project_dir=tmp_path)
+        assert ok is True
+        assert mock_run.call_args_list[0].kwargs.get("cwd") == str(tmp_path)
+        assert mock_run.call_args_list[1].kwargs.get("cwd") is None
+
+    def test_dry_run_existing_project_names_local_target(self, tmp_path: Path, capsys):
+        """#166: dry-run describes local and user scope with different cwd semantics."""
+        which_p, run_p = self._patches()
+        with which_p, run_p as mock_run:
+            ok = uninstall_mcp(project_dir=tmp_path, dry_run=True)
+        assert ok is True
+        assert mock_run.call_count == 0
+        lines = capsys.readouterr().out.splitlines()
+        assert lines[0].startswith(f"Would run in {tmp_path}: claude mcp remove mpg -s local")
+        assert lines[1] == "Would run: claude mcp remove mpg -s user"
+
+    def test_missing_project_skips_local_but_attempts_user(self, tmp_path: Path, capsys):
+        """#166: an unavailable explicit target must not redirect local removal."""
+        missing = tmp_path / "missing-project"
+        which_p, run_p = self._patches()
+        with which_p, run_p as mock_run:
+            mock_run.return_value = _cp(0, stdout=REMOVED_OUT)
+            ok = uninstall_mcp(project_dir=missing)
+        assert ok is False
+        assert mock_run.call_count == 1
+        assert mock_run.call_args_list[0].args[0][-1] == "user"
+        assert mock_run.call_args_list[0].kwargs.get("cwd") is None
+        assert "missing-project" in capsys.readouterr().err
+
+    def test_dry_run_missing_project_skips_local_and_fails(self, tmp_path: Path, capsys):
+        """#166: dry-run reports unavailable local cleanup and still shows user cleanup."""
+        missing = tmp_path / "missing-project"
+        which_p, run_p = self._patches()
+        with which_p, run_p as mock_run:
+            ok = uninstall_mcp(project_dir=missing, dry_run=True)
+        assert ok is False
+        assert mock_run.call_count == 0
+        captured = capsys.readouterr()
+        assert "missing-project" in captured.err
+        assert "Would run in" not in captured.out
+        assert "Would run: claude mcp remove mpg -s user" in captured.out
+
     def test_other_error_fails(self, capsys: pytest.CaptureFixture[str]):
         """V-017: a non-zero exit (not the not-found case) -> failure (do not hide)."""
         which_p, run_p = self._patches()
@@ -396,6 +443,13 @@ class TestRunUninstall:
             m_mcp.assert_called_once()
             m_skills.assert_not_called()
             m_rules.assert_not_called()
+
+    def test_project_dir_forwarded_to_mcp_only(self, tmp_path: Path):
+        """#166: the uninstall orchestrator forwards the explicit target."""
+        p_mcp, p_skills, p_rules = self._patch_all()
+        with p_mcp as m_mcp, p_skills, p_rules:
+            assert run_uninstall(mcp_only=True, project_dir=tmp_path) == 0
+        m_mcp.assert_called_once_with(project_dir=tmp_path, dry_run=False)
 
     def test_skills_only(self):
         """V-055: --skills-only includes Rules but skips MCP."""
