@@ -21,6 +21,11 @@ All notable changes to this project will be documented in this file.
 
 ### Docs
 
+- SECURITY.md now declares the supported 0.5.x line, an availability-dependent
+  repository-owned private reporting URL with a bounded email fallback, the
+  setup/uninstall mutation inventory, input and trust boundaries, and the
+  guide supply-chain policy. A regression test derives the supported line from
+  `pyproject.toml` to prevent policy drift. (closes #182)
 - README and design documentation now cover dependency metadata, evidence precedence and lock-root limits, conservative status semantics, CLI/MCP controls, hook behavior, and additive output contracts. (closes #179)
 - README documents the PostToolUse hook's actual shipped behavior (`additionalContext` contract, 5-match cap, `--no-hook`/`--with-hook` semantics, guide_id-only redaction rationale) and the `mpg setup` flags table.
 
