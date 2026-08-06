@@ -340,6 +340,21 @@ class TestCheck:
         assert r.returncode == 0
         data = json.loads(r.stdout)
         assert data["summary"]["total_matches"] == 0
+        coverage = data["summary"]["coverage"]
+        assert coverage["catalog_guides"] == 41
+        assert coverage["detectable_guides"] + coverage["advisory_only_guides"] == coverage[
+            "applicable_guides"
+        ]
+        assert len(coverage["advisory_only_ids"]) == coverage["advisory_only_guides"]
+
+    def test_check_human_reports_scope(self, tmp_path):
+        p = tmp_path / "bad.py"
+        p.write_text("from typing import List\n")
+
+        r = run_cli("check", str(p), "--format", "human")
+
+        assert r.returncode == 1
+        assert "Check scope:" in r.stdout
 
     def test_check_exit_zero(self, tmp_path):
         p = tmp_path / "bad.py"
@@ -457,6 +472,7 @@ class TestHook:
         assert payload["hookSpecificOutput"]["hookEventName"] == "PostToolUse"
         assert "mpg:" in context
         assert "use-builtin-generics" in context
+        assert "Check scope:" in context
         # raw source line must never appear (T1: indirect prompt injection channel)
         assert "from typing import List" not in context
 

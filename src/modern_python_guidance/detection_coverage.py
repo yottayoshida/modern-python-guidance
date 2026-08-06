@@ -48,6 +48,16 @@ class DetectionCoverage:
     def detectable_count(self) -> int:
         return len(self.detectable_ids)
 
+    def as_dict(self) -> dict[str, object]:
+        """Return the stable JSON shape used by CLI check output."""
+        return {
+            "catalog_guides": self.catalog_guides,
+            "applicable_guides": self.applicable_guides,
+            "detectable_guides": self.detectable_count,
+            "advisory_only_guides": self.advisory_only_count,
+            "advisory_only_ids": list(self.advisory_only_ids),
+        }
+
 
 def effective_regex_patterns(guide: Guide) -> tuple[str, ...]:
     """Return valid regex sources consumed by the check engine for ``guide``."""

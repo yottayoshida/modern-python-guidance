@@ -104,6 +104,23 @@ def test_overlapping_guides_are_both_capable_even_when_same_line_is_deduplicated
     assert coverage.detectable_ids == ("first", "second")
 
 
+def test_detection_coverage_json_shape_is_target_specific() -> None:
+    index = _index(
+        _guide(_meta("detectable", detect_patterns=[r"legacy"])),
+        _guide(_meta("advisory", detect_patterns=[], detect_names=[])),
+    )
+
+    coverage = detection_coverage(index, python_version=None, dependency_context=None)
+
+    assert coverage.as_dict() == {
+        "catalog_guides": 2,
+        "applicable_guides": 2,
+        "detectable_guides": 1,
+        "advisory_only_guides": 1,
+        "advisory_only_ids": ["advisory"],
+    }
+
+
 def test_detection_coverage_filters_version_and_incompatible_dependency() -> None:
     index = _index(
         _guide(_meta("detectable", detect_patterns=[r"legacy"])),
