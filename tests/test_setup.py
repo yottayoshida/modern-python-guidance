@@ -272,13 +272,25 @@ class TestWarnIfShadowed:
             patch("modern_python_guidance.setup_cmd.shutil.which", return_value="/usr/bin/claude"),
             patch("modern_python_guidance.setup_cmd.subprocess.run") as m,
         ):
-            m.side_effect = [_ADD_OK, _get_result("project")]
-            code = run_setup(mcp_only=True, scope="user", project_dir=tmp_path)
+            m.side_effect = [_ADD_OK, _get_result("local")]
+            code = run_setup(mcp_only=True, scope="local", project_dir=tmp_path)
         assert code == 0
         get_call = m.call_args_list[-1]
         assert get_call[0][0] == ["/usr/bin/claude", "mcp", "get", "mpg"]
         assert get_call.kwargs.get("cwd") == str(tmp_path)
-        assert "claude mcp remove mpg -s project" in capsys.readouterr().err
+        assert capsys.readouterr().err == ""
+
+    def test_user_scope_project_dir_is_not_used_as_cwd(self, tmp_path: Path):
+        """A user-scope registration is global even when project artifacts
+        are targeted with --project-dir."""
+        with (
+            patch("modern_python_guidance.setup_cmd.shutil.which", return_value="/usr/bin/claude"),
+            patch("modern_python_guidance.setup_cmd.subprocess.run") as m,
+        ):
+            m.side_effect = [_ADD_OK, _get_result("user")]
+            code = run_setup(mcp_only=True, scope="user", project_dir=tmp_path)
+        assert code == 0
+        assert all(call.kwargs.get("cwd") is None for call in m.call_args_list)
 
     def test_missing_project_dir_falls_back_to_cwd(self, tmp_path: Path):
         """A not-yet-created --project-dir cannot host the check; fall back."""
@@ -592,20 +604,39 @@ class TestSetupMcp:
         out = capsys.readouterr().out
         assert f"Would run in {tmp_path}" in out
 
-    def test_dry_run_missing_project_dir_omits_cwd_prefix(
+    def test_dry_run_missing_project_dir_shows_planned_local_target(
         self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
     ):
-        """#164: dry-run must not claim a nonexistent --project-dir as the
-        registration target — the message must match what will actually
-        happen (fall back to the caller's cwd), not the raw --project-dir
-        the user typed."""
+        """#167: dry-run previews the target that setup will create first."""
         with patch(
             "modern_python_guidance.setup_cmd.shutil.which", return_value="/usr/bin/claude"
         ):
-            setup_mcp(scope="local", project_dir=tmp_path / "does-not-exist", dry_run=True)
+            target = tmp_path / "does-not-exist"
+            setup_mcp(scope="local", project_dir=target, dry_run=True)
         out = capsys.readouterr().out
-        assert out.startswith("Would run: claude")
-        assert "does-not-exist" not in out
+        assert out.startswith(f"Would run in {target}: claude")
+
+    def test_user_scope_dry_run_with_project_dir_is_global(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ):
+        """User-scope dry-run must not claim that a global registration is
+        project-bound just because project artifacts have a target."""
+        setup_mcp(scope="user", project_dir=tmp_path, dry_run=True)
+        assert capsys.readouterr().out.startswith("Would run: claude")
+
+    def test_local_scope_missing_project_dir_fails_closed(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ):
+        """A direct local registration cannot silently fall back to caller cwd."""
+        missing = tmp_path / "does-not-exist"
+        with (
+            patch("modern_python_guidance.setup_cmd.shutil.which", return_value="/usr/bin/claude"),
+            patch("modern_python_guidance.setup_cmd.subprocess.run") as m,
+        ):
+            ok = setup_mcp(scope="local", project_dir=missing)
+        assert ok is False
+        assert m.call_count == 0
+        assert "--project-dir" in capsys.readouterr().err
 
     def test_other_failure_does_not_remove(self, capsys: pytest.CaptureFixture[str]):
         """#118: a non-duplicate add failure must NOT delete the existing entry."""
@@ -1175,16 +1206,97 @@ class TestRunSetup:
         assert code == 0
         assert "Warning" not in capsys.readouterr().err
 
-    def test_mcp_only_nonexistent_no_warning(
+    def test_mcp_only_local_nonexistent_project_is_created(
         self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
     ):
-        """#96: --mcp-only skips skills/rules, so no warning for non-existent dir."""
+        """#167: local MCP-only setup creates its target before registration."""
+        nonexistent = tmp_path / "does_not_exist"
+        p_skills = patch("modern_python_guidance.setup_cmd.setup_skills")
+        p_rules = patch("modern_python_guidance.setup_cmd.setup_rules")
+        with (
+            patch("modern_python_guidance.setup_cmd.setup_mcp", return_value=True) as m_mcp,
+            p_skills,
+            p_rules,
+        ):
+            code = run_setup(mcp_only=True, scope="local", project_dir=nonexistent)
+        assert code == 0
+        assert nonexistent.is_dir()
+        m_mcp.assert_called_once()
+        assert "will be created" in capsys.readouterr().err
+
+    def test_mcp_only_user_nonexistent_project_stays_irrelevant(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ):
+        """A global user MCP-only setup must not create an unrelated target."""
         nonexistent = tmp_path / "does_not_exist"
         p_mcp, p_skills, p_rules = self._patch_all()
         with p_mcp, p_skills, p_rules:
-            code = run_setup(mcp_only=True, project_dir=nonexistent)
+            code = run_setup(mcp_only=True, scope="user", project_dir=nonexistent)
         assert code == 0
+        assert not nonexistent.exists()
         assert "Warning" not in capsys.readouterr().err
+
+    def test_local_full_setup_prepares_missing_project_before_mutation(
+        self, tmp_path: Path
+    ):
+        """#167: full setup creates the target before MCP, Skills, Rules, or hook."""
+        project = tmp_path / "new-project"
+        events: list[tuple[str, bool]] = []
+
+        def record(name: str):
+            def _record(**kwargs):
+                target = kwargs.get("project_dir")
+                events.append((name, target is not None and target.is_dir()))
+                return True
+
+            return _record
+
+        with (
+            patch("modern_python_guidance.setup_cmd.setup_mcp", side_effect=record("mcp")),
+            patch("modern_python_guidance.setup_cmd.setup_skills", side_effect=record("skills")),
+            patch("modern_python_guidance.setup_cmd.setup_rules", side_effect=record("rules")),
+            patch("modern_python_guidance.setup_cmd.setup_hook", side_effect=record("hook")),
+        ):
+            assert run_setup(scope="local", project_dir=project) == 0
+
+        assert project.is_dir()
+        assert events == [("mcp", True), ("skills", True), ("rules", True), ("hook", True)]
+
+    def test_local_setup_project_creation_failure_stops_before_mutation(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ):
+        """#167: an unwritable target cannot leave a partial MCP registration."""
+        project = tmp_path / "blocked-project"
+        with (
+            patch("modern_python_guidance.setup_cmd.Path.mkdir", side_effect=OSError("denied")),
+            patch("modern_python_guidance.setup_cmd.setup_mcp", return_value=True) as m_mcp,
+            patch("modern_python_guidance.setup_cmd.setup_skills", return_value=True) as m_skills,
+            patch("modern_python_guidance.setup_cmd.setup_rules", return_value=True) as m_rules,
+            patch("modern_python_guidance.setup_cmd.setup_hook", return_value=True) as m_hook,
+        ):
+            assert run_setup(scope="local", project_dir=project) == 1
+
+        assert "blocked-project" in capsys.readouterr().err
+        m_mcp.assert_not_called()
+        m_skills.assert_not_called()
+        m_rules.assert_not_called()
+        m_hook.assert_not_called()
+
+    def test_local_setup_dry_run_missing_project_does_not_create(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ):
+        """#167: dry-run previews creation and local cwd without mutating."""
+        project = tmp_path / "dry-run-project"
+        with (
+            patch("modern_python_guidance.setup_cmd.setup_skills", return_value=True),
+            patch("modern_python_guidance.setup_cmd.setup_rules", return_value=True),
+        ):
+            assert run_setup(scope="local", project_dir=project, dry_run=True) == 0
+
+        assert not project.exists()
+        captured = capsys.readouterr()
+        assert "will be created" in captured.err
+        assert f"Would run in {project}:" in captured.out
 
     def test_dry_run_nonexistent_warns(self, tmp_path: Path, capsys: pytest.CaptureFixture[str]):
         """#96: --dry-run still warns about non-existent dir (typo detection)."""
