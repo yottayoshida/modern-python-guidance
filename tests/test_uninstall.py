@@ -129,6 +129,27 @@ class TestUninstallMcp:
         assert mock_run.call_args_list[0].kwargs.get("cwd") is None
         assert "project-file" in capsys.readouterr().err
 
+    def test_project_removed_during_local_call_still_attempts_user(self, tmp_path: Path, capsys):
+        """A race that removes the target must not prevent safe user cleanup."""
+        project = tmp_path / "project"
+        project.mkdir()
+        which_p, run_p = self._patches()
+
+        def run_and_remove_target(cmd, **kwargs):
+            if cmd[-1] == "local":
+                project.rmdir()
+                raise FileNotFoundError("cwd disappeared")
+            return _cp(0, stdout=REMOVED_OUT)
+
+        with which_p, run_p as mock_run:
+            mock_run.side_effect = run_and_remove_target
+            ok = uninstall_mcp(project_dir=project)
+        assert ok is False
+        assert mock_run.call_count == 2
+        assert mock_run.call_args_list[1].args[0][-1] == "user"
+        assert mock_run.call_args_list[1].kwargs.get("cwd") is None
+        assert "cleanup incomplete" in capsys.readouterr().err
+
     def test_dry_run_missing_project_skips_local_and_fails(self, tmp_path: Path, capsys):
         """#166: dry-run reports unavailable local cleanup and still shows user cleanup."""
         missing = tmp_path / "missing-project"

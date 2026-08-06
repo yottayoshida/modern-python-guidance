@@ -101,6 +101,9 @@ def uninstall_mcp(
             # `claude` resolved on PATH but could not be executed (broken binary,
             # permissions, platform quirk). Fail gracefully instead of crashing.
             print(f"Error: failed to run 'claude mcp remove -s {scope}': {e}", file=sys.stderr)
+            if scope == "local" and project_dir is not None and not project_dir.is_dir():
+                local_failed = True
+                continue
             return False
 
         output = (result.stdout + result.stderr).decode(errors="replace").strip()
