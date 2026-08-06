@@ -8,6 +8,7 @@ from collections.abc import Mapping
 from pathlib import Path
 
 from packaging.requirements import InvalidRequirement, Requirement
+from packaging.utils import canonicalize_name
 
 from modern_python_guidance.dependency_compat import DependencyContext, DependencyFact
 
@@ -77,13 +78,18 @@ def _read_toml(path: Path, warnings: list[str]) -> dict[object, object] | None:
     if not path.is_file():
         return None
     try:
-        with path.open(encoding="utf-8") as file:
-            text = file.read(_MAX_FILE_SIZE + 1)
-    except (OSError, UnicodeDecodeError) as error:
+        with path.open("rb") as file:
+            raw = file.read(_MAX_FILE_SIZE + 1)
+    except OSError as error:
         warnings.append(f"Could not read {path.name}: {type(error).__name__}")
         return None
-    if len(text) > _MAX_FILE_SIZE:
+    if len(raw) > _MAX_FILE_SIZE:
         warnings.append(f"Dependency file too large, skipped: {path.name}")
+        return None
+    try:
+        text = raw.decode("utf-8")
+    except UnicodeDecodeError as error:
+        warnings.append(f"Could not read {path.name}: {type(error).__name__}")
         return None
     try:
         parsed = tomllib.loads(text)
@@ -215,7 +221,16 @@ def _append_poetry_dependency(
     if specifier is None and value not in {"", "*"}:
         warnings.append(f"Ignored unsupported Poetry constraint {value!r} for {name}")
         return
-    facts.append(DependencyFact("package", name, None, specifier, "poetry.dependencies"))
+    source = "poetry.dependencies"
+    if isinstance(raw_value, dict) and _is_conditional_poetry_dependency(raw_value):
+        source = "poetry.dependencies.conditional"
+    facts.append(DependencyFact("package", name, None, specifier, source))
+
+
+def _is_conditional_poetry_dependency(value: dict[object, object]) -> bool:
+    return value.get("optional") is True or any(
+        key in value for key in ("markers", "python", "platform")
+    )
 
 
 def _poetry_specifier(value: str) -> str | None:
@@ -267,13 +282,31 @@ def _append_lock_facts(
         if not isinstance(name, str) or not isinstance(version, str):
             warnings.append(f"Ignored package without exact name/version from {source}")
             continue
-        facts.append(DependencyFact("package", name, version, None, source))
+        fact_source = source
+        if package.get("optional") is True or _has_only_conditional_declaration(facts, name):
+            fact_source = f"{source}.conditional"
+        facts.append(DependencyFact("package", name, version, None, fact_source))
+
+
+def _has_only_conditional_declaration(facts: list[DependencyFact], name: str) -> bool:
+    matching = [
+        fact for fact in facts if fact.kind == "package" and fact.name == canonicalize_name(name)
+    ]
+    if any(fact.source in {"project.dependencies", "poetry.dependencies"} for fact in matching):
+        return False
+    return any(_is_conditional_source(fact.source) for fact in matching)
+
+
+def _is_conditional_source(source: str) -> bool:
+    return source in {"project.optional-dependencies", "dependency-groups"} or source.endswith(
+        (".marker", ".conditional")
+    )
 
 
 def _warn_ambiguous_locks(facts: list[DependencyFact], warnings: list[str]) -> None:
     versions: dict[tuple[str, str, str], set[str]] = defaultdict(set)
     for fact in facts:
-        if fact.source in {"uv.lock", "poetry.lock"} and fact.version is not None:
+        if fact.source.removesuffix(".conditional") in {"uv.lock", "poetry.lock"} and fact.version:
             versions[(fact.kind, fact.name, fact.source)].add(fact.version)
     for (_, name, source), known_versions in versions.items():
         if len(known_versions) > 1:

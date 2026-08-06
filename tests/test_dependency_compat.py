@@ -130,6 +130,25 @@ def test_unpinned_or_unsupported_declared_constraints_remain_unknown() -> None:
     assert unsupported.status == "unknown"
 
 
+def test_impossible_declared_ranges_remain_unknown() -> None:
+    for specifier in (">2,<=2", ">=3,<2"):
+        result = assess_dependencies(
+            package_requirements=("pydantic>=2",),
+            tool_requirements=(),
+            context=_context(
+                DependencyFact(
+                    kind="package",
+                    name="pydantic",
+                    version=None,
+                    specifier=specifier,
+                    source="project.dependencies",
+                )
+            ),
+        )
+
+        assert result.status == "unknown"
+
+
 def test_conflicting_exact_lock_versions_remain_unknown() -> None:
     result = assess_dependencies(
         package_requirements=("pydantic>=2",),

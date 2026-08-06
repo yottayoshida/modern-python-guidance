@@ -237,6 +237,8 @@ def _to_interval(specifier_text: str) -> _Interval | None:
         if interval is None:
             return None
         result = _intersect(result, interval)
+        if _is_empty(result):
+            return None
     return result
 
 
@@ -322,6 +324,16 @@ def _disjoint(left: _Interval, right: _Interval) -> bool:
     return _upper_before_lower(
         left.upper, left.upper_inclusive, right.lower, right.lower_inclusive
     ) or _upper_before_lower(right.upper, right.upper_inclusive, left.lower, left.lower_inclusive)
+
+
+def _is_empty(interval: _Interval) -> bool:
+    if interval.lower is None or interval.upper is None:
+        return False
+    if interval.lower > interval.upper:
+        return True
+    return interval.lower == interval.upper and not (
+        interval.lower_inclusive and interval.upper_inclusive
+    )
 
 
 def _upper_before_lower(

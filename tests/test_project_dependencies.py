@@ -59,6 +59,74 @@ version = "0.112.0"
     assert {fact.source for fact in facts} == {"poetry.dependencies", "poetry.lock"}
 
 
+def test_poetry_conditional_table_dependencies_are_non_confirming(tmp_path: Path) -> None:
+    (tmp_path / "pyproject.toml").write_text(
+        """[tool.poetry.dependencies]
+pydantic = { version = ">=2", optional = true }
+fastapi = { version = ">=0.95", markers = "python_version >= '3.12'" }
+django = { version = ">=5.1", python = ">=3.12" }
+httpx = { version = ">=0.23", platform = "linux" }
+"""
+    )
+
+    context = detect_dependency_context(tmp_path)
+
+    assert _status(context, "pydantic>=2") == "unknown"
+    assert _status(context, "fastapi>=0.95") == "unknown"
+    assert _status(context, "django>=5.1") == "unknown"
+    assert _status(context, "httpx>=0.23") == "unknown"
+
+
+def test_lock_for_optional_or_conditional_dependency_is_non_confirming(tmp_path: Path) -> None:
+    (tmp_path / "pyproject.toml").write_text(
+        """[project]
+dependencies = ["fastapi>=0.95"]
+
+[project.optional-dependencies]
+extra = ["pydantic>=2"]
+
+[tool.poetry.dependencies]
+django = { version = ">=5.1", optional = true }
+"""
+    )
+    (tmp_path / "uv.lock").write_text(
+        """[[package]]
+name = "pydantic"
+version = "2.7.4"
+
+[[package]]
+name = "fastapi"
+version = "0.112.0"
+"""
+    )
+    (tmp_path / "poetry.lock").write_text(
+        """[[package]]
+name = "django"
+version = "5.1.0"
+"""
+    )
+
+    context = detect_dependency_context(tmp_path)
+
+    assert _status(context, "pydantic>=2") == "unknown"
+    assert _status(context, "django>=5.1") == "unknown"
+    assert _status(context, "fastapi>=0.95") == "confirmed"
+
+
+def test_optional_lock_package_is_non_confirming_without_main_declaration(tmp_path: Path) -> None:
+    (tmp_path / "poetry.lock").write_text(
+        """[[package]]
+name = "pydantic"
+version = "2.7.4"
+optional = true
+"""
+    )
+
+    context = detect_dependency_context(tmp_path)
+
+    assert _status(context, "pydantic>=2") == "unknown"
+
+
 def test_multiple_lock_versions_are_ambiguous(tmp_path: Path) -> None:
     (tmp_path / "uv.lock").write_text(
         """[[package]]
@@ -161,6 +229,14 @@ def test_malformed_or_oversized_files_are_skipped_without_raising(tmp_path: Path
     oversized.write_text("x" * (_MAX_FILE_SIZE + 1))
     context = detect_dependency_context(tmp_path)
     assert context.facts == {}
+    assert any("too large" in warning for warning in context.warnings)
+
+
+def test_size_limit_is_measured_in_bytes_before_utf8_decoding(tmp_path: Path) -> None:
+    (tmp_path / "uv.lock").write_text("é" * (_MAX_FILE_SIZE // 2 + 1))
+
+    context = detect_dependency_context(tmp_path)
+
     assert any("too large" in warning for warning in context.warnings)
 
 
