@@ -215,6 +215,15 @@ def test_promoted_claim_rejects_prompt_hash_drift() -> None:
         validate_manifest(_manifest(claim), REPO_ROOT)
 
 
+def test_renderer_supports_hashed_prompt_entries_for_promoted_claims() -> None:
+    claim = _promoted_claim()
+
+    rendered = render_source_block(_manifest(claim))
+
+    assert "bench/prompts/v5-a-terse.txt" in rendered
+    assert "fixture-run" not in rendered
+
+
 def test_renderer_is_deterministic_and_contains_no_unmanaged_numeric_claims() -> None:
     manifest = _manifest(_claim())
 
