@@ -661,9 +661,7 @@ def _hook_post_tool_use_inner() -> None:
     sys.exit(0)
 
 
-def _format_hook_context(
-    matches: list[CheckMatch], resolution: PythonVersionResolution
-) -> str:
+def _format_hook_context(matches: list[CheckMatch], resolution: PythonVersionResolution) -> str:
     """Build the additionalContext message surfaced to Claude.
 
     Deliberately excludes raw source lines: the edited file's content is

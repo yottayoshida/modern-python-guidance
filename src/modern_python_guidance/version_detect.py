@@ -43,6 +43,7 @@ class PythonVersionResolution:
     def as_dict(self) -> dict[str, str]:
         return {"version": self.version, "source": self.source}
 
+
 # Config files are read by the PostToolUse hook on every edit; cap the size so a
 # crafted pyproject.toml cannot stall or exhaust the hook process.
 _MAX_CONFIG_SIZE = 1024 * 1024

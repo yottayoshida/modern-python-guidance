@@ -134,9 +134,7 @@ class TestRetrieve:
 
     def test_retrieve_auto_detects_python_version_file(self, tmp_path: Path):
         (tmp_path / ".python-version").write_text("3.9\n")
-        r = run_cli(
-            "retrieve", "taskgroup-over-gather", "--format", "json", cwd=tmp_path
-        )
+        r = run_cli("retrieve", "taskgroup-over-gather", "--format", "json", cwd=tmp_path)
         assert r.returncode == 0
         guide = json.loads(r.stdout)[0]
         assert guide["version_match"] is False
@@ -213,9 +211,7 @@ class TestList:
         }
 
     def test_list_auto_detects_poetry(self, tmp_path: Path):
-        (tmp_path / "pyproject.toml").write_text(
-            '[tool.poetry.dependencies]\npython = "^3.10"\n'
-        )
+        (tmp_path / "pyproject.toml").write_text('[tool.poetry.dependencies]\npython = "^3.10"\n')
         r = run_cli("list", "--format", "json", cwd=tmp_path)
         assert r.returncode == 0
         data = json.loads(r.stdout)

@@ -39,9 +39,7 @@ class TestResolutionSources:
     def test_resolution_reports_pep621_source(self, tmp_project: Path):
         (tmp_project / "pyproject.toml").write_text('[project]\nrequires-python = ">=3.10"\n')
         result = resolve_python_version(project_dir=tmp_project)
-        assert result == PythonVersionResolution(
-            version="3.10", source="project.requires-python"
-        )
+        assert result == PythonVersionResolution(version="3.10", source="project.requires-python")
 
     def test_resolution_reports_poetry_source(self, tmp_project: Path):
         (tmp_project / "pyproject.toml").write_text(
@@ -66,9 +64,7 @@ class TestResolutionSources:
         nested = tmp_project / "src" / "pkg"
         nested.mkdir(parents=True)
         result = resolve_python_version(project_dir=nested)
-        assert result == PythonVersionResolution(
-            version="3.10", source="project.requires-python"
-        )
+        assert result == PythonVersionResolution(version="3.10", source="project.requires-python")
 
 
 class TestPyprojectToml:
