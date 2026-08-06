@@ -79,6 +79,13 @@ class TestSearch:
         assert isinstance(data[0]["tags"], list)
         assert "→" in data[0]["snippet"]
 
+    def test_search_reports_detection_metadata(self):
+        r = run_cli("search", "typing list", "--format", "json")
+        assert r.returncode == 0
+        result = json.loads(r.stdout)[0]
+
+        assert result["detection"] == {"status": "detectable", "methods": ["regex", "ast-name"]}
+
     def test_search_hides_proven_incompatible_dependencies_by_default(self, tmp_path):
         (tmp_path / "pyproject.toml").write_text(
             '[project]\nname = "fixture"\nversion = "0"\ndependencies = ["pydantic==1.10.15"]\n'
@@ -130,6 +137,14 @@ class TestRetrieve:
         assert guide["target_python"] == {
             "version": "3.11",
             "source": "project.requires-python",
+        }
+
+    def test_retrieve_reports_detection_metadata(self):
+        r = run_cli("retrieve", "dataclass-modern", "--format", "json")
+        assert r.returncode == 0
+        assert json.loads(r.stdout)[0]["detection"] == {
+            "status": "advisory-only",
+            "methods": [],
         }
 
     def test_retrieve_auto_detects_python_version_file(self, tmp_path: Path):
@@ -226,6 +241,20 @@ class TestList:
         assert r.returncode == 0
         data = json.loads(r.stdout)
         assert extract_design_md_keys("list") <= set(data[0].keys())
+
+    def test_list_reports_detection_metadata(self):
+        r = run_cli("list", "--format", "json")
+        assert r.returncode == 0
+        data = {item["id"]: item for item in json.loads(r.stdout)}
+
+        assert data["use-builtin-generics"]["detection"] == {
+            "status": "detectable",
+            "methods": ["regex", "ast-name"],
+        }
+        assert data["dataclass-modern"]["detection"] == {
+            "status": "advisory-only",
+            "methods": [],
+        }
 
     def test_list_category_filter(self):
         r = run_cli("list", "--category", "typing", "--format", "json")

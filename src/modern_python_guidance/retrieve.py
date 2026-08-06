@@ -13,6 +13,7 @@ from modern_python_guidance.dependency_compat import (
     DependencyContext,
     assess_dependencies,
 )
+from modern_python_guidance.detection_coverage import detection_metadata
 from modern_python_guidance.guide_index import Guide, GuideIndex
 from modern_python_guidance.version_detect import resolve_python_version
 
@@ -94,6 +95,7 @@ def _render(
         "content": guide.body,
         "token_estimate": token_estimate(guide.body),
         "source": f"modern-python-guidance v{__version__}",
+        **detection_metadata(guide),
         "dependency_requirements": {
             "packages": list(guide.meta.applies_to_packages),
             "tools": list(guide.meta.applies_to_tools),

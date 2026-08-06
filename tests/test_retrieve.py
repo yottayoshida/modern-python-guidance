@@ -34,6 +34,7 @@ class TestRetrieve:
         assert "## GOOD" in r["content"]
         assert r["token_estimate"] > 0
         assert r["source"].startswith("modern-python-guidance v")
+        assert r["detection"] == {"status": "detectable", "methods": ["regex", "ast-name"]}
 
     def test_multiple_guides(self, index):
         results = retrieve(index, ["use-builtin-generics", "fastapi-lifespan"])
@@ -77,6 +78,11 @@ class TestRetrieve:
         assert result["dependency_requirements"] == {"packages": ["pydantic>=2"], "tools": []}
         assert result["dependency_compatibility"]["status"] == "incompatible"
         assert result["dependency_compatibility"]["evidence"][0]["version"] == "1.10.15"
+
+    def test_advisory_only_guide_reports_detection_status(self, index):
+        result = retrieve(index, ["dataclass-modern"])[0]
+
+        assert result["detection"] == {"status": "advisory-only", "methods": []}
 
 
 class TestRetrieveJSON:

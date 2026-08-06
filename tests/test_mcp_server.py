@@ -160,6 +160,26 @@ class TestSearchGuides:
         assert isinstance(data[0]["snippet"], str)
         assert "→" in data[0]["snippet"]
 
+    def test_search_reports_detection_metadata(self):
+        responses = _run_mcp(
+            *_init_handshake(),
+            {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "tools/call",
+                "params": {
+                    "name": "search_guides",
+                    "arguments": {"query": "typing list"},
+                },
+            },
+        )
+        data = json.loads(responses[1]["result"]["content"][0]["text"])
+
+        assert data[0]["detection"] == {
+            "status": "detectable",
+            "methods": ["regex", "ast-name"],
+        }
+
     def test_search_empty_query(self):
         responses = _run_mcp(
             *_init_handshake(),
@@ -355,6 +375,33 @@ class TestListGuides:
         )
         data = json.loads(responses[1]["result"]["content"][0]["text"])
         assert extract_design_md_keys("list") <= set(data[0].keys())
+
+    def test_list_reports_detection_metadata(self):
+        responses = _run_mcp(
+            *_init_handshake(),
+            {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "tools/call",
+                "params": {
+                    "name": "list_guides",
+                    "arguments": {},
+                },
+            },
+        )
+        data = {
+            item["id"]: item
+            for item in json.loads(responses[1]["result"]["content"][0]["text"])
+        }
+
+        assert data["use-builtin-generics"]["detection"] == {
+            "status": "detectable",
+            "methods": ["regex", "ast-name"],
+        }
+        assert data["dataclass-modern"]["detection"] == {
+            "status": "advisory-only",
+            "methods": [],
+        }
 
     def test_list_with_category_filter(self):
         responses = _run_mcp(
