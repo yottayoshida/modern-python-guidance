@@ -13,7 +13,9 @@ from __future__ import annotations
 import logging
 import re
 import tomllib
+from dataclasses import dataclass
 from pathlib import Path
+from typing import Literal
 
 from packaging.specifiers import InvalidSpecifier, SpecifierSet
 from packaging.version import Version
@@ -21,6 +23,25 @@ from packaging.version import Version
 log = logging.getLogger(__name__)
 
 DEFAULT_VERSION = "3.11"
+
+PythonVersionSource = Literal[
+    "explicit",
+    "project.requires-python",
+    "poetry.dependencies.python",
+    ".python-version",
+    "default",
+]
+
+
+@dataclass(frozen=True)
+class PythonVersionResolution:
+    """Resolved target Python version and its bounded provenance label."""
+
+    version: str
+    source: PythonVersionSource
+
+    def as_dict(self) -> dict[str, str]:
+        return {"version": self.version, "source": self.source}
 
 # Config files are read by the PostToolUse hook on every edit; cap the size so a
 # crafted pyproject.toml cannot stall or exhaust the hook process.
@@ -41,20 +62,34 @@ def detect_version(
     cli_version: str | None = None,
     project_dir: Path | None = None,
 ) -> str:
-    if cli_version is not None:
-        return _normalize(cli_version)
+    return resolve_python_version(
+        explicit_version=cli_version,
+        project_dir=project_dir,
+    ).version
 
-    if project_dir is None:
-        project_dir = Path.cwd()
 
-    project_dir = project_dir.resolve()
+def resolve_python_version(
+    *,
+    explicit_version: str | None = None,
+    project_dir: Path | None = None,
+) -> PythonVersionResolution:
+    """Resolve the target Python version and report its provenance.
 
-    result = detect_configured_version(project_dir)
-    if result is not None:
-        return result
+    Explicit callers win. Otherwise the nearest usable project configuration is
+    searched with the same repository-boundary rules as the hook. The default
+    is intentionally represented as a source so callers can audit fallback
+    behavior without exposing local filesystem paths.
+    """
+    if explicit_version is not None:
+        return PythonVersionResolution(_normalize(explicit_version), "explicit")
+
+    start = (project_dir or Path.cwd()).resolve()
+    configured = find_configured_resolution(start)
+    if configured is not None:
+        return configured
 
     log.info("No version config found, using default %s", DEFAULT_VERSION)
-    return DEFAULT_VERSION
+    return PythonVersionResolution(DEFAULT_VERSION, "default")
 
 
 def find_configured_version(start_dir: Path) -> str | None:
@@ -70,10 +105,16 @@ def find_configured_version(start_dir: Path) -> str | None:
     Returns None when no ancestor has a usable config (or the repository
     boundary is reached without finding one).
     """
+    resolution = find_configured_resolution(start_dir)
+    return resolution.version if resolution is not None else None
+
+
+def find_configured_resolution(start_dir: Path) -> PythonVersionResolution | None:
+    """Return the nearest usable configured version and its source."""
     for current in (start_dir, *start_dir.parents)[: _MAX_WALK_DEPTH + 1]:
-        version = detect_configured_version(current)
-        if version is not None:
-            return version
+        resolution = _configured_resolution_at(current)
+        if resolution is not None:
+            return resolution
         if (current / ".git").exists():
             log.debug("Stopped version walk at repository boundary: %s", current)
             break
@@ -86,6 +127,11 @@ def detect_configured_version(project_dir: Path) -> str | None:
     Unlike detect_version(), this never falls back to DEFAULT_VERSION, so
     callers can distinguish "configured here" from "no usable config here".
     """
+    resolution = _configured_resolution_at(project_dir)
+    return resolution.version if resolution is not None else None
+
+
+def _configured_resolution_at(project_dir: Path) -> PythonVersionResolution | None:
     pyproject = project_dir / "pyproject.toml"
     if pyproject.is_file():
         result = _from_pyproject(pyproject)
@@ -94,7 +140,9 @@ def detect_configured_version(project_dir: Path) -> str | None:
 
     python_version_file = project_dir / ".python-version"
     if python_version_file.is_file():
-        return _from_python_version_file(python_version_file)
+        result = _from_python_version_file(python_version_file)
+        if result is not None:
+            return PythonVersionResolution(result, ".python-version")
 
     return None
 
@@ -115,7 +163,7 @@ def _read_config_text(path: Path) -> str | None:
     return text
 
 
-def _from_pyproject(path: Path) -> str | None:
+def _from_pyproject(path: Path) -> PythonVersionResolution | None:
     text = _read_config_text(path)
     if text is None:
         return None
@@ -132,7 +180,9 @@ def _from_pyproject(path: Path) -> str | None:
     project = data.get("project")
     requires_python = project.get("requires-python") if isinstance(project, dict) else None
     if isinstance(requires_python, str) and requires_python:
-        return _min_version_from_specifier(requires_python)
+        result = _min_version_from_specifier(requires_python)
+        if result is not None:
+            return PythonVersionResolution(result, "project.requires-python")
     if requires_python is not None and not isinstance(requires_python, str):
         # An empty string falls through silently (matching the old behavior);
         # only genuinely wrong types are worth a warning.
@@ -149,7 +199,7 @@ def _from_pyproject(path: Path) -> str | None:
     if poetry_python:
         result = _parse_poetry_python(poetry_python)
         if result is not None:
-            return result
+            return PythonVersionResolution(result, "poetry.dependencies.python")
 
     return None
 
