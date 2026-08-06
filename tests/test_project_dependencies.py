@@ -348,7 +348,10 @@ def test_override_key_and_dependency_input_validation_is_conservative() -> None:
     _append_requirement_list([3, "not a requirement @@@"], "project.dependencies", facts, warnings)
 
     assert not facts
-    assert len(warnings) == 6
+    assert any("invalid dependency override" in warning for warning in warnings)
+    assert any("non-list dependency field" in warning for warning in warnings)
+    assert any("non-string dependency" in warning for warning in warnings)
+    assert any("invalid dependency" in warning for warning in warnings)
 
 
 def test_poetry_and_lock_schema_errors_are_warnings_not_evidence() -> None:
@@ -363,7 +366,11 @@ def test_poetry_and_lock_schema_errors_are_warnings_not_evidence() -> None:
     )
 
     assert facts == []
-    assert len(warnings) == 6
+    assert any("non-list package entries" in warning for warning in warnings)
+    assert any("malformed package entry" in warning for warning in warnings)
+    assert any("unsupported Poetry dependency" in warning for warning in warnings)
+    assert any("unsupported Poetry constraint" in warning for warning in warnings)
+    assert any("without exact name/version" in warning for warning in warnings)
     assert _poetry_specifier("") is None
     assert _poetry_specifier("*") is None
     assert _poetry_specifier("^0.2.3") == ">=0.2.3,<0.3"
