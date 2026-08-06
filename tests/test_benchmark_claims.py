@@ -6,9 +6,13 @@ import copy
 import hashlib
 import json
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(REPO_ROOT))
 
 from scripts.verify_benchmark_claims import (
     ClaimValidationError,
@@ -19,7 +23,6 @@ from scripts.verify_benchmark_claims import (
     validate_manifest,
 )
 
-REPO_ROOT = Path(__file__).resolve().parents[1]
 MANIFEST_PATH = REPO_ROOT / "bench" / "claims" / "v5.json"
 
 
