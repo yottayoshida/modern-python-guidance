@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.5.11] — 2026-08-06
+
+**Summary**: Guidance delivery is now more dependable and auditable: target-Python and dependency applicability are resolved consistently across CLI, MCP, and hooks; detection and benchmark claims expose their evidence and limits; and project-scoped MCP setup and uninstall honor the requested project directory.
+
 ### Added
 
 - Benchmark claims now have a traceability manifest and deterministic README/V5 source-table checks; historical V5 cells are not promoted to a product-wide effectiveness claim, and the five delivery paths plus the unmeasured default `mpg setup` path are documented. (#183)
