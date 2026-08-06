@@ -23,8 +23,8 @@ from modern_python_guidance.retrieve import retrieve, suggest_ids
 from modern_python_guidance.search import search as do_search
 from modern_python_guidance.version_detect import (
     DEFAULT_VERSION,
-    detect_version,
-    find_configured_version,
+    PythonVersionResolution,
+    resolve_python_version,
 )
 
 
@@ -151,6 +151,12 @@ def main(argv: list[str] | None = None) -> None:
     # detect-version
     p_detect = subparsers.add_parser("detect-version", help="Detect project Python version")
     p_detect.add_argument("--project-dir", type=Path, help="Project directory (default: cwd)")
+    p_detect.add_argument(
+        "--format",
+        choices=["json", "plain"],
+        default="plain",
+        help="Output format (default: plain)",
+    )
 
     # mcp
     subparsers.add_parser("mcp", help="Start MCP server (JSON-RPC over stdio)")
@@ -285,11 +291,12 @@ def _resolve_format(args: argparse.Namespace) -> str:
 
 def _cmd_search(args: argparse.Namespace) -> None:
     index = build_index()
+    resolution = _python_resolution(args)
     context = _dependency_context(args)
     results = do_search(
         index,
         args.query,
-        python_version=args.python_version,
+        python_version=resolution.version,
         category=args.category,
         limit=args.limit,
         dependency_context=context,
@@ -300,6 +307,7 @@ def _cmd_search(args: argparse.Namespace) -> None:
 
     if not results:
         if fmt == "human":
+            print(_target_python_heading(resolution))
             print("No guides found.")
         else:
             print("[]")
@@ -318,6 +326,7 @@ def _cmd_search(args: argparse.Namespace) -> None:
                 "score": r.score,
                 "token_estimate": r.token_estimate,
                 "fuzzy": r.fuzzy,
+                "target_python": resolution.as_dict(),
                 "snippet": r.snippet,
                 **_dependency_json(
                     r.meta.applies_to_packages, r.meta.applies_to_tools, r.dependency_assessment
@@ -327,6 +336,7 @@ def _cmd_search(args: argparse.Namespace) -> None:
         ]
         print(json.dumps(out, indent=2, ensure_ascii=False))
     else:
+        print(_target_python_heading(resolution))
         for r in results:
             fuzzy_marker = " (fuzzy)" if r.fuzzy else ""
             assessment = r.dependency_assessment
@@ -339,6 +349,7 @@ def _cmd_search(args: argparse.Namespace) -> None:
 
 def _cmd_retrieve(args: argparse.Namespace) -> None:
     index = build_index()
+    resolution = _python_resolution(args)
     guide_ids = [gid.strip() for gid in args.ids.split(",") if gid.strip()]
     if not guide_ids:
         print("No guide IDs provided.")
@@ -346,9 +357,11 @@ def _cmd_retrieve(args: argparse.Namespace) -> None:
     results = retrieve(
         index,
         guide_ids,
-        python_version=args.python_version,
+        python_version=resolution.version,
         dependency_context=_dependency_context(args),
     )
+    for result in results:
+        result["target_python"] = resolution.as_dict()
 
     found_ids = {r["id"] for r in results}
     missing = [gid for gid in guide_ids if gid not in found_ids]
@@ -363,6 +376,7 @@ def _cmd_retrieve(args: argparse.Namespace) -> None:
         else:
             print(json.dumps(results, indent=2, ensure_ascii=False))
     else:
+        print(_target_python_heading(resolution))
         for r in results:
             match_str = "YES" if r["version_match"] else "NO"
             print(f"--- {r['id']} (version match: {match_str}) ---")
@@ -384,13 +398,13 @@ def _cmd_retrieve(args: argparse.Namespace) -> None:
 
 def _cmd_list(args: argparse.Namespace) -> None:
     index = build_index()
+    resolution = _python_resolution(args)
     metas = index.all_meta()
 
     if args.category:
         metas = [m for m in metas if m.category == args.category]
 
-    if args.python_version:
-        metas = [m for m in metas if version_compatible(m.python, args.python_version)]
+    metas = [m for m in metas if version_compatible(m.python, resolution.version)]
 
     context = _dependency_context(args)
     assessed = [
@@ -406,6 +420,7 @@ def _cmd_list(args: argparse.Namespace) -> None:
 
     if not assessed:
         if fmt == "human":
+            print(_target_python_heading(resolution))
             print("No guides found.")
         else:
             print("[]")
@@ -420,12 +435,14 @@ def _cmd_list(args: argparse.Namespace) -> None:
                 "layer": m.layer,
                 "python": m.python,
                 "frequency": m.frequency,
+                "target_python": resolution.as_dict(),
                 **_dependency_json(m.applies_to_packages, m.applies_to_tools, assessment),
             }
             for m, assessment in assessed
         ]
         print(json.dumps(out, indent=2, ensure_ascii=False))
     else:
+        print(_target_python_heading(resolution))
         current_cat = None
         for m, assessment in assessed:
             if m.category != current_cat:
@@ -436,8 +453,11 @@ def _cmd_list(args: argparse.Namespace) -> None:
 
 
 def _cmd_detect_version(args: argparse.Namespace) -> None:
-    version = detect_version(project_dir=args.project_dir)
-    print(version)
+    resolution = _python_resolution(args)
+    if args.format == "json":
+        print(json.dumps({"python_version": resolution.version, "source": resolution.source}))
+    else:
+        print(resolution.version)
 
 
 def _cmd_mcp() -> None:
@@ -475,11 +495,12 @@ def _cmd_uninstall(args: argparse.Namespace) -> None:
 
 def _cmd_check(args: argparse.Namespace) -> None:
     index = build_index()
+    resolution = _python_resolution(args)
     try:
         matches = check_file(
             args.file,
             index,
-            python_version=args.python_version,
+            python_version=resolution.version,
             dependency_context=_dependency_context(args),
         )
     except CheckError as e:
@@ -488,19 +509,23 @@ def _cmd_check(args: argparse.Namespace) -> None:
     fmt = _resolve_format(args)
 
     if fmt == "json":
-        _check_json(matches, args.file)
+        _check_json(matches, args.file, resolution)
     elif not (args.quiet and not matches):
+        print(_target_python_heading(resolution))
         _check_human(matches)
 
     if matches and not args.exit_zero:
         sys.exit(1)
 
 
-def _check_json(matches: list[CheckMatch], file_path: Path) -> None:
+def _check_json(
+    matches: list[CheckMatch], file_path: Path, resolution: PythonVersionResolution
+) -> None:
     guide_ids = {m.guide_id for m in matches}
     out = {
         "file": str(file_path),
         "mpg_version": __version__,
+        "target_python": resolution.as_dict(),
         "matches": [
             {
                 "line": m.line,
@@ -605,13 +630,16 @@ def _hook_post_tool_use_inner() -> None:
     if not path.is_file():
         sys.exit(0)
 
-    python_version = _detect_version_for_file(path) or DEFAULT_VERSION
+    resolution = _resolve_python_for_file(path)
 
     index = build_index()
     try:
         dependency_context = find_dependency_context(path.resolve().parent)
         matches = check_file(
-            path, index, python_version=python_version, dependency_context=dependency_context
+            path,
+            index,
+            python_version=resolution.version,
+            dependency_context=dependency_context,
         )
     except (CheckError, OSError, RuntimeError):
         sys.exit(0)
@@ -619,7 +647,7 @@ def _hook_post_tool_use_inner() -> None:
     if not matches:
         sys.exit(0)
 
-    context = _format_hook_context(matches, python_version)
+    context = _format_hook_context(matches, resolution)
     print(
         json.dumps(
             {
@@ -633,7 +661,7 @@ def _hook_post_tool_use_inner() -> None:
     sys.exit(0)
 
 
-def _format_hook_context(matches: list[CheckMatch], python_version: str) -> str:
+def _format_hook_context(matches: list[CheckMatch], resolution: PythonVersionResolution) -> str:
     """Build the additionalContext message surfaced to Claude.
 
     Deliberately excludes raw source lines: the edited file's content is
@@ -651,14 +679,16 @@ def _format_hook_context(matches: list[CheckMatch], python_version: str) -> str:
     guide_ids = sorted({m.guide_id for m in matches})
     if any(match.dependency_status == "unknown" for match in matches):
         lines.append(
-            f"mpg: {len(matches)} outdated pattern(s) found [target: py{python_version}]. "
+            f"mpg: {len(matches)} outdated pattern(s) found [target: py{resolution.version}; "
+            f"source: {resolution.source}]. "
             "dependency compatibility unknown; verify before applying. Retrieve the guide with "
             f"`{sys.executable} -m modern_python_guidance retrieve {','.join(guide_ids)}` "
             f"or call the MCP tool retrieve_guides({guide_ids})."
         )
     else:
         lines.append(
-            f"mpg: {len(matches)} outdated pattern(s) found [target: py{python_version}]. "
+            f"mpg: {len(matches)} outdated pattern(s) found [target: py{resolution.version}; "
+            f"source: {resolution.source}]. "
             f"If these are not intentional, apply the modern form: run "
             f"`{sys.executable} -m modern_python_guidance retrieve {','.join(guide_ids)}` "
             f"or call the MCP tool retrieve_guides({guide_ids})."
@@ -668,6 +698,17 @@ def _format_hook_context(matches: list[CheckMatch], python_version: str) -> str:
 
 def _dependency_context(args: argparse.Namespace) -> DependencyContext:
     return find_dependency_context(args.project_dir, getattr(args, "dependency_overrides", None))
+
+
+def _python_resolution(args: argparse.Namespace) -> PythonVersionResolution:
+    return resolve_python_version(
+        explicit_version=getattr(args, "python_version", None),
+        project_dir=getattr(args, "project_dir", None),
+    )
+
+
+def _target_python_heading(resolution: PythonVersionResolution) -> str:
+    return f"Target Python: {resolution.version} (source: {resolution.source})"
 
 
 def _assess_meta(packages: list[str], tools: list[str], context: DependencyContext):
@@ -703,7 +744,7 @@ def _human_dependency_suffix(status: str, reasons: tuple[str, ...]) -> str:
     return f" [deps: {status}]{reason}"
 
 
-def _detect_version_for_file(file_path: Path) -> str | None:
+def _resolve_python_for_file(file_path: Path) -> PythonVersionResolution:
     """Resolve the edited file and find the nearest usable version config.
 
     Catch-all by design: the walk reads ancestor directories the project does
@@ -713,6 +754,6 @@ def _detect_version_for_file(file_path: Path) -> str | None:
     """
     try:
         start = file_path.resolve().parent
-        return find_configured_version(start)
+        return resolve_python_version(project_dir=start)
     except Exception:
-        return None
+        return PythonVersionResolution(DEFAULT_VERSION, "default")

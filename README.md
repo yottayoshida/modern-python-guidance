@@ -149,7 +149,9 @@ Run `mpg list` to see all 41 guides, or [browse them on GitHub](skills/modern-py
 
 ## Version-aware filtering
 
-Guides specify their minimum Python version. The CLI auto-detects your project's version from (in order):
+Guides specify their minimum Python version. Every guidance command resolves the target
+Python from the nearest project context (and discloses the result as
+`target_python: {version, source}`) using this precedence:
 
 1. `--python-version` flag
 2. `pyproject.toml` `requires-python`
@@ -157,8 +159,13 @@ Guides specify their minimum Python version. The CLI auto-detects your project's
 4. `.python-version` file
 5. Default: 3.11
 
+The same resolver is used by CLI search/retrieve/list/check, the MCP guidance tools,
+and the PostToolUse hook. An explicit CLI/MCP version always wins. `mpg detect-version`
+keeps its plain output for scripts; use `mpg detect-version --format json` to audit the
+resolved version and stable source label, including when a JSON search or list result is empty.
+
 ```bash
-# Only shows guides compatible with Python 3.9
+# Only shows guides compatible with Python 3.9 (explicit override)
 mpg list --python-version 3.9
 # Excludes: TaskGroup (3.11+), match/case (3.10+), etc.
 ```
@@ -199,13 +206,15 @@ A few things worth knowing about how it behaves:
 - **It scans the whole edited file, not just your diff.** An edit anywhere in a file can resurface pre-existing outdated patterns you didn't touch this time, not only the lines you just wrote.
 - **Findings are capped at 5 per edit**, plus a `+N more` summary line, to bound how much context gets injected.
 - **Only the guide ID and line number are surfaced — never the matching source line itself.** Echoing arbitrary file content back as an authoritative-looking hook message would be an indirect prompt-injection channel; `guide_id` + line number is enough for Claude to look up the modern form.
-- The project's target Python version is auto-detected the same way as `mpg detect-version` (nearest `pyproject.toml` `requires-python` / Poetry `python` constraint, or `.python-version`, walking up from the edited file), so patterns that require a newer Python than your project targets are not flagged. The resolved target is shown in the summary (`[target: py3.X]`).
+- The project's target Python version is auto-detected the same way as `mpg detect-version` (nearest `pyproject.toml` `requires-python` / Poetry `python` constraint, or `.python-version`, walking up from the edited file), so patterns that require a newer Python than your project targets are not flagged. The resolved target and source are shown in the summary (`[target: py3.X; source: SOURCE]`).
 - Non-Python files and clean files produce no output.
 - An existing project (Skills/Rules already linked from a previous `mpg setup`) is never silently opted in — see the `--with-hook`/`--no-hook` flags above.
 
 Verify with `/hooks` in Claude Code to confirm it's active.
 
-For manual CLI use, `mpg check --quiet <file> --python-version X.Y` runs the same check — pass your project's floor explicitly, since unlike the hook, `mpg check` does not auto-detect it.
+For manual CLI use, `mpg check --quiet <file>` uses the same automatic resolver. Pass
+`--python-version X.Y` when you intentionally want an explicit override; the JSON output
+contains the same top-level `target_python` object.
 
 <details>
 <summary>Manual hook setup (advanced)</summary>

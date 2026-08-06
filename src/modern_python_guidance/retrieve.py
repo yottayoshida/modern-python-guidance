@@ -14,6 +14,7 @@ from modern_python_guidance.dependency_compat import (
     assess_dependencies,
 )
 from modern_python_guidance.guide_index import Guide, GuideIndex
+from modern_python_guidance.version_detect import resolve_python_version
 
 MAX_ID_LEN = 200
 _SUGGEST_CUTOFF = 0.5
@@ -65,6 +66,9 @@ def retrieve_json(
         python_version=python_version,
         dependency_context=dependency_context,
     )
+    resolution = resolve_python_version(explicit_version=python_version)
+    for result in results:
+        result["target_python"] = resolution.as_dict()
     return json.dumps(results, indent=2, ensure_ascii=False)
 
 

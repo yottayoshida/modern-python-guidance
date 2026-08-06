@@ -101,8 +101,14 @@ def main() -> None:
             f"the 'mpg' console script is missing next to {sys.executable} — check"
             " [project.scripts] in pyproject.toml"
         )
+    # The list command now applies automatic target-Python filtering. Use the
+    # highest Python minor covered by the catalog so this packaging check
+    # validates the complete bundled index rather than the verifier's cwd.
     proc = subprocess.run(
-        [str(mpg_bin), "list", "--format", "json"], capture_output=True, text=True, check=False
+        [str(mpg_bin), "list", "--python-version", "3.14", "--format", "json"],
+        capture_output=True,
+        text=True,
+        check=False,
     )
     if proc.returncode != 0 or not proc.stdout.strip():
         detail = proc.stderr.strip() or proc.stdout.strip() or "no output"

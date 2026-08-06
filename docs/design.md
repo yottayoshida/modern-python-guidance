@@ -163,11 +163,22 @@ Fuzzy results are marked with `fuzzy: true` in the output.
 
 ## Version detection precedence
 
-1. `--python-version` CLI flag (explicit override)
+1. `--python-version` CLI/MCP argument (explicit override)
 2. `pyproject.toml` `[project].requires-python` (PEP 621)
 3. `pyproject.toml` `[tool.poetry.dependencies].python` — caret (`^3.10`), tilde (`~3.11`), and PEP 440 (`>=3.10,<3.14`) constraints are parsed to extract the minimum version. Dict-form (`{version = "^3.10"}`) is also supported. Union operators (`||`) are not supported and fall through with a warning.
 4. `.python-version` file (pyenv/asdf convention)
 5. Default: `3.11`
+
+The resolver is shared by CLI search/retrieve/list/check, MCP search/retrieve/list,
+and the PostToolUse hook. Machine-readable guidance results disclose the decision
+with `target_python: {"version": "N.N", "source": SOURCE}`. Source is one of
+`explicit`, `project.requires-python`, `poetry.dependencies.python`, `.python-version`,
+or `default`; it never contains a filesystem path. Search and list filter automatically,
+retrieve preserves explicitly requested IDs and reports `version_match`, and check uses
+the same automatic target. Human output shows `Target Python: N.N (source: SOURCE)`.
+The plain `detect-version` output remains a version string; use
+`mpg detect-version --format json` (or MCP `detect_python_version`) to audit the
+resolution, including when a JSON search/list result is empty.
 
 ## Dependency applicability
 
@@ -199,7 +210,9 @@ CLI `search`, `list`, `retrieve`, and `check` accept `--project-dir PATH` and
 repeatable `--dependency-version KIND:NAME=VERSION`; search/list additionally accept
 `--include-incompatible`. The matching MCP tools accept a CWD-confined relative
 `project_dir`, `dependency_versions` object, and `include_incompatible` for
-search/list. This is additive: older JSON fields and retrieval content are unchanged.
+search/list. This is additive: search/list/retrieve remain arrays and older JSON fields
+and retrieval content are unchanged. Each non-empty result item now includes
+`target_python`; check JSON includes it once at the top level.
 
 ## Output format
 
@@ -227,6 +240,7 @@ First result of `mpg search "builtin generics" --format json` (the full output i
     "token_estimate": 273,
     "fuzzy": false,
     "snippet": "from typing import Generic, TypeVar → class Stack[T]:",
+    "target_python": {"version": "3.11", "source": "default"},
     "dependency_requirements": {"packages": [], "tools": []},
     "dependency_compatibility": {"status": "confirmed", "evidence": [], "reasons": []}
   }
@@ -254,6 +268,7 @@ When all requested IDs are found, the output is a bare array (captured from `mpg
     "content": "## BAD\n...\n## GOOD\n...",
     "token_estimate": 261,
     "source": "modern-python-guidance v<version>",
+    "target_python": {"version": "3.11", "source": "default"},
     "dependency_requirements": {"packages": [], "tools": []},
     "dependency_compatibility": {"status": "confirmed", "evidence": [], "reasons": []}
   }
@@ -284,6 +299,7 @@ When one or more requested IDs are not found, the shape changes to an envelope (
     "layer": 1,
     "python": ">=3.9",
     "frequency": "high",
+    "target_python": {"version": "3.11", "source": "default"},
     "dependency_requirements": {"packages": [], "tools": []},
     "dependency_compatibility": {"status": "confirmed", "evidence": [], "reasons": []}
   }
@@ -300,6 +316,7 @@ is retained and must be verified before applying the guide.
 {
   "file": "app.py",
   "mpg_version": "<version>",
+  "target_python": {"version": "3.11", "source": "default"},
   "matches": [
     {
       "line": 4,

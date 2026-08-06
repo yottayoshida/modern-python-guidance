@@ -8,9 +8,11 @@ import pytest
 from modern_python_guidance.version_detect import (
     _MAX_CONFIG_SIZE,
     DEFAULT_VERSION,
+    PythonVersionResolution,
     detect_configured_version,
     detect_version,
     find_configured_version,
+    resolve_python_version,
 )
 
 
@@ -26,6 +28,43 @@ class TestCLIOverride:
 
     def test_cli_version_with_patch(self):
         assert detect_version(cli_version="3.12.3") == "3.12"
+
+    def test_resolution_explicit_override_reports_source(self, tmp_project: Path):
+        (tmp_project / "pyproject.toml").write_text('[project]\nrequires-python = ">=3.9"\n')
+        result = resolve_python_version(explicit_version="3.12.4", project_dir=tmp_project)
+        assert result == PythonVersionResolution(version="3.12", source="explicit")
+
+
+class TestResolutionSources:
+    def test_resolution_reports_pep621_source(self, tmp_project: Path):
+        (tmp_project / "pyproject.toml").write_text('[project]\nrequires-python = ">=3.10"\n')
+        result = resolve_python_version(project_dir=tmp_project)
+        assert result == PythonVersionResolution(version="3.10", source="project.requires-python")
+
+    def test_resolution_reports_poetry_source(self, tmp_project: Path):
+        (tmp_project / "pyproject.toml").write_text(
+            '[tool.poetry.dependencies]\npython = "^3.11"\n'
+        )
+        result = resolve_python_version(project_dir=tmp_project)
+        assert result == PythonVersionResolution(
+            version="3.11", source="poetry.dependencies.python"
+        )
+
+    def test_resolution_reports_python_version_file_source(self, tmp_project: Path):
+        (tmp_project / ".python-version").write_text("3.12\n")
+        result = resolve_python_version(project_dir=tmp_project)
+        assert result == PythonVersionResolution(version="3.12", source=".python-version")
+
+    def test_resolution_reports_default_source(self, tmp_project: Path):
+        result = resolve_python_version(project_dir=tmp_project)
+        assert result == PythonVersionResolution(version=DEFAULT_VERSION, source="default")
+
+    def test_resolution_walks_up_to_nearest_config(self, tmp_project: Path):
+        (tmp_project / "pyproject.toml").write_text('[project]\nrequires-python = ">=3.10"\n')
+        nested = tmp_project / "src" / "pkg"
+        nested.mkdir(parents=True)
+        result = resolve_python_version(project_dir=nested)
+        assert result == PythonVersionResolution(version="3.10", source="project.requires-python")
 
 
 class TestPyprojectToml:
