@@ -21,7 +21,13 @@ from modern_python_guidance.dependency_compat import (
     DependencyStatus,
     assess_dependencies,
 )
-from modern_python_guidance.guide_index import Guide, GuideIndex, _code_lines
+from modern_python_guidance.detection_coverage import (
+    _auto_extract_patterns as _effective_auto_extract_patterns,
+)
+from modern_python_guidance.detection_coverage import (
+    effective_regex_patterns,
+)
+from modern_python_guidance.guide_index import Guide, GuideIndex
 
 FREQ_RANK = {"high": 0, "medium": 1, "low": 2}
 _MAX_FILE_SIZE = 2 * 1024 * 1024
@@ -218,24 +224,11 @@ def _build_patterns(
 
 
 def _get_patterns(guide: Guide) -> list[str]:
-    if guide.meta.detect_patterns is not None:
-        return guide.meta.detect_patterns
-    return _auto_extract_patterns(guide)
+    return list(effective_regex_patterns(guide))
 
 
 def _auto_extract_patterns(guide: Guide) -> list[str]:
-    bad_lines = _code_lines(guide.body, "## BAD")
-    patterns: list[str] = []
-    for line in bad_lines:
-        stripped = line.strip()
-        if stripped.startswith(("from ", "import ")):
-            escaped = re.escape(stripped)
-            patterns.append(escaped)
-        elif stripped.startswith("@"):
-            parts = stripped.split("(", 1)
-            escaped = re.escape(parts[0])
-            patterns.append(escaped)
-    return patterns
+    return _effective_auto_extract_patterns(guide)
 
 
 def _build_name_guides(

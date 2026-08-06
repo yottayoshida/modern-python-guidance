@@ -14,6 +14,7 @@ from packaging.version import InvalidVersion, Version
 from modern_python_guidance import __version__
 from modern_python_guidance.compat import VERSION_RE, version_compatible
 from modern_python_guidance.dependency_compat import DependencyContext, assess_dependencies
+from modern_python_guidance.detection_coverage import detection_metadata
 from modern_python_guidance.guide_index import GuideIndex, build_index
 from modern_python_guidance.project_dependencies import find_dependency_context
 from modern_python_guidance.retrieve import retrieve, suggest_ids
@@ -487,6 +488,7 @@ def _tool_search(arguments: dict) -> dict:
             "fuzzy": r.fuzzy,
             "snippet": r.snippet,
             "target_python": context.python.as_dict(),
+            **detection_metadata(index.get(r.guide_id)),
             **_dependency_fields(
                 r.meta.applies_to_packages, r.meta.applies_to_tools, r.dependency_assessment
             ),
@@ -580,6 +582,7 @@ def _tool_list(arguments: dict) -> dict:
             "python": m.python,
             "frequency": m.frequency,
             "target_python": context.python.as_dict(),
+            **detection_metadata(index.get(m.id)),
             **_dependency_fields(m.applies_to_packages, m.applies_to_tools, assessment),
         }
         for m, assessment in assessed

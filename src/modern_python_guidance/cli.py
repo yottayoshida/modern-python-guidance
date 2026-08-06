@@ -17,6 +17,11 @@ from modern_python_guidance import __version__
 from modern_python_guidance.check import CheckError, CheckMatch, check_file, sanitize_line
 from modern_python_guidance.compat import VERSION_RE, version_compatible
 from modern_python_guidance.dependency_compat import DependencyContext, assess_dependencies
+from modern_python_guidance.detection_coverage import (
+    DetectionCoverage,
+    detection_coverage,
+    detection_metadata,
+)
 from modern_python_guidance.guide_index import build_index
 from modern_python_guidance.project_dependencies import find_dependency_context
 from modern_python_guidance.retrieve import retrieve, suggest_ids
@@ -328,6 +333,7 @@ def _cmd_search(args: argparse.Namespace) -> None:
                 "fuzzy": r.fuzzy,
                 "target_python": resolution.as_dict(),
                 "snippet": r.snippet,
+                **detection_metadata(index.get(r.guide_id)),
                 **_dependency_json(
                     r.meta.applies_to_packages, r.meta.applies_to_tools, r.dependency_assessment
                 ),
@@ -436,6 +442,7 @@ def _cmd_list(args: argparse.Namespace) -> None:
                 "python": m.python,
                 "frequency": m.frequency,
                 "target_python": resolution.as_dict(),
+                **detection_metadata(index.get(m.id)),
                 **_dependency_json(m.applies_to_packages, m.applies_to_tools, assessment),
             }
             for m, assessment in assessed
@@ -496,12 +503,18 @@ def _cmd_uninstall(args: argparse.Namespace) -> None:
 def _cmd_check(args: argparse.Namespace) -> None:
     index = build_index()
     resolution = _python_resolution(args)
+    dependency_context = _dependency_context(args)
+    coverage = detection_coverage(
+        index,
+        python_version=resolution.version,
+        dependency_context=dependency_context,
+    )
     try:
         matches = check_file(
             args.file,
             index,
             python_version=resolution.version,
-            dependency_context=_dependency_context(args),
+            dependency_context=dependency_context,
         )
     except CheckError as e:
         print(f"error: {e}", file=sys.stderr)
@@ -509,17 +522,20 @@ def _cmd_check(args: argparse.Namespace) -> None:
     fmt = _resolve_format(args)
 
     if fmt == "json":
-        _check_json(matches, args.file, resolution)
+        _check_json(matches, args.file, resolution, coverage)
     elif not (args.quiet and not matches):
         print(_target_python_heading(resolution))
-        _check_human(matches)
+        _check_human(matches, coverage)
 
     if matches and not args.exit_zero:
         sys.exit(1)
 
 
 def _check_json(
-    matches: list[CheckMatch], file_path: Path, resolution: PythonVersionResolution
+    matches: list[CheckMatch],
+    file_path: Path,
+    resolution: PythonVersionResolution,
+    coverage: DetectionCoverage,
 ) -> None:
     guide_ids = {m.guide_id for m in matches}
     out = {
@@ -546,12 +562,14 @@ def _check_json(
             "total_matches": len(matches),
             "unique_guides": len(guide_ids),
             "guide_ids": sorted(guide_ids),
+            "coverage": coverage.as_dict(),
         },
     }
     print(json.dumps(out, indent=2, ensure_ascii=False))
 
 
-def _check_human(matches: list[CheckMatch]) -> None:
+def _check_human(matches: list[CheckMatch], coverage: DetectionCoverage) -> None:
+    print(_check_scope_line(coverage))
     if not matches:
         print("No outdated patterns found.")
         return
@@ -635,6 +653,11 @@ def _hook_post_tool_use_inner() -> None:
     index = build_index()
     try:
         dependency_context = find_dependency_context(path.resolve().parent)
+        coverage = detection_coverage(
+            index,
+            python_version=resolution.version,
+            dependency_context=dependency_context,
+        )
         matches = check_file(
             path,
             index,
@@ -647,7 +670,7 @@ def _hook_post_tool_use_inner() -> None:
     if not matches:
         sys.exit(0)
 
-    context = _format_hook_context(matches, resolution)
+    context = _format_hook_context(matches, resolution, coverage)
     print(
         json.dumps(
             {
@@ -661,7 +684,11 @@ def _hook_post_tool_use_inner() -> None:
     sys.exit(0)
 
 
-def _format_hook_context(matches: list[CheckMatch], resolution: PythonVersionResolution) -> str:
+def _format_hook_context(
+    matches: list[CheckMatch],
+    resolution: PythonVersionResolution,
+    coverage: DetectionCoverage,
+) -> str:
     """Build the additionalContext message surfaced to Claude.
 
     Deliberately excludes raw source lines: the edited file's content is
@@ -671,7 +698,8 @@ def _format_hook_context(matches: list[CheckMatch], resolution: PythonVersionRes
     data, sufficient for Claude to look up the modern form.
     """
     shown = matches[:_MAX_SURFACED_MATCHES]
-    lines = [f"mpg: {m.guide_id} (line {m.line})" for m in shown]
+    lines = [_check_scope_line(coverage)]
+    lines.extend(f"mpg: {m.guide_id} (line {m.line})" for m in shown)
     remaining = len(matches) - len(shown)
     if remaining > 0:
         lines.append(f"+{remaining} more")
@@ -694,6 +722,14 @@ def _format_hook_context(matches: list[CheckMatch], resolution: PythonVersionRes
             f"or call the MCP tool retrieve_guides({guide_ids})."
         )
     return "\n".join(lines)
+
+
+def _check_scope_line(coverage) -> str:
+    return (
+        f"Check scope: {coverage.detectable_count} detectable / "
+        f"{coverage.applicable_guides} applicable guides; "
+        f"{coverage.advisory_only_count} advisory-only."
+    )
 
 
 def _dependency_context(args: argparse.Namespace) -> DependencyContext:
