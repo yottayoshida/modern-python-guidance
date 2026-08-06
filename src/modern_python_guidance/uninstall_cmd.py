@@ -12,8 +12,8 @@ from modern_python_guidance.hook_config import remove_hook
 from modern_python_guidance.setup_cmd import (
     MCP_SERVER_NAME,
     _find_project_root,
-    _rules_file_path,
     _resolve_cwd,
+    _rules_file_path,
     _skills_link_path,
 )
 
@@ -60,9 +60,7 @@ def uninstall_mcp(
             )
         else:
             local_where = f" in {local_cwd}" if local_cwd is not None else ""
-            print(
-                f"Would run{local_where}: claude mcp remove {MCP_SERVER_NAME} -s local"
-            )
+            print(f"Would run{local_where}: claude mcp remove {MCP_SERVER_NAME} -s local")
         print(f"Would run: claude mcp remove {MCP_SERVER_NAME} -s user")
         return not local_target_unavailable
 

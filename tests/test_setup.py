@@ -1236,9 +1236,7 @@ class TestRunSetup:
         assert not nonexistent.exists()
         assert "Warning" not in capsys.readouterr().err
 
-    def test_local_full_setup_prepares_missing_project_before_mutation(
-        self, tmp_path: Path
-    ):
+    def test_local_full_setup_prepares_missing_project_before_mutation(self, tmp_path: Path):
         """#167: full setup creates the target before MCP, Skills, Rules, or hook."""
         project = tmp_path / "new-project"
         events: list[tuple[str, bool]] = []
