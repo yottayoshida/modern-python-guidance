@@ -231,18 +231,26 @@ def symlinked_claude_note(project_root: Path) -> str | None:
     all, so mpg follows the link and says so. This surfaces where the write
     went; it is not confinement of the `.claude` tree (#170).
 
-    Never raises. `Path.resolve()` walks the filesystem, so a symlink loop
-    raises RuntimeError and a hostile or racing tree can raise OSError; a note
-    that cannot name its target degrades to saying so rather than taking down
-    a setup run that would otherwise succeed.
+    Never raises, and never claims a target it did not resolve. `Path.resolve()`
+    walks the filesystem, and how it reports an unresolvable link is version
+    dependent: on a symlink loop Python <= 3.13 raises RuntimeError while 3.14
+    returns the input path unchanged (measured on 3.12.12 and 3.14.6); a hostile
+    or racing tree can raise OSError on any version. Both shapes are treated the
+    same — an unchanged path means the walk got nowhere, and saying "`.claude` is
+    a symlink; mpg writes to `.claude`" would be a note that discloses nothing.
+    Degrading beats taking down a setup run that would otherwise succeed.
+
+    A dangling link is not unresolvable: it names a real destination that simply
+    does not exist yet, which is exactly what the caller wants to know.
     """
     claude_dir = project_root / ".claude"
     if not claude_dir.is_symlink():
         return None
     try:
-        target = str(claude_dir.resolve())
-    except (OSError, RuntimeError) as e:
-        target = f"unresolvable ({type(e).__name__})"
+        resolved = claude_dir.resolve()
+        target = "unresolvable" if resolved == claude_dir else str(resolved)
+    except (OSError, RuntimeError):
+        target = "unresolvable"
     return f"Note: {claude_dir} is a symlink; mpg writes to {target}"
 
 

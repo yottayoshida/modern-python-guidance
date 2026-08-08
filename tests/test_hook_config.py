@@ -607,8 +607,14 @@ class TestSymlinkedClaudeNote:
         assert "gone" in note
 
     def test_symlink_loop_degrades_instead_of_raising(self, tmp_path: Path):
-        """`Path.resolve()` raises RuntimeError on a loop. A note that cannot
-        name its target must not take down an otherwise-fine setup run."""
+        """A loop must neither raise nor produce a note that discloses nothing.
+
+        How `Path.resolve()` reports a loop is version dependent — <= 3.13 raises
+        RuntimeError, 3.14 returns the input path unchanged (measured on 3.12.12
+        and 3.14.6, and caught by CI when only the first was pinned). Asserting
+        on the exception type made this test pass only on the interpreter that
+        wrote it; asserting on the *outcome* holds on both.
+        """
         proj = tmp_path / "proj"
         proj.mkdir()
         (proj / ".claude").symlink_to(proj / "b")
@@ -617,7 +623,8 @@ class TestSymlinkedClaudeNote:
         note = symlinked_claude_note(proj)
         assert note is not None
         assert "unresolvable" in note
-        assert "RuntimeError" in note
+        # The failure mode this guards: naming `.claude` as its own target.
+        assert f"writes to {proj / '.claude'}" not in note
 
 
 class TestBuildMpgHookEntry:
