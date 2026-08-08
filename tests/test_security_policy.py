@@ -40,3 +40,28 @@ This is a read-only reference tool and does not write to the filesystem.
 """
     with pytest.raises(AssertionError):
         assert_current_security_policy(obsolete)
+
+
+def test_symlinked_claude_claim_matches_behavior(tmp_path: Path) -> None:
+    """#170: the policy says a symlinked `.claude` is followed and announced.
+    Both halves are load-bearing, and nothing else ties this prose to the code
+    — the release-line guard above only checks the version table. Pin the
+    document against the behavior it describes.
+    """
+    from modern_python_guidance.hook_config import symlinked_claude_note
+
+    text = POLICY.read_text(encoding="utf-8")
+    assert "followed,\nnot rejected" in text or "followed, not rejected" in text
+    assert "not confinement" in text
+
+    elsewhere = tmp_path / "shared"
+    elsewhere.mkdir()
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    (proj / ".claude").symlink_to(elsewhere, target_is_directory=True)
+
+    # "followed": no exception, no refusal.
+    note = symlinked_claude_note(proj)
+    # "announced": and it names where the write actually goes.
+    assert note is not None
+    assert str(elsewhere.resolve()) in note

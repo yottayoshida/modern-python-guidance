@@ -8,7 +8,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from modern_python_guidance.hook_config import remove_hook
+from modern_python_guidance.hook_config import remove_hook, symlinked_claude_note
 from modern_python_guidance.setup_cmd import (
     MCP_SERVER_NAME,
     _find_project_root,
@@ -253,6 +253,16 @@ def run_uninstall(
     do_skills = not mcp_only
     do_rules = not mcp_only
     do_hook = not mcp_only
+
+    # Mirror of run_setup: announce once, before touching anything, that the
+    # `.claude` being cleaned is a symlink and which tree is actually being
+    # modified. `do_hook` (identical to do_skills/do_rules) is exactly "this
+    # run touches `.claude`"; `--mcp-only` touches nothing there and gets no
+    # note — and no project-root walk either.
+    if do_hook:
+        note = symlinked_claude_note(project_dir or _find_project_root())
+        if note:
+            print(note)
 
     mcp_ok = True
     skills_ok = True

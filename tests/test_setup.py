@@ -1331,6 +1331,43 @@ class TestRunSetup:
         assert code == 0
         assert "Warning" in capsys.readouterr().err
 
+    def _symlinked_project(self, tmp_path: Path) -> tuple[Path, Path]:
+        elsewhere = tmp_path / "shared-claude"
+        elsewhere.mkdir()
+        proj = tmp_path / "proj"
+        proj.mkdir()
+        (proj / ".claude").symlink_to(elsewhere, target_is_directory=True)
+        return proj, elsewhere
+
+    def test_symlinked_claude_is_announced(self, tmp_path: Path, capsys):
+        """#170: setup follows a symlinked `.claude`; it must not do so silently."""
+        proj, elsewhere = self._symlinked_project(tmp_path)
+        p_mcp, p_skills, p_rules = self._patch_all()
+        with p_mcp, p_skills, p_rules:
+            assert run_setup(project_dir=proj) == 0
+        out = capsys.readouterr().out
+        assert "symlink" in out
+        assert str(elsewhere.resolve()) in out
+
+    def test_ordinary_claude_dir_is_not_announced(self, tmp_path: Path, capsys):
+        """Control for the test above: without the symlink there is no note, so
+        a version that printed unconditionally would fail here."""
+        proj = tmp_path / "proj"
+        (proj / ".claude").mkdir(parents=True)
+        p_mcp, p_skills, p_rules = self._patch_all()
+        with p_mcp, p_skills, p_rules:
+            assert run_setup(project_dir=proj) == 0
+        assert "symlink" not in capsys.readouterr().out
+
+    def test_mcp_only_does_not_announce(self, tmp_path: Path, capsys):
+        """`--mcp-only` writes nothing under `.claude`, so it has nothing to
+        disclose — the note tracks what this run actually writes."""
+        proj, _ = self._symlinked_project(tmp_path)
+        p_mcp, p_skills, p_rules = self._patch_all()
+        with p_mcp, p_skills, p_rules:
+            assert run_setup(mcp_only=True, project_dir=proj) == 0
+        assert "symlink" not in capsys.readouterr().out
+
 
 # --- CLI integration ---
 

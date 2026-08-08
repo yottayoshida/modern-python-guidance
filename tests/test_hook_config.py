@@ -23,6 +23,7 @@ from modern_python_guidance.hook_config import (
     merge_hook,
     read_settings,
     settings_local_path,
+    symlinked_claude_note,
     unmerge_hook,
     write_settings_atomic,
 )
@@ -566,6 +567,57 @@ class TestWriteSettingsAtomic:
 class TestSettingsLocalPath:
     def test_resolves_dot_claude_settings_local(self, tmp_path: Path):
         assert settings_local_path(tmp_path) == tmp_path / ".claude" / "settings.local.json"
+
+
+class TestSymlinkedClaudeNote:
+    """#170: a symlinked `.claude` directory is followed, so say where writes go.
+
+    The per-file symlink guards in read_settings/write_settings_atomic do not
+    cover the parent directory, and deliberately so — refusing would break
+    "config lives elsewhere" setups. What must not happen is following it
+    silently.
+    """
+
+    def test_none_for_an_ordinary_directory(self, tmp_path: Path):
+        (tmp_path / ".claude").mkdir()
+        assert symlinked_claude_note(tmp_path) is None
+
+    def test_none_when_absent(self, tmp_path: Path):
+        assert symlinked_claude_note(tmp_path) is None
+
+    def test_names_the_resolved_target(self, tmp_path: Path):
+        elsewhere = tmp_path / "shared-claude"
+        elsewhere.mkdir()
+        proj = tmp_path / "proj"
+        proj.mkdir()
+        (proj / ".claude").symlink_to(elsewhere, target_is_directory=True)
+
+        note = symlinked_claude_note(proj)
+        assert note is not None
+        assert str(elsewhere.resolve()) in note
+        assert "symlink" in note
+
+    def test_dangling_symlink_still_reports_where_it_points(self, tmp_path: Path):
+        proj = tmp_path / "proj"
+        proj.mkdir()
+        (proj / ".claude").symlink_to(tmp_path / "gone", target_is_directory=True)
+
+        note = symlinked_claude_note(proj)
+        assert note is not None
+        assert "gone" in note
+
+    def test_symlink_loop_degrades_instead_of_raising(self, tmp_path: Path):
+        """`Path.resolve()` raises RuntimeError on a loop. A note that cannot
+        name its target must not take down an otherwise-fine setup run."""
+        proj = tmp_path / "proj"
+        proj.mkdir()
+        (proj / ".claude").symlink_to(proj / "b")
+        (proj / "b").symlink_to(proj / ".claude")
+
+        note = symlinked_claude_note(proj)
+        assert note is not None
+        assert "unresolvable" in note
+        assert "RuntimeError" in note
 
 
 class TestBuildMpgHookEntry:

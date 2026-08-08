@@ -217,6 +217,35 @@ def settings_local_path(project_root: Path) -> Path:
     return project_root / ".claude" / SETTINGS_FILE_NAME
 
 
+def symlinked_claude_note(project_root: Path) -> str | None:
+    """Announce that `<project_root>/.claude` is a symlink, and where it leads.
+
+    None when it is an ordinary directory (or absent) — callers print nothing
+    in the overwhelmingly common case.
+
+    `read_settings`/`write_settings_atomic` refuse a symlinked *settings file*,
+    but a symlinked `.claude` *directory* is followed: everything mpg writes
+    there (the hook settings, and the Skills and Rules symlinks alike) lands at
+    the link target. Refusing it instead would break the deliberate "config
+    lives elsewhere" setups that are the main reason to symlink `.claude` at
+    all, so mpg follows the link and says so. This surfaces where the write
+    went; it is not confinement of the `.claude` tree (#170).
+
+    Never raises. `Path.resolve()` walks the filesystem, so a symlink loop
+    raises RuntimeError and a hostile or racing tree can raise OSError; a note
+    that cannot name its target degrades to saying so rather than taking down
+    a setup run that would otherwise succeed.
+    """
+    claude_dir = project_root / ".claude"
+    if not claude_dir.is_symlink():
+        return None
+    try:
+        target = str(claude_dir.resolve())
+    except (OSError, RuntimeError) as e:
+        target = f"unresolvable ({type(e).__name__})"
+    return f"Note: {claude_dir} is a symlink; mpg writes to {target}"
+
+
 def read_settings(path: Path) -> dict:
     """Read and parse a settings file. An absent file reads as `{}`.
 
