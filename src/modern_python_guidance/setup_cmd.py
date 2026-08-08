@@ -20,7 +20,7 @@ from modern_python_guidance.hook_config import (
     read_settings,
     remove_hook,
     settings_local_path,
-    symlinked_claude_note,
+    symlinked_parent_notes,
     write_settings_atomic,
 )
 
@@ -654,13 +654,21 @@ def run_setup(
     root = (project_dir or _find_project_root()) if do_hook else None
     existing_assets = _has_existing_assets(root) if do_hook else False
 
-    # Announced once for the whole run rather than per artifact: skills, rules
-    # and the hook settings all land under the same `.claude`, so `do_hook`
-    # (identical to do_skills/do_rules) is exactly "this run writes there".
-    # `--mcp-only` writes nothing under `.claude` and gets no note.
+    # Announced up front, before anything is written, for every directory this
+    # run writes through that turns out to be a symlink. Usually that is none,
+    # and usually a symlinked `.claude` collapses all three targets into one
+    # note — but skills and rules can point at different places, so the count
+    # is whatever the tree actually is. `--mcp-only` writes nothing under
+    # `.claude` (do_hook is identical to do_skills/do_rules) and gets no note.
     if root is not None:
-        note = symlinked_claude_note(root)
-        if note:
+        for note in symlinked_parent_notes(
+            root,
+            [
+                _skills_link_path(root),
+                _rules_file_path(root),
+                settings_local_path(root),
+            ],
+        ):
             print(note)
 
     mcp_ok = True

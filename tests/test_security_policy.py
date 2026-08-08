@@ -42,26 +42,86 @@ This is a read-only reference tool and does not write to the filesystem.
         assert_current_security_policy(obsolete)
 
 
-def test_symlinked_claude_claim_matches_behavior(tmp_path: Path) -> None:
-    """#170: the policy says a symlinked `.claude` is followed and announced.
-    Both halves are load-bearing, and nothing else ties this prose to the code
-    — the release-line guard above only checks the version table. Pin the
-    document against the behavior it describes.
+def _notes_for(project_root: Path) -> list[str]:
+    """What setup/uninstall would disclose for this tree — same three write
+    paths the orchestrators pass."""
+    from modern_python_guidance.hook_config import settings_local_path, symlinked_parent_notes
+
+    return symlinked_parent_notes(
+        project_root,
+        [
+            project_root / ".claude" / "skills" / "modern-python-guidance",
+            project_root / ".claude" / "rules" / "modern-python.md",
+            settings_local_path(project_root),
+        ],
+    )
+
+
+def test_policy_claims_followed_and_announced_not_confined() -> None:
+    """The three claims are separable and each is load-bearing, so pin them
+    separately: dropping any one leaves a policy that misdescribes the code.
+    Nothing else ties this prose to behavior — the release-line guard above
+    only checks the version table.
     """
-    from modern_python_guidance.hook_config import symlinked_claude_note
-
     text = POLICY.read_text(encoding="utf-8")
-    assert "followed,\nnot rejected" in text or "followed, not rejected" in text
+    flat = text.replace("\n", " ")
+    assert "followed, not rejected" in flat
+    assert "the outermost symlinked directory on the way to it" in flat
     assert "not confinement" in text
+    # The #192 boundary is gone: the disclosure no longer stops at `.claude`.
+    assert "bounded" not in flat.split("## Inputs")[0]
 
+
+def test_symlinked_claude_claim_matches_behavior(tmp_path: Path) -> None:
+    """ "followed" and "announced", for a symlinked `.claude` (#170)."""
     elsewhere = tmp_path / "shared"
     elsewhere.mkdir()
     proj = tmp_path / "proj"
     proj.mkdir()
     (proj / ".claude").symlink_to(elsewhere, target_is_directory=True)
 
-    # "followed": no exception, no refusal.
-    note = symlinked_claude_note(proj)
-    # "announced": and it names where the write actually goes.
-    assert note is not None
-    assert str(elsewhere.resolve()) in note
+    notes = _notes_for(proj)
+    assert len(notes) == 1, notes
+    assert str(elsewhere.resolve()) in notes[0]
+
+
+def test_policy_claim_about_inner_directories_matches_behavior(tmp_path: Path) -> None:
+    """#192: the policy names `.claude/skills` and `.claude/rules` too."""
+    text = POLICY.read_text(encoding="utf-8").replace("\n", " ")
+    assert "`.claude/skills`" in text
+    assert "`.claude/rules`" in text
+
+    proj = tmp_path / "proj"
+    (proj / ".claude").mkdir(parents=True)
+    skills_target = tmp_path / "shared-skills"
+    rules_target = tmp_path / "shared-rules"
+    skills_target.mkdir()
+    rules_target.mkdir()
+    (proj / ".claude" / "skills").symlink_to(skills_target, target_is_directory=True)
+    (proj / ".claude" / "rules").symlink_to(rules_target, target_is_directory=True)
+
+    notes = _notes_for(proj)
+    assert len(notes) == 2, notes
+    joined = "\n".join(notes)
+    assert str(skills_target.resolve()) in joined
+    assert str(rules_target.resolve()) in joined
+
+
+def test_policy_claim_notes_are_per_directory_not_per_destination(tmp_path: Path) -> None:
+    """The policy says notes are per symlinked directory, "even if they happen
+    to point at the same place". An earlier draft promised one note per distinct
+    destination, which the code never did — pin the corrected claim so the two
+    cannot drift apart again.
+    """
+    assert "not per destination" in POLICY.read_text(encoding="utf-8").replace("\n", " ")
+
+    proj = tmp_path / "proj"
+    (proj / ".claude").mkdir(parents=True)
+    shared = tmp_path / "one-shared-dir"
+    shared.mkdir()
+    (proj / ".claude" / "skills").symlink_to(shared, target_is_directory=True)
+    (proj / ".claude" / "rules").symlink_to(shared, target_is_directory=True)
+
+    notes = _notes_for(proj)
+    assert len(notes) == 2, notes
+    assert all(str(shared.resolve()) in note for note in notes)

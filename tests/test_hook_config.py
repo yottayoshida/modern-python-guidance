@@ -23,7 +23,7 @@ from modern_python_guidance.hook_config import (
     merge_hook,
     read_settings,
     settings_local_path,
-    symlinked_claude_note,
+    symlinked_parent_notes,
     unmerge_hook,
     write_settings_atomic,
 )
@@ -569,42 +569,114 @@ class TestSettingsLocalPath:
         assert settings_local_path(tmp_path) == tmp_path / ".claude" / "settings.local.json"
 
 
-class TestSymlinkedClaudeNote:
-    """#170: a symlinked `.claude` directory is followed, so say where writes go.
+class TestSymlinkedParentNotes:
+    """#170/#192: directories mpg writes through are followed, so say where to.
 
     The per-file symlink guards in read_settings/write_settings_atomic do not
-    cover the parent directory, and deliberately so — refusing would break
-    "config lives elsewhere" setups. What must not happen is following it
-    silently.
+    cover the directories above the file, and deliberately so — refusing would
+    break "config lives elsewhere" setups. What must not happen is following
+    them silently. #170 covered `.claude`; #192 covers the directories under it.
     """
 
-    def test_none_for_an_ordinary_directory(self, tmp_path: Path):
-        (tmp_path / ".claude").mkdir()
-        assert symlinked_claude_note(tmp_path) is None
-
-    def test_none_when_absent(self, tmp_path: Path):
-        assert symlinked_claude_note(tmp_path) is None
-
-    def test_names_the_resolved_target(self, tmp_path: Path):
-        elsewhere = tmp_path / "shared-claude"
-        elsewhere.mkdir()
+    @staticmethod
+    def _project(tmp_path: Path) -> Path:
         proj = tmp_path / "proj"
         proj.mkdir()
-        (proj / ".claude").symlink_to(elsewhere, target_is_directory=True)
+        return proj
 
-        note = symlinked_claude_note(proj)
-        assert note is not None
-        assert str(elsewhere.resolve()) in note
-        assert "symlink" in note
+    def _writes(self, proj: Path) -> list[Path]:
+        """The three paths mpg writes, as the callers pass them."""
+        return [
+            proj / ".claude" / "skills" / "modern-python-guidance",
+            proj / ".claude" / "rules" / "modern-python.md",
+            settings_local_path(proj),
+        ]
+
+    def test_empty_for_an_ordinary_tree(self, tmp_path: Path):
+        proj = self._project(tmp_path)
+        (proj / ".claude" / "skills").mkdir(parents=True)
+        (proj / ".claude" / "rules").mkdir(parents=True)
+        assert symlinked_parent_notes(proj, self._writes(proj)) == []
+
+    def test_empty_when_absent(self, tmp_path: Path):
+        proj = self._project(tmp_path)
+        assert symlinked_parent_notes(proj, self._writes(proj)) == []
+
+    @pytest.mark.parametrize("relative", [".claude", ".claude/skills", ".claude/rules"])
+    def test_each_write_through_directory_is_reported(self, tmp_path: Path, relative: str):
+        """#192: the disclosure must not stop at `.claude`."""
+        proj = self._project(tmp_path)
+        elsewhere = tmp_path / "elsewhere"
+        elsewhere.mkdir()
+        link = proj / relative
+        link.parent.mkdir(parents=True, exist_ok=True)
+        link.symlink_to(elsewhere, target_is_directory=True)
+
+        notes = symlinked_parent_notes(proj, self._writes(proj))
+        assert len(notes) == 1, notes
+        assert str(link) in notes[0]
+        assert str(elsewhere.resolve()) in notes[0]
+
+    def test_siblings_pointing_elsewhere_are_both_reported(self, tmp_path: Path):
+        """Two real destinations must produce two notes.
+
+        The rejected first design reported only the outermost symlink found,
+        which would name `skills` and stay silent about `rules` — making
+        "mpg discloses where writes land" false in exactly the case where it
+        matters most, because the two land in different trees.
+        """
+        proj = self._project(tmp_path)
+        (proj / ".claude").mkdir()
+        skills_target = tmp_path / "shared-skills"
+        rules_target = tmp_path / "shared-rules"
+        skills_target.mkdir()
+        rules_target.mkdir()
+        (proj / ".claude" / "skills").symlink_to(skills_target, target_is_directory=True)
+        (proj / ".claude" / "rules").symlink_to(rules_target, target_is_directory=True)
+
+        notes = symlinked_parent_notes(proj, self._writes(proj))
+        assert len(notes) == 2, notes
+        joined = "\n".join(notes)
+        assert str(skills_target.resolve()) in joined
+        assert str(rules_target.resolve()) in joined
+
+    def test_outermost_symlink_collapses_the_inner_ones(self, tmp_path: Path):
+        """Once writes leave for the link target, what is inside it is that
+        tree's business — reporting it too would imply two destinations."""
+        proj = self._project(tmp_path)
+        shared = tmp_path / "shared-claude"
+        (shared / "skills").mkdir(parents=True)
+        (proj / ".claude").symlink_to(shared, target_is_directory=True)
+        (tmp_path / "even-further").mkdir()
+        # Reached only by following `.claude`, so it must not be named.
+        (shared / "skills").rmdir()
+        (shared / "skills").symlink_to(tmp_path / "even-further", target_is_directory=True)
+
+        notes = symlinked_parent_notes(proj, self._writes(proj))
+        assert len(notes) == 1, notes
+        assert str(proj / ".claude") in notes[0]
+        assert "even-further" not in notes[0]
+
+    def test_mpg_own_link_is_not_reported(self, tmp_path: Path):
+        """The final component is mpg's own artifact. Walking into it would make
+        a second `mpg setup` in an ordinary project announce mpg's own links."""
+        proj = self._project(tmp_path)
+        (proj / ".claude" / "skills").mkdir(parents=True)
+        source = tmp_path / "package-skills"
+        source.mkdir()
+        (proj / ".claude" / "skills" / "modern-python-guidance").symlink_to(
+            source, target_is_directory=True
+        )
+
+        assert symlinked_parent_notes(proj, self._writes(proj)) == []
 
     def test_dangling_symlink_still_reports_where_it_points(self, tmp_path: Path):
-        proj = tmp_path / "proj"
-        proj.mkdir()
+        proj = self._project(tmp_path)
         (proj / ".claude").symlink_to(tmp_path / "gone", target_is_directory=True)
 
-        note = symlinked_claude_note(proj)
-        assert note is not None
-        assert "gone" in note
+        notes = symlinked_parent_notes(proj, self._writes(proj))
+        assert len(notes) == 1
+        assert "gone" in notes[0]
 
     def test_symlink_loop_degrades_instead_of_raising(self, tmp_path: Path):
         """A loop must neither raise nor produce a note that discloses nothing.
@@ -615,16 +687,40 @@ class TestSymlinkedClaudeNote:
         on the exception type made this test pass only on the interpreter that
         wrote it; asserting on the *outcome* holds on both.
         """
-        proj = tmp_path / "proj"
-        proj.mkdir()
+        proj = self._project(tmp_path)
         (proj / ".claude").symlink_to(proj / "b")
         (proj / "b").symlink_to(proj / ".claude")
 
-        note = symlinked_claude_note(proj)
-        assert note is not None
-        assert "unresolvable" in note
+        notes = symlinked_parent_notes(proj, self._writes(proj))
+        assert len(notes) == 1
+        assert "unresolvable" in notes[0]
         # The failure mode this guards: naming `.claude` as its own target.
-        assert f"writes to {proj / '.claude'}" not in note
+        assert f"writes to {proj / '.claude'}" not in notes[0]
+
+    def test_paths_outside_the_project_root_are_ignored(self, tmp_path: Path):
+        """A caller passing an unrelated absolute path must not crash the run."""
+        proj = self._project(tmp_path)
+        (proj / ".claude").mkdir()
+        assert symlinked_parent_notes(proj, [tmp_path / "somewhere-else" / "x"]) == []
+
+    def test_loop_degrades_for_a_relative_project_root(self, tmp_path: Path, monkeypatch):
+        """`--project-dir` is taken as a plain `Path` and may be relative.
+
+        `resolve()` always absolutizes, so comparing its result to a relative
+        input never matches — on 3.14, where an unresolvable loop is reported by
+        returning the path rather than raising, that made the degradation check
+        miss and produced "X is a symlink; mpg writes to <X absolutized>".
+        """
+        proj = self._project(tmp_path)
+        (proj / ".claude").symlink_to(proj / "b")
+        (proj / "b").symlink_to(proj / ".claude")
+        monkeypatch.chdir(tmp_path)
+
+        relative = Path(proj.name)
+        notes = symlinked_parent_notes(relative, [relative / ".claude" / "settings.local.json"])
+        assert len(notes) == 1
+        assert "unresolvable" in notes[0]
+        assert str(proj / ".claude") not in notes[0]
 
 
 class TestBuildMpgHookEntry:
