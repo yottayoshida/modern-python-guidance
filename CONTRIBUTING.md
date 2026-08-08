@@ -56,6 +56,46 @@ To auto-fix formatting: `ruff format src/ tests/`
 
 All GitHub Actions `uses:` references must be pinned to full commit SHAs with a version comment: `uses: actions/checkout@34e1148... # v4.3.1`. The `action-pin-check` CI job rejects unpinned refs. Dependabot sends monthly PRs for patch updates.
 
+## Dependency audit
+
+A weekly workflow (`.github/workflows/audit-dependencies.yml`) audits the
+dependencies this project actually resolves and files an issue when advisories
+appear. It does not run on pull requests: an advisory published against a
+transitive dependency has nothing to do with the change under review.
+
+To run it locally:
+
+```bash
+uv audit
+```
+
+(No extras flag: `uv audit` includes optional dependencies by default and only
+offers `--no-extra` to drop them — the opposite default from `uv export`.)
+
+**Read the package count, not just the verdict.** A clean result is only worth
+as much as the set it covered — while this check was being designed, a bare
+`pip-audit` reported "No known vulnerabilities found" against its own
+dependencies rather than this project's. `uv audit` resolves the project in the
+working directory, so that particular mix-up cannot recur, but the count is
+still the thing that tells you the audit looked at something (10 packages, as of
+this writing: one runtime dependency, three dev, and their transitives).
+
+`scripts/check_dependency_audit.py` is what CI uses to decide whether a run
+established anything. It exits 2 — a failure, never "nothing found" — when the
+subcommand is missing, the JSON shape is unrecognized, or the audited set is
+implausibly small. To reproduce a finding, point `uv audit` at a script pinning
+a known-vulnerable package:
+
+```bash
+uv audit --script path/to/script-with-old-dependency.py
+```
+
+Triage: the advisories are against third-party packages and are already public.
+Bump the affected dependency's floor in `pyproject.toml` if a fixed version
+exists; if it does not, or the vulnerable path is unreachable from mpg, say so
+in the issue and close it. A suspected vulnerability **in mpg itself** goes
+through the private channel in SECURITY.md instead.
+
 ## CI checks
 
 All PRs run these checks on Python 3.11, 3.12, 3.13, and 3.14:

@@ -7,7 +7,10 @@ from pathlib import Path
 import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-CI_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "ci.yml"
+WORKFLOWS = REPO_ROOT / ".github" / "workflows"
+CI_WORKFLOW = WORKFLOWS / "ci.yml"
+RELEASE_CHECKER_WORKFLOW = WORKFLOWS / "check-python-release.yml"
+AUDIT_WORKFLOW = WORKFLOWS / "audit-dependencies.yml"
 
 
 OLD_UNVERIFIED_PUBLISH_WORKFLOW = """
@@ -108,3 +111,164 @@ def test_pypi_oidc_permission_is_scoped_to_publish_job() -> None:
 
     assert "id-token: write" not in top_level_permissions
     assert "permissions:\n      id-token: write" in publish_job(text)
+
+
+# --- scheduled workflows: permissions and triggers ---
+
+
+def header(text: str) -> str:
+    """Everything above `jobs:`, with comments stripped.
+
+    Comments have to go: these workflows explain *why* a scope is declared
+    right above the declaration, so a plain substring search is satisfied by
+    the explanation alone. Deleting the `contents: read` line while leaving its
+    comment kept this file green until that was measured.
+    """
+    assert "\njobs:\n" in text
+    above_jobs = text.split("\njobs:\n", maxsplit=1)[0]
+    return "\n".join(line for line in above_jobs.splitlines() if not line.lstrip().startswith("#"))
+
+
+def assert_checkout_permission_declared(text: str) -> None:
+    """Declaring `permissions` at all drops every scope not listed, so a job
+    that checks out the repository has to ask for `contents: read` (#163)."""
+    perms = header(text)
+    assert "actions/checkout@" in text, "no checkout step; this check does not apply"
+    assert "contents: read" in perms, "checkout without contents: read"
+
+
+def assert_not_triggered_by_pull_requests(text: str) -> None:
+    """Assert the absence, not just the presence of `schedule`: a check that
+    only looked for `schedule` would pass unchanged if `pull_request` were
+    added alongside it."""
+    on_block = header(text).split("\non:\n", maxsplit=1)[1]
+    on_block = on_block.split("\npermissions:", maxsplit=1)[0]
+    assert "schedule:" in on_block
+    assert "pull_request" not in on_block
+    assert "push:" not in on_block
+
+
+WORKFLOW_WITHOUT_CHECKOUT_PERMISSION = """
+name: Example
+
+on:
+  schedule:
+    - cron: '0 9 * * 1'
+
+permissions:
+  issues: write
+
+jobs:
+  check:
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+"""
+
+WORKFLOW_ALSO_RUNNING_ON_PULL_REQUESTS = """
+name: Example
+
+on:
+  schedule:
+    - cron: '0 9 * * 1'
+
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    steps:
+      - run: echo hi
+"""
+
+WORKFLOW_WITH_THE_PERMISSION_ONLY_IN_A_COMMENT = """
+name: Example
+
+on:
+  schedule:
+    - cron: '0 9 * * 1'
+
+# `contents: read` is required for actions/checkout.
+permissions:
+  issues: write
+
+jobs:
+  check:
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+"""
+
+
+def test_release_checker_can_check_out_the_repository() -> None:
+    assert_checkout_permission_declared(RELEASE_CHECKER_WORKFLOW.read_text(encoding="utf-8"))
+
+
+def test_release_checker_keeps_issue_write_and_adds_nothing_else() -> None:
+    perms = header(RELEASE_CHECKER_WORKFLOW.read_text(encoding="utf-8"))
+    assert "issues: write" in perms
+    assert perms.count(": write") == 1, "an unrelated write scope was added"
+
+
+def test_audit_workflow_can_check_out_the_repository() -> None:
+    assert_checkout_permission_declared(AUDIT_WORKFLOW.read_text(encoding="utf-8"))
+
+
+def test_audit_workflow_does_not_run_on_pull_requests() -> None:
+    """The audit reports advisories against third-party packages, which have
+    nothing to do with the change under review."""
+    assert_not_triggered_by_pull_requests(AUDIT_WORKFLOW.read_text(encoding="utf-8"))
+
+
+def test_audit_workflow_delegates_the_verdict_to_the_tested_script() -> None:
+    """The decision of whether a run established anything lives in a script
+    with fixtures, not in inline shell that nothing can exercise."""
+    text = AUDIT_WORKFLOW.read_text(encoding="utf-8")
+    assert "scripts/check_dependency_audit.py" in text
+    assert "--audit-exit=" in text
+    # `uv audit` exits non-zero on findings; without capturing that the step
+    # would abort before anything could be reported.
+    assert "set +e" in text
+
+
+def test_audit_workflow_keys_the_issue_on_the_advisory_set() -> None:
+    """A fixed title would let a closed issue about old advisories suppress a
+    new one. The search is a phrase match, so an exact title comparison has to
+    follow it."""
+    text = AUDIT_WORKFLOW.read_text(encoding="utf-8")
+    assert "--issue-title" in text
+    assert "--state open" in text
+    assert 'select(.title == \\"${TITLE}\\")' in text
+
+
+def test_audit_workflow_does_not_pass_an_extras_flag_uv_audit_lacks() -> None:
+    """`--all-extras` belongs to `uv export`, not `uv audit`, which includes
+    optional dependencies by default and only offers `--no-extra`.
+
+    A live run caught this: uv rejected the argument and exited 2, which the
+    verdict script correctly refused to interpret. The fixture-driven tests
+    could not have — they feed JSON directly and never build a command line.
+    """
+    text = AUDIT_WORKFLOW.read_text(encoding="utf-8")
+    audit_lines = [line for line in text.splitlines() if "uv audit" in line and "#" not in line]
+    assert audit_lines, "no `uv audit` invocation found"
+    for line in audit_lines:
+        assert "--all-extras" not in line, f"uv audit has no --all-extras: {line.strip()}"
+
+
+def test_permission_check_rejects_a_workflow_missing_contents_read() -> None:
+    with pytest.raises(AssertionError, match="contents: read"):
+        assert_checkout_permission_declared(WORKFLOW_WITHOUT_CHECKOUT_PERMISSION)
+
+
+def test_permission_check_is_not_satisfied_by_a_comment() -> None:
+    """The real workflows explain the scope right above declaring it, so a
+    substring search over the raw text passes on the explanation alone —
+    measured by deleting the declaration and watching this file stay green."""
+    with pytest.raises(AssertionError, match="contents: read"):
+        assert_checkout_permission_declared(WORKFLOW_WITH_THE_PERMISSION_ONLY_IN_A_COMMENT)
+
+
+def test_trigger_check_rejects_a_workflow_that_also_runs_on_pull_requests() -> None:
+    with pytest.raises(AssertionError):
+        assert_not_triggered_by_pull_requests(WORKFLOW_ALSO_RUNNING_ON_PULL_REQUESTS)

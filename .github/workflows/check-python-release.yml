@@ -5,7 +5,13 @@ on:
     - cron: '0 9 * * 1'  # Every Monday at 09:00 UTC
   workflow_dispatch:
 
+# `contents: read` is required for actions/checkout: declaring `permissions` at
+# all drops every scope not listed here, and this job checks out the repo to
+# read guide frontmatter. Public repositories happen to allow the checkout
+# regardless, which is why the omission never surfaced (#163) — it would fail
+# the moment this repository went private.
 permissions:
+  contents: read
   issues: write
 
 jobs:

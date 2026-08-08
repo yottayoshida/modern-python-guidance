@@ -1,0 +1,95 @@
+name: Audit dependencies
+
+# Weekly rather than per-PR on purpose: an advisory published against a
+# transitive dependency has nothing to do with the change under review, and
+# blocking PRs on it would stop unrelated work. GitHub's Dependabot alerts
+# watch the declared dependency graph continuously; this watches what actually
+# resolves, which is a different question.
+on:
+  schedule:
+    - cron: '0 10 * * 1'  # Every Monday at 10:00 UTC, an hour after the release checker
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@38f3f104447c67c051c4a08e39b64a148898af3a # v4.2.0
+
+      - name: Audit resolved dependencies
+        id: audit
+        run: |
+          # `uv audit` exits 1 when it finds something (measured against uv
+          # 0.11.23), so the failure has to be captured rather than allowed to
+          # abort the step — otherwise a run that finds vulnerabilities never
+          # reaches the step that reports them.
+          # No extras flag: `uv audit` includes optional dependencies by
+          # default and only offers `--no-extra` to drop them, which is the
+          # opposite default from `uv export`. Measured: 10 packages here,
+          # covering the dev extra.
+          set +e
+          uv audit --output-format json > audit.json 2>audit.stderr
+          audit_exit=$?
+          set -e
+          echo "uv audit exited ${audit_exit}"
+
+          # The script decides whether the run established anything at all: it
+          # exits 2 for "inconclusive" (missing subcommand, unrecognized
+          # schema, implausibly small corpus), which must never be reported as
+          # "no vulnerabilities".
+          set +e
+          python scripts/check_dependency_audit.py --audit-exit="${audit_exit}" \
+            < audit.json > report.md 2> check.stderr
+          check_exit=$?
+          set -e
+
+          case "${check_exit}" in
+            0)
+              echo "found=false" >> "$GITHUB_OUTPUT"
+              cat report.md
+              ;;
+            1)
+              echo "found=true" >> "$GITHUB_OUTPUT"
+              python scripts/check_dependency_audit.py --audit-exit="${audit_exit}" \
+                --issue-title < audit.json > title.txt
+              echo "title=$(cat title.txt)" >> "$GITHUB_OUTPUT"
+              cat report.md
+              ;;
+            *)
+              echo "::error::Dependency audit was inconclusive; it established nothing."
+              cat check.stderr >&2
+              cat audit.stderr >&2 || true
+              exit 1
+              ;;
+          esac
+
+      - name: File or update the tracking issue
+        if: steps.audit.outputs.found == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TITLE: ${{ steps.audit.outputs.title }}
+        run: |
+          # Keyed on a digest of the advisory set, not a fixed title: a closed
+          # issue about last quarter's advisories must not suppress a new one,
+          # and a run finding the same set again must not open a duplicate.
+          # Only open issues are consulted, for the same reason.
+          #
+          # The search is a phrase match, so it can return issues whose titles
+          # merely contain this one; the exact comparison below is what decides.
+          EXISTING=$(gh issue list --state open --search "\"${TITLE}\" in:title" \
+            --json number,title \
+            --jq "[.[] | select(.title == \"${TITLE}\")] | .[0].number // empty")
+
+          if [ -n "${EXISTING}" ]; then
+            echo "Issue #${EXISTING} already tracks exactly these advisories."
+            exit 0
+          fi
+
+          gh issue create --title "${TITLE}" --label "security" --body-file report.md

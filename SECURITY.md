@@ -20,6 +20,11 @@ repository-owned private reporting form as the primary channel:
 
 <https://github.com/yottayoshida/modern-python-guidance/security/advisories/new>
 
+This covers vulnerabilities in mpg itself, which are not public until they are
+disclosed. It does not cover already-published advisories against third-party
+packages mpg depends on: those are public by the time anyone can act on them,
+and the weekly dependency audit tracks them in open issues (see below).
+
 Include the impact, reproduction steps or proof of concept, affected version,
 and any relevant configuration details. Do not include secrets, access tokens,
 or real credentials in a report. Maintainers acknowledge and triage reports on
@@ -91,3 +96,10 @@ Guide changes use normal pull-request review and CI. GitHub Actions references
 are SHA-pinned. Before publishing, build CI verifies the packaged Skill, Rules,
 guide set, and guide index; releases publish the verified artifact. mpg does
 not currently provide cryptographic guide signing or require two-person review.
+
+A weekly workflow audits the dependencies this repository resolves and opens an
+issue when advisories appear; the check fails rather than reporting "nothing
+found" if it cannot establish what it covered. This is repository maintenance,
+not a feature of the published package — mpg still does not scan *your*
+dependencies, as stated above. The audit does not run on pull requests, so a
+newly published advisory does not block unrelated review.
