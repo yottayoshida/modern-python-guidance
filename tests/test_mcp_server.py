@@ -6,6 +6,7 @@ import json
 import subprocess
 import sys
 
+import pytest
 from conftest import extract_design_md_keys
 
 BIN = [sys.executable, "-m", "modern_python_guidance", "mcp"]
@@ -21,6 +22,56 @@ def _decode_messages(data: bytes) -> list[dict]:
         line = line.strip()
         if line:
             messages.append(json.loads(line))
+    return messages
+
+
+def _assert_pure_jsonrpc_stream(data: bytes) -> list[dict]:
+    """Assert stdout carries JSON-RPC messages and nothing else, then return them.
+
+    Judged from the stream's *structure* alone — never by recomputing what the
+    server "should" have written. An earlier version summed
+    ``len(json.dumps(m) + "\\n")`` over the decoded messages and compared it to
+    ``len(stdout)``; that recomputation defaults to ``ensure_ascii=True`` while
+    the server serializes with ``ensure_ascii=False`` (``mcp_server.py``), so a
+    single non-ASCII character anywhere in a tool description or tool result
+    made the two byte counts diverge and failed the test with no stray output
+    at all (#173). Recomputation also silently re-couples the test to
+    ``indent``/``separators``, which are not part of what "no stray output"
+    means.
+
+    Deliberately does NOT reuse `_decode_messages`: that helper strips each
+    line before parsing, which destroys the very evidence (blank lines,
+    trailing whitespace) this check exists to find.
+
+    Every violation raises AssertionError — including malformed JSON and
+    invalid UTF-8, which would otherwise surface as JSONDecodeError /
+    UnicodeDecodeError and make the falsification tests unable to pin a single
+    failure type.
+
+    The `jsonrpc` version marker alone is too weak an acceptance test: a stray
+    `{"jsonrpc": "2.0", "debug": true}` line would carry it while being exactly
+    the pollution this check exists to reject, so a response/notification body
+    is required too. Callers should additionally assert the message count and
+    ids they expect — a well-formed but *extra* message is still pollution, and
+    only the caller knows how many belong there.
+    """
+    assert data, "stdout is empty; expected at least one JSON-RPC message"
+    assert data.endswith(b"\n"), f"stdout does not end with a newline: {data[-40:]!r}"
+
+    messages = []
+    for i, raw in enumerate(data.split(b"\n")[:-1]):
+        assert raw, f"stdout line {i} is blank; JSON-RPC framing allows no empty lines"
+        assert raw == raw.strip(), f"stdout line {i} has leading/trailing whitespace: {raw!r}"
+        try:
+            msg = json.loads(raw)
+        except (json.JSONDecodeError, UnicodeDecodeError) as e:
+            raise AssertionError(f"stdout line {i} is not valid JSON ({e}): {raw!r}") from e
+        assert isinstance(msg, dict), f"stdout line {i} is not a JSON object: {raw!r}"
+        assert msg.get("jsonrpc") == "2.0", f"stdout line {i} is not a JSON-RPC message: {raw!r}"
+        assert {"result", "error", "method"} & msg.keys(), (
+            f"stdout line {i} claims jsonrpc 2.0 but carries no result/error/method: {raw!r}"
+        )
+        messages.append(msg)
     return messages
 
 
@@ -539,8 +590,110 @@ class TestStdoutPollution:
             {"jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {}},
         )
         proc = subprocess.run(BIN, input=stdin_data, capture_output=True, timeout=10)
-        decoded = _decode_messages(proc.stdout)
-        total_expected_bytes = sum(len((json.dumps(m) + "\n").encode()) for m in decoded)
-        assert len(proc.stdout) == total_expected_bytes, (
-            f"stdout contains {len(proc.stdout) - total_expected_bytes} extra bytes"
+        assert proc.returncode == 0, f"stderr: {proc.stderr.decode()}"
+        messages = _assert_pure_jsonrpc_stream(proc.stdout)
+        # Per-line structure alone cannot catch a well-formed but *extra*
+        # message, so pin exactly which responses belong on stdout: one for
+        # `initialize` and one for `tools/list`. `notifications/initialized`
+        # is a notification and must produce no output at all.
+        assert [m["id"] for m in messages] == [0, 1], f"unexpected responses: {messages}"
+
+    def test_tool_call_response_with_non_ascii_is_not_pollution(self):
+        """#173 in its live form: `guide_index` composes BAD/GOOD summaries with
+        a `→`, so a real `search_guides` response carries raw UTF-8 on stdout.
+        Under the old byte-count comparison this response measured 12 bytes
+        "short" and would have failed; the test only stayed green because it
+        exercised `tools/list` alone. Pinned here so the fix is exercised
+        against the server's own output, not just synthetic bytes.
+        """
+        stdin_data = _build_session(
+            *_init_handshake(),
+            {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "tools/call",
+                "params": {
+                    "name": "search_guides",
+                    "arguments": {"query": "pydantic validator"},
+                },
+            },
         )
+        proc = subprocess.run(BIN, input=stdin_data, capture_output=True, timeout=10)
+        assert proc.returncode == 0, f"stderr: {proc.stderr.decode()}"
+        assert any(b >= 0x80 for b in proc.stdout), (
+            "no non-ASCII byte on stdout; this test no longer exercises the #173 path"
+        )
+        messages = _assert_pure_jsonrpc_stream(proc.stdout)
+        assert [m["id"] for m in messages] == [0, 1], f"unexpected responses: {messages}"
+
+
+class TestStdoutPurityChecker:
+    """Falsify `_assert_pure_jsonrpc_stream` itself (#173).
+
+    `TestStdoutPollution` only ever sees a clean server, so on its own it
+    cannot distinguish "the server is clean" from "the checker accepts
+    anything". These tests pin both directions: every pollution shape the
+    previous byte-count comparison caught must still fail, and a non-ASCII
+    payload — the false positive that motivated #173 — must pass.
+    """
+
+    @staticmethod
+    def _clean_line() -> str:
+        return json.dumps({"jsonrpc": "2.0", "id": 1, "result": {}})
+
+    def test_rejects_stray_non_json_line(self):
+        data = b"DEBUG: writing index\n" + (self._clean_line() + "\n").encode()
+        with pytest.raises(AssertionError, match="not valid JSON"):
+            _assert_pure_jsonrpc_stream(data)
+
+    def test_rejects_blank_line(self):
+        data = (self._clean_line() + "\n").encode() + b"\n"
+        with pytest.raises(AssertionError, match="blank"):
+            _assert_pure_jsonrpc_stream(data)
+
+    def test_rejects_trailing_whitespace(self):
+        data = (self._clean_line() + "  \n").encode()
+        with pytest.raises(AssertionError, match="whitespace"):
+            _assert_pure_jsonrpc_stream(data)
+
+    def test_rejects_missing_final_newline(self):
+        data = self._clean_line().encode()
+        with pytest.raises(AssertionError, match="newline"):
+            _assert_pure_jsonrpc_stream(data)
+
+    def test_rejects_valid_json_that_is_not_jsonrpc(self):
+        data = (json.dumps({"result": "no jsonrpc key"}) + "\n").encode()
+        with pytest.raises(AssertionError, match="not a JSON-RPC message"):
+            _assert_pure_jsonrpc_stream(data)
+
+    def test_rejects_jsonrpc_marker_without_a_message_body(self):
+        """A stray line can carry `"jsonrpc": "2.0"` and still be pollution;
+        the version marker alone is not an acceptance test."""
+        data = (self._clean_line() + "\n").encode() + b'{"jsonrpc": "2.0", "debug": true}\n'
+        with pytest.raises(AssertionError, match="no result/error/method"):
+            _assert_pure_jsonrpc_stream(data)
+
+    def test_rejects_invalid_utf8_as_assertion_error(self):
+        """Malformed bytes must fail the same way everything else does, so the
+        falsification tests can pin one failure type."""
+        data = b'{"jsonrpc": "2.0", "id": 1, "result": "\xff\xfe"}\n'
+        with pytest.raises(AssertionError, match="not valid JSON"):
+            _assert_pure_jsonrpc_stream(data)
+
+    def test_accepts_a_notification_without_id(self):
+        """Guard against over-tightening: a server-initiated notification has
+        `method` and no `id`/`result`, and must not be read as pollution."""
+        data = (json.dumps({"jsonrpc": "2.0", "method": "notifications/x"}) + "\n").encode()
+        assert len(_assert_pure_jsonrpc_stream(data)) == 1
+
+    def test_accepts_non_ascii_payload(self):
+        """The #173 regression: the server writes with `ensure_ascii=False`, so
+        raw UTF-8 reaches stdout. That is not pollution and must stay green."""
+        msg = {"jsonrpc": "2.0", "id": 1, "result": {"text": "guides — 41 total"}}
+        data = (json.dumps(msg, ensure_ascii=False) + "\n").encode("utf-8")
+        # Guard against a vacuous fixture: with the default `ensure_ascii=True`
+        # the em dash is escaped to a pure-ASCII \\uXXXX sequence, and this test
+        # would assert nothing about non-ASCII handling while still passing.
+        assert any(b >= 0x80 for b in data), "fixture escaped to ASCII; test would be vacuous"
+        decoded = _assert_pure_jsonrpc_stream(data)
+        assert decoded[0]["result"]["text"] == "guides — 41 total"

@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+
+- The MCP stdout-purity test judged pollution by recomputing the expected byte count with `json.dumps`'s default `ensure_ascii=True`, while the server serializes with `ensure_ascii=False`. Any non-ASCII character reaching stdout made the two counts diverge and failed the test with no stray output present at all — not a hypothetical, since `guide_index.py` composes BAD/GOOD summaries with a `→` and a real `search_guides` response measures 12 bytes "short" under the old comparison. The test only stayed green because it exercised `tools/list` alone. The check now judges the stream's structure directly — every line non-empty, free of surrounding whitespace, a standalone JSON-RPC object carrying a `result`/`error`/`method` body, and the stream terminated by a newline — so it no longer depends on the server's serialization settings, and the test additionally pins which response ids belong on stdout so that a well-formed but extra message is still caught. Falsification tests pin that every pollution shape the byte comparison used to catch still fails, and that a genuinely non-ASCII payload passes. (closes #173)
+
 ## [0.5.11] — 2026-08-06
 
 **Summary**: Guidance delivery is now more dependable and auditable: target-Python and dependency applicability are resolved consistently across CLI, MCP, and hooks; detection and benchmark claims expose their evidence and limits; and project-scoped MCP setup and uninstall honor the requested project directory.
