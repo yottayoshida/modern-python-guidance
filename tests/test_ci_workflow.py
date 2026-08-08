@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 import pytest
@@ -272,3 +273,106 @@ def test_permission_check_is_not_satisfied_by_a_comment() -> None:
 def test_trigger_check_rejects_a_workflow_that_also_runs_on_pull_requests() -> None:
     with pytest.raises(AssertionError):
         assert_not_triggered_by_pull_requests(WORKFLOW_ALSO_RUNNING_ON_PULL_REQUESTS)
+
+
+# --- labels applied by automatically filed issues ---
+
+# Only `--label "value"` arguments, and only outside comments. Searching the
+# raw text would be satisfied by the issue body — written inline in the same
+# step, and quite reasonably naming the same words — or by a comment that spells
+# the flag out, which is how a `contents: read` check once passed on its own
+# explanation. Measured: a commented-out `--label "tier:4-extend"` satisfied an
+# earlier version of this check.
+_LABEL_ARG_RE = re.compile(r'--label\s+"([^"]+)"')
+
+# What a hand-filed issue of this kind would carry. Named rather than
+# pattern-matched: asserting merely "some tier label" accepts `tier:1-ship` on
+# an issue that extends the catalog, which is the misfiling this exists to stop.
+EXPECTED_RELEASE_ISSUE_LABELS = frozenset({"enhancement", "tier:4-extend", "area:content"})
+
+
+def issue_labels(text: str) -> set[str]:
+    uncommented = "\n".join(
+        line for line in text.splitlines() if not line.lstrip().startswith("#")
+    )
+    return set(_LABEL_ARG_RE.findall(uncommented))
+
+
+def assert_release_issue_is_triaged(text: str) -> None:
+    """An automatically filed issue has to carry the same classification a
+    hand-filed one would, or it lands outside the triage scheme entirely (#160).
+    """
+    labels = issue_labels(text)
+    missing = EXPECTED_RELEASE_ISSUE_LABELS - labels
+    assert not missing, f"missing label(s): {sorted(missing)} (found {sorted(labels) or 'none'})"
+
+
+WORKFLOW_FILING_AN_UNLABELLED_ISSUE = """
+jobs:
+  check:
+    steps:
+      - run: gh issue create --title "Add Python 3.99 guides" --label "enhancement"
+"""
+
+WORKFLOW_MENTIONING_LABELS_ONLY_IN_THE_BODY = """
+jobs:
+  check:
+    steps:
+      - run: |
+          gh issue create \\
+            --title "Add Python 3.99 guides" \\
+            --label "enhancement" \\
+            --body "Classification: tier:4-extend, area:content"
+"""
+
+WORKFLOW_WITH_LABELS_ONLY_IN_A_COMMENT = """
+jobs:
+  check:
+    steps:
+      - run: |
+          # historically also passed --label "tier:4-extend" --label "area:content"
+          gh issue create --title "Add Python 3.99 guides" --label "enhancement"
+"""
+
+WORKFLOW_FILING_UNDER_THE_WRONG_TIER = """
+jobs:
+  check:
+    steps:
+      - run: |
+          gh issue create \\
+            --title "Add Python 3.99 guides" \\
+            --label "enhancement" \\
+            --label "tier:1-ship" \\
+            --label "area:content"
+"""
+
+
+def test_release_checker_files_a_triaged_issue() -> None:
+    assert_release_issue_is_triaged(RELEASE_CHECKER_WORKFLOW.read_text(encoding="utf-8"))
+
+
+def test_label_check_rejects_an_unlabelled_issue() -> None:
+    with pytest.raises(AssertionError, match="missing label"):
+        assert_release_issue_is_triaged(WORKFLOW_FILING_AN_UNLABELLED_ISSUE)
+
+
+def test_label_check_is_not_satisfied_by_the_issue_body() -> None:
+    """The labels have to be passed as `--label`, not merely named in the body
+    text — the check reads the arguments, not the prose around them."""
+    with pytest.raises(AssertionError, match="missing label"):
+        assert_release_issue_is_triaged(WORKFLOW_MENTIONING_LABELS_ONLY_IN_THE_BODY)
+
+
+def test_label_check_is_not_satisfied_by_a_commented_out_flag() -> None:
+    """Measured against an earlier version of this check: a `--label` spelled
+    out inside a comment satisfied it. Same shape as the `contents: read` check
+    that passed on its own explanation."""
+    with pytest.raises(AssertionError, match="missing label"):
+        assert_release_issue_is_triaged(WORKFLOW_WITH_LABELS_ONLY_IN_A_COMMENT)
+
+
+def test_label_check_rejects_the_wrong_tier() -> None:
+    """ "Some tier label" is not the requirement — a catalog extension filed as
+    `tier:1-ship` is exactly the misfiling this check exists to prevent."""
+    with pytest.raises(AssertionError, match="tier:4-extend"):
+        assert_release_issue_is_triaged(WORKFLOW_FILING_UNDER_THE_WRONG_TIER)

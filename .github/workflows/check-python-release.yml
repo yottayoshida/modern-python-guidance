@@ -84,9 +84,15 @@ jobs:
           VERSION: ${{ steps.detect.outputs.new_version }}
         run: |
           SLUG="${VERSION//.}"
+          # Labelled like a hand-filed issue so the automatic ones land in the
+          # same triage as everything else (#160). Adding guides for a new
+          # Python release extends the catalog rather than blocking a ship, so
+          # tier:4-extend; the work itself is writing guides, so area:content.
           gh issue create \
             --title "Add Python ${VERSION} guides" \
             --label "enhancement" \
+            --label "tier:4-extend" \
+            --label "area:content" \
             --body "## Python ${VERSION} stable released
 
           Evaluate new PEPs for BAD/GOOD pattern guides.
