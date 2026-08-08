@@ -17,6 +17,7 @@ import os
 import stat
 import sys
 import tempfile
+from collections.abc import Iterable
 from pathlib import Path
 
 HOOK_EVENT = "PostToolUse"
@@ -217,41 +218,88 @@ def settings_local_path(project_root: Path) -> Path:
     return project_root / ".claude" / SETTINGS_FILE_NAME
 
 
-def symlinked_claude_note(project_root: Path) -> str | None:
-    """Announce that `<project_root>/.claude` is a symlink, and where it leads.
-
-    None when it is an ordinary directory (or absent) — callers print nothing
-    in the overwhelmingly common case.
-
-    `read_settings`/`write_settings_atomic` refuse a symlinked *settings file*,
-    but a symlinked `.claude` *directory* is followed: everything mpg writes
-    there (the hook settings, and the Skills and Rules symlinks alike) lands at
-    the link target. Refusing it instead would break the deliberate "config
-    lives elsewhere" setups that are the main reason to symlink `.claude` at
-    all, so mpg follows the link and says so. This surfaces where the write
-    went; it is not confinement of the `.claude` tree (#170).
+def _resolved_target(path: Path) -> str:
+    """Where `path` actually leads, or "unresolvable" if the walk got nowhere.
 
     Never raises, and never claims a target it did not resolve. `Path.resolve()`
     walks the filesystem, and how it reports an unresolvable link is version
     dependent: on a symlink loop Python <= 3.13 raises RuntimeError while 3.14
     returns the input path unchanged (measured on 3.12.12 and 3.14.6); a hostile
-    or racing tree can raise OSError on any version. Both shapes are treated the
-    same — an unchanged path means the walk got nowhere, and saying "`.claude` is
-    a symlink; mpg writes to `.claude`" would be a note that discloses nothing.
-    Degrading beats taking down a setup run that would otherwise succeed.
+    or racing tree can raise OSError on any version. Both shapes mean the same
+    thing here, and reporting "X is a symlink; mpg writes to X" would be a note
+    that discloses nothing. Degrading beats taking down a run that would
+    otherwise succeed.
 
     A dangling link is not unresolvable: it names a real destination that simply
     does not exist yet, which is exactly what the caller wants to know.
+
+    The comparison is made against the absolute form. `resolve()` always
+    absolutizes, so comparing it to a relative input can never match, and the
+    3.14 "returned unchanged" shape would slip through as a note naming the
+    link as its own destination — reachable in practice, since `--project-dir`
+    is taken as a plain `Path` and may well be relative.
     """
-    claude_dir = project_root / ".claude"
-    if not claude_dir.is_symlink():
-        return None
+    absolute = path.absolute()
     try:
-        resolved = claude_dir.resolve()
-        target = "unresolvable" if resolved == claude_dir else str(resolved)
+        resolved = path.resolve()
     except (OSError, RuntimeError):
-        target = "unresolvable"
-    return f"Note: {claude_dir} is a symlink; mpg writes to {target}"
+        return "unresolvable"
+    return "unresolvable" if resolved == absolute else str(resolved)
+
+
+def symlinked_parent_notes(project_root: Path, write_paths: Iterable[Path]) -> list[str]:
+    """Disclose every symlinked directory mpg is about to write through.
+
+    For each path in `write_paths`, walk its components below `project_root` and
+    report the OUTERMOST symlinked one, then de-duplicate across paths. Empty
+    list when nothing on the way is a symlink — the overwhelmingly common case,
+    where callers print nothing.
+
+    Outermost-wins, then de-duplicated, is what makes the output match reality
+    in both directions. A symlinked `.claude` is the first symlinked component
+    of all three write paths, so it collapses to a single note: once writes
+    leave for the link target, whether `skills` inside it is also a symlink is a
+    fact about that other tree, not about where mpg's writes went. But when
+    `.claude` is a real directory and `.claude/skills` and `.claude/rules` point
+    at *different* places, there genuinely are two destinations and both are
+    named — reporting only the first would make "mpg discloses where writes
+    land" false (#192).
+
+    Only the DIRECTORIES above each write target are inspected — neither
+    `project_root` (the user named it, so a symlink there is theirs and already
+    known to them) nor the final component. That last one is mpg's own artifact:
+    the Skills and Rules entries are symlinks mpg itself creates, so walking
+    into them would make a plain second `mpg setup` in an ordinary project
+    announce mpg's own links back to the user.
+
+    Callers pass the paths this run actually writes, rather than this module
+    hardcoding them, so there is no second copy of the layout to drift from the
+    real one — and no import cycle with `setup_cmd`, which owns those paths.
+
+    `read_settings`/`write_settings_atomic` refuse a symlinked settings *file*;
+    the directories above it are followed, not refused, because refusing would
+    break the deliberate "config lives elsewhere" layouts that are the main
+    reason to symlink into `.claude` at all. This discloses where a write went.
+    It is not confinement of the tree (#170).
+    """
+    notes = []
+    seen = set()
+    for path in write_paths:
+        try:
+            relative = path.relative_to(project_root)
+        except ValueError:
+            continue
+        current = project_root
+        for part in relative.parts[:-1]:
+            current = current / part
+            if current.is_symlink():
+                if current not in seen:
+                    seen.add(current)
+                    notes.append(
+                        f"Note: {current} is a symlink; mpg writes to {_resolved_target(current)}"
+                    )
+                break
+    return notes
 
 
 def read_settings(path: Path) -> dict:

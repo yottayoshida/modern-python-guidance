@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import re
 import shlex
 import subprocess
 import sys
@@ -18,6 +19,7 @@ from modern_python_guidance.hook_config import (
 )
 from modern_python_guidance.setup_cmd import (
     RULE_FILE_NAME,
+    SKILLS_LINK_NAME,
     _find_project_root,
     _find_rule_source,
     _find_skills_dir,
@@ -1367,6 +1369,118 @@ class TestRunSetup:
         with p_mcp, p_skills, p_rules:
             assert run_setup(mcp_only=True, project_dir=proj) == 0
         assert "symlink" not in capsys.readouterr().out
+
+
+class TestSymlinkedWriteParentsRealIO:
+    """#192 end to end: the note must match where the bytes actually go.
+
+    Deliberately does NOT mock `setup_skills`/`setup_rules` — the defect being
+    fixed is filesystem traversal, and a test that mocks the traversal away can
+    still pass while mpg writes somewhere the note never mentions. Only `setup_mcp`
+    is mocked, because it shells out to the `claude` CLI.
+    """
+
+    @staticmethod
+    def _patch_mcp():
+        return patch("modern_python_guidance.setup_cmd.setup_mcp", return_value=True)
+
+    def test_symlinked_skills_dir_is_announced_and_written_through(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ):
+        proj = tmp_path / "proj"
+        (proj / ".claude").mkdir(parents=True)
+        target = tmp_path / "shared-skills"
+        target.mkdir()
+        (proj / ".claude" / "skills").symlink_to(target, target_is_directory=True)
+
+        with self._patch_mcp():
+            assert run_setup(project_dir=proj) == 0
+
+        out = capsys.readouterr().out
+        assert str(proj / ".claude" / "skills") in out
+        assert str(target.resolve()) in out
+        # The disclosure is only worth anything if it matches reality.
+        assert (target / SKILLS_LINK_NAME).is_symlink(), sorted(p.name for p in target.iterdir())
+
+    def test_siblings_report_two_destinations(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ):
+        proj = tmp_path / "proj"
+        (proj / ".claude").mkdir(parents=True)
+        skills_target = tmp_path / "shared-skills"
+        rules_target = tmp_path / "shared-rules"
+        skills_target.mkdir()
+        rules_target.mkdir()
+        (proj / ".claude" / "skills").symlink_to(skills_target, target_is_directory=True)
+        (proj / ".claude" / "rules").symlink_to(rules_target, target_is_directory=True)
+
+        with self._patch_mcp():
+            assert run_setup(project_dir=proj) == 0
+
+        out = capsys.readouterr().out
+        assert str(skills_target.resolve()) in out
+        assert str(rules_target.resolve()) in out
+        assert (skills_target / SKILLS_LINK_NAME).is_symlink()
+        assert (rules_target / RULE_FILE_NAME).is_symlink()
+
+    def test_ordinary_tree_stays_silent_and_rerun_does_not_announce_mpgs_own_links(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ):
+        """Control, and the regression the leaf exclusion exists for: after a
+        first setup, `.claude/skills/<name>` IS a symlink — mpg's own. A walk
+        that included the final component would announce it on every re-run."""
+        proj = tmp_path / "proj"
+        proj.mkdir()
+
+        with self._patch_mcp():
+            assert run_setup(project_dir=proj) == 0
+            capsys.readouterr()
+            assert run_setup(project_dir=proj) == 0
+
+        assert "symlink" not in capsys.readouterr().out
+
+
+class TestWriteTargetInventory:
+    """#192: the callers pass the paths to disclose, so a new write target that
+    nobody adds to that list is disclosed by nobody.
+
+    Scans the source for expressions that build a path under `.claude` and pins
+    the set to the three known write targets. A fourth one fails here, next to a
+    comment saying what else to update.
+
+    Bounded on purpose, and worth stating plainly: this catches a path *written
+    as a literal*, which is how all three are written today. A target assembled
+    dynamically (a variable component, a name from config) would not appear and
+    would slip through.
+    """
+
+    # `<something> / ".claude" / ...` — the construction, not every mention.
+    # `_find_project_root`'s marker list also contains ".claude" and is not a
+    # write target; keying on the joining slash is what separates them.
+    CLAUDE_PATH_RE = re.compile(r'/\s*"\.claude"\s*/')
+
+    def test_only_the_known_write_targets_build_paths_under_dot_claude(self):
+        src = Path(__file__).resolve().parents[1] / "src" / "modern_python_guidance"
+        found = {
+            f"{path.name}:{i}"
+            for path in sorted(src.rglob("*.py"))
+            for i, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1)
+            if self.CLAUDE_PATH_RE.search(line)
+        }
+        # skills link, rules file, hook settings — the three run_setup and
+        # run_uninstall hand to symlinked_parent_notes.
+        assert len(found) == 3, (
+            f"write targets under .claude changed: {sorted(found)}. "
+            "Add the new one to the lists passed to symlinked_parent_notes() in "
+            "run_setup and run_uninstall, or it will be written through silently."
+        )
+
+    def test_the_scan_would_notice_a_new_target(self):
+        """The check above is only as good as its pattern: prove the pattern
+        matches a newly added construction, and does not match the marker list
+        that merely mentions `.claude`."""
+        assert self.CLAUDE_PATH_RE.search('return root / ".claude" / "agents" / NAME')
+        assert not self.CLAUDE_PATH_RE.search('markers = [".git", "pyproject.toml", ".claude"]')
 
 
 # --- CLI integration ---

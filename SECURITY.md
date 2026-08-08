@@ -47,17 +47,23 @@ skill or rule path. The hook settings reader and writer refuse a symlinked
 uninstall removes symlink entries rather than their targets, preserving the
 target and unrelated configuration.
 
-Known limitation (#170): a symlinked `.claude` parent directory is followed,
-not rejected. Everything setup and uninstall write under `.claude` — the hook
-settings, the Skills symlink, and the Rules symlink alike — then lands at the
-link target. This is deliberate: refusing would break deliberate "config lives
-elsewhere" layouts, which are the main reason to symlink `.claude` at all. What
-changed is that following it is no longer silent — `mpg setup` and
-`mpg uninstall` announce the resolved target once per run before writing
-anything. That disclosure is not confinement: do not treat the per-file symlink
-checks, or this note, as containment of the `.claude` tree. It is also bounded
-to `.claude` itself — a symlinked `.claude/skills` or `.claude/rules` is
-followed with no note (#192).
+Known limitation (#170, #192): a symlinked directory on the way to a write
+target is followed, not rejected. If `.claude`, `.claude/skills`, or
+`.claude/rules` is a symlink, what mpg writes there lands at the link target.
+This is deliberate: refusing would break "config lives elsewhere" layouts,
+which are the main reason to symlink into `.claude` at all.
+
+What following it is not is silent. Before writing anything, `mpg setup` and
+`mpg uninstall` report, for each path they write, the outermost symlinked
+directory on the way to it and the target that directory resolves to. Notes are
+per symlinked directory, not per destination: a symlinked `.claude` is the
+outermost one for all three writes and so reports once, while symlinked
+`.claude/skills` and `.claude/rules` report separately even if they happen to
+point at the same place. Anything reached only by following a link is inside
+that other tree and is not reported.
+
+That disclosure is not confinement. Do not treat the per-file symlink checks,
+or these notes, as containment of the `.claude` tree.
 
 ## Inputs and trust boundaries
 

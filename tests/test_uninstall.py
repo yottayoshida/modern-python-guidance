@@ -542,6 +542,39 @@ class TestRunUninstall:
             assert run_uninstall(mcp_only=True, project_dir=proj) == 0
         assert "symlink" not in capsys.readouterr().out
 
+    def test_symlinked_skills_dir_is_announced(self, tmp_path: Path, capsys):
+        """#192: uninstall cleans through the same directories setup wrote
+        through, so it discloses the same set."""
+        proj = tmp_path / "proj"
+        (proj / ".claude").mkdir(parents=True)
+        target = tmp_path / "shared-skills"
+        target.mkdir()
+        (proj / ".claude" / "skills").symlink_to(target, target_is_directory=True)
+
+        p_mcp, p_skills, p_rules = self._patch_all()
+        with p_mcp, p_skills, p_rules:
+            assert run_uninstall(project_dir=proj) == 0
+        out = capsys.readouterr().out
+        assert str(proj / ".claude" / "skills") in out
+        assert str(target.resolve()) in out
+
+    def test_siblings_report_two_destinations(self, tmp_path: Path, capsys):
+        proj = tmp_path / "proj"
+        (proj / ".claude").mkdir(parents=True)
+        skills_target = tmp_path / "shared-skills"
+        rules_target = tmp_path / "shared-rules"
+        skills_target.mkdir()
+        rules_target.mkdir()
+        (proj / ".claude" / "skills").symlink_to(skills_target, target_is_directory=True)
+        (proj / ".claude" / "rules").symlink_to(rules_target, target_is_directory=True)
+
+        p_mcp, p_skills, p_rules = self._patch_all()
+        with p_mcp, p_skills, p_rules:
+            assert run_uninstall(project_dir=proj) == 0
+        out = capsys.readouterr().out
+        assert str(skills_target.resolve()) in out
+        assert str(rules_target.resolve()) in out
+
     def test_hook_failure_causes_exit_1(self):
         p_mcp, p_skills, p_rules = self._patch_all()
         with (
