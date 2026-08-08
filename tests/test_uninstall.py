@@ -509,6 +509,39 @@ class TestRunUninstall:
             assert run_uninstall(mcp_only=True) == 0
         _mock_hook.assert_not_called()
 
+    def _symlinked_project(self, tmp_path: Path) -> tuple[Path, Path]:
+        elsewhere = tmp_path / "shared-claude"
+        elsewhere.mkdir()
+        proj = tmp_path / "proj"
+        proj.mkdir()
+        (proj / ".claude").symlink_to(elsewhere, target_is_directory=True)
+        return proj, elsewhere
+
+    def test_symlinked_claude_is_announced(self, tmp_path: Path, capsys):
+        """#170, mirroring setup: say which tree is actually being cleaned."""
+        proj, elsewhere = self._symlinked_project(tmp_path)
+        p_mcp, p_skills, p_rules = self._patch_all()
+        with p_mcp, p_skills, p_rules:
+            assert run_uninstall(project_dir=proj) == 0
+        out = capsys.readouterr().out
+        assert "symlink" in out
+        assert str(elsewhere.resolve()) in out
+
+    def test_ordinary_claude_dir_is_not_announced(self, tmp_path: Path, capsys):
+        proj = tmp_path / "proj"
+        (proj / ".claude").mkdir(parents=True)
+        p_mcp, p_skills, p_rules = self._patch_all()
+        with p_mcp, p_skills, p_rules:
+            assert run_uninstall(project_dir=proj) == 0
+        assert "symlink" not in capsys.readouterr().out
+
+    def test_mcp_only_does_not_announce(self, tmp_path: Path, capsys):
+        proj, _ = self._symlinked_project(tmp_path)
+        p_mcp, p_skills, p_rules = self._patch_all()
+        with p_mcp, p_skills, p_rules:
+            assert run_uninstall(mcp_only=True, project_dir=proj) == 0
+        assert "symlink" not in capsys.readouterr().out
+
     def test_hook_failure_causes_exit_1(self):
         p_mcp, p_skills, p_rules = self._patch_all()
         with (

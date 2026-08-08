@@ -47,9 +47,17 @@ skill or rule path. The hook settings reader and writer refuse a symlinked
 uninstall removes symlink entries rather than their targets, preserving the
 target and unrelated configuration.
 
-Known limitation (#170): a symlinked `.claude` parent directory is not
-currently rejected. Do not treat the per-file symlink checks as confinement of
-the entire `.claude` tree.
+Known limitation (#170): a symlinked `.claude` parent directory is followed,
+not rejected. Everything setup and uninstall write under `.claude` — the hook
+settings, the Skills symlink, and the Rules symlink alike — then lands at the
+link target. This is deliberate: refusing would break deliberate "config lives
+elsewhere" layouts, which are the main reason to symlink `.claude` at all. What
+changed is that following it is no longer silent — `mpg setup` and
+`mpg uninstall` announce the resolved target once per run before writing
+anything. That disclosure is not confinement: do not treat the per-file symlink
+checks, or this note, as containment of the `.claude` tree. It is also bounded
+to `.claude` itself — a symlinked `.claude/skills` or `.claude/rules` is
+followed with no note (#192).
 
 ## Inputs and trust boundaries
 

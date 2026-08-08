@@ -217,6 +217,43 @@ def settings_local_path(project_root: Path) -> Path:
     return project_root / ".claude" / SETTINGS_FILE_NAME
 
 
+def symlinked_claude_note(project_root: Path) -> str | None:
+    """Announce that `<project_root>/.claude` is a symlink, and where it leads.
+
+    None when it is an ordinary directory (or absent) — callers print nothing
+    in the overwhelmingly common case.
+
+    `read_settings`/`write_settings_atomic` refuse a symlinked *settings file*,
+    but a symlinked `.claude` *directory* is followed: everything mpg writes
+    there (the hook settings, and the Skills and Rules symlinks alike) lands at
+    the link target. Refusing it instead would break the deliberate "config
+    lives elsewhere" setups that are the main reason to symlink `.claude` at
+    all, so mpg follows the link and says so. This surfaces where the write
+    went; it is not confinement of the `.claude` tree (#170).
+
+    Never raises, and never claims a target it did not resolve. `Path.resolve()`
+    walks the filesystem, and how it reports an unresolvable link is version
+    dependent: on a symlink loop Python <= 3.13 raises RuntimeError while 3.14
+    returns the input path unchanged (measured on 3.12.12 and 3.14.6); a hostile
+    or racing tree can raise OSError on any version. Both shapes are treated the
+    same — an unchanged path means the walk got nowhere, and saying "`.claude` is
+    a symlink; mpg writes to `.claude`" would be a note that discloses nothing.
+    Degrading beats taking down a setup run that would otherwise succeed.
+
+    A dangling link is not unresolvable: it names a real destination that simply
+    does not exist yet, which is exactly what the caller wants to know.
+    """
+    claude_dir = project_root / ".claude"
+    if not claude_dir.is_symlink():
+        return None
+    try:
+        resolved = claude_dir.resolve()
+        target = "unresolvable" if resolved == claude_dir else str(resolved)
+    except (OSError, RuntimeError):
+        target = "unresolvable"
+    return f"Note: {claude_dir} is a symlink; mpg writes to {target}"
+
+
 def read_settings(path: Path) -> dict:
     """Read and parse a settings file. An absent file reads as `{}`.
 
