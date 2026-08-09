@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.5.12] — 2026-08-09
+
+**Summary**: Several checks reported healthy without covering what they claimed — an identifier collision made the wheel-asset gate blind rather than noisy, the MCP stdout-purity test only stayed green because it exercised one request shape, and the release checker's `permissions` block silently dropped the scope its own checkout needs. Each now establishes its coverage or fails, and a weekly dependency audit is held to the same standard. Separately, `mpg setup` and `mpg uninstall` now disclose every symlinked directory a run writes through; the traversal is unchanged and is still not confinement.
+
 ### Added
 
 - A weekly dependency audit (`.github/workflows/audit-dependencies.yml`) runs `uv audit` over the dependencies this project actually resolves and opens an issue keyed on the advisory set — so a closed issue about old advisories cannot suppress a new one, and a repeat of the same set cannot open a duplicate. It does not run on pull requests: an advisory published against a transitive dependency has nothing to do with the change under review. The verdict is decided by `scripts/check_dependency_audit.py`, which **fails rather than reporting "nothing found"** when it cannot establish what the audit covered — a missing subcommand, an unrecognized JSON shape, or an implausibly small audited set. That guard exists because a clean verdict over the wrong corpus is exactly how this check would fail silently: while it was being designed, a bare `pip-audit` reported no vulnerabilities against its own dependencies rather than this project's. CONTRIBUTING documents how to run and triage it locally. (closes #165)
