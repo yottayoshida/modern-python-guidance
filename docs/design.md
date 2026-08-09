@@ -275,7 +275,7 @@ remain byte-silent; silence is not a certificate for advisory-only guidance.
 
 The CLI defaults to JSON when piped and human-readable when attached to a TTY. The `--format` flag overrides this.
 
-The MCP server tools (`search_guides`, `retrieve_guides`, `list_guides`) return the same JSON shapes as the CLI's `--format json` output. Only the exit semantics differ: the CLI exits 1 on empty results or missing IDs, while the MCP server returns the same payload as a non-error tool result.
+The MCP server tools (`search_guides`, `retrieve_guides`, `list_guides`) return the same JSON shapes as the CLI's `--format json` output, with one exception: `mpg list --with-content` adds a `content` field that `list_guides` has no equivalent for, because an MCP caller reaches the same bodies through `retrieve_guides`. Otherwise only the exit semantics differ: the CLI exits 1 on empty results or missing IDs, while the MCP server returns the same payload as a non-error tool result.
 
 These examples are real captured outputs: the field set is the contract (maintained against the serializers in `cli.py` and `mcp_server.py`), while values such as `score`, `token_estimate`, and `snippet` vary by query and guide revision.
 

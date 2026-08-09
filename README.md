@@ -171,10 +171,17 @@ intersection: `--layer 1 --frequency high` returns the guides that are both, not
 `mpg list --with-content` adds each guide's full body to the output, which is the shape to
 pipe into a system prompt or a generated rules file.
 
-One thing to expect when narrowing a search: `mpg search` falls back to fuzzy suggestions
-whenever the exact query matches nothing, and a filter can leave it with nothing to match.
-A precise query that returns unexpected results marked `fuzzy: true` usually means the
-filter excluded the guide you were looking for, not that the query was wrong.
+Two things to expect. First, the counts you get back are what survives *after* the target
+Python and dependency filters, which apply on every command whether or not you asked for
+them — `mpg list --layer 1` reports fewer guides than the layer table above when your
+project targets an older Python, and `--python-version 3.14` shows the full catalog.
+Second, `mpg search` falls back to fuzzy suggestions whenever the exact query matches
+nothing, and a filter can leave it with nothing to match; a precise query that returns
+unexpected results marked `fuzzy: true` usually means the filter excluded the guide you
+were looking for, not that the query was wrong.
+
+Note that `--layer` and `--frequency` make two abbreviations ambiguous that used to resolve:
+`--f` no longer selects `--format`, and `--l` no longer selects `--limit`. Spell those two out.
 
 ## Version-aware filtering
 

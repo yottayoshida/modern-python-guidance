@@ -625,12 +625,29 @@ class TestSelectionFilters:
         assert r.returncode == 2
         assert "invalid int value" in r.stderr
 
+    def test_abbreviations_collide_with_the_new_options(self):
+        """Pins the documented cost of these two flag names.
+
+        `--f` and `--l` resolved before `--frequency` and `--layer` existed.
+        argparse accepts unambiguous prefixes, so they now fail. Asserting it
+        keeps the CHANGELOG note honest and makes any future change to prefix
+        matching a deliberate one.
+        """
+        for command, abbrev in (("search", "--f"), ("list", "--f"), ("search", "--l")):
+            args = ["search", "typing"] if command == "search" else ["list"]
+            r = run_cli(*args, abbrev, "json")
+            assert r.returncode == 2, f"{command} {abbrev} unexpectedly succeeded"
+            assert "ambiguous option" in r.stderr
+
     def test_unknown_frequency_is_rejected(self):
         r = run_cli("list", "--frequency", "sometimes", "--format", "json")
         assert r.returncode == 2
         assert "invalid choice" in r.stderr
 
     def test_search_honours_selection_filters(self):
+        unfiltered = json.loads(run_cli("search", "typing", "--format", "json").stdout)
+        assert any(item["layer"] != 1 for item in unfiltered), "control no longer holds"
+
         r = run_cli("search", "typing", "--layer", "1", "--format", "json")
         assert r.returncode == 0
         data = json.loads(r.stdout)
@@ -736,14 +753,28 @@ class TestSelectionAgreesAcrossSurfaces:
         assert cli_ids, "override removed everything; the comparison is empty vs empty"
 
     def test_search_agrees_between_cli_and_mcp(self):
+        """The query is chosen so the layer filter has something to do.
+
+        A query whose hits all land in one layer, or that falls through to the
+        fuzzy suggestions, would compare equal on both surfaces even with the
+        filter disconnected.
+        """
         import modern_python_guidance.mcp_server as mcp
+
+        unfiltered = json.loads(
+            run_cli("search", "async", "--limit", "50", *OVERRIDE_CLI, "--format", "json").stdout
+        )
+        assert not any(item["fuzzy"] for item in unfiltered), "query fell through to fuzzy"
+        assert any(item["layer"] != 2 for item in unfiltered), "control no longer holds"
 
         cli_ids = _ids(
             run_cli(
                 "search",
-                "pydantic",
+                "async",
                 "--layer",
                 "2",
+                "--limit",
+                "50",
                 *OVERRIDE_CLI,
                 "--format",
                 "json",
@@ -752,12 +783,15 @@ class TestSelectionAgreesAcrossSurfaces:
         mcp_ids = self._mcp_ids(
             mcp._tool_search,
             {
-                "query": "pydantic",
+                "query": "async",
                 "layer": 2,
+                "limit": 50,
                 "dependency_versions": OVERRIDE_MCP,
             },
         )
         assert cli_ids == mcp_ids
+        assert cli_ids, "override removed everything; the comparison is empty vs empty"
+        assert cli_ids < {item["id"] for item in unfiltered}
 
     def test_incompatible_guides_drop_out_of_every_surface(self):
         import modern_python_guidance.mcp_server as mcp
