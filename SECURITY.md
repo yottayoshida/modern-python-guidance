@@ -2,12 +2,12 @@
 
 ## Supported versions
 
-<!-- supported-release-line: 0.5.x -->
+<!-- supported-release-line: 0.6.x -->
 
 | Release line | Security fixes |
 |---|---|
-| 0.5.x | Supported |
-| < 0.5 | Unsupported; upgrade before requesting a fix |
+| 0.6.x | Supported |
+| < 0.6 | Unsupported; upgrade before requesting a fix |
 
 While modern-python-guidance is pre-1.0, security fixes are provided only for
 the latest minor release line. We do not promise security backports to older

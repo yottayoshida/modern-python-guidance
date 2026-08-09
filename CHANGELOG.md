@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.6.0] — 2026-08-09
+
+**Summary**: The catalog can now be sliced the way its metadata always allowed: `--layer` and `--frequency` filter `search` and `list` on both the CLI and MCP surfaces, and `mpg list --with-content` emits the selected guides in full — the shape to pipe into a generated system prompt. `mpg --help` groups the nine commands by purpose and shows runnable examples. A contributor's first commands now work as documented: `ruff check .` passes from the repository root, and an ordinary session no longer leaves the working tree dirty. One behavioural cost is recorded under Changed: the new option names make the `--f` and `--l` abbreviations ambiguous.
+
 ### Added
 
 - `search` and `list` accept `--layer` and `--frequency`, and the `search_guides` / `list_guides` MCP tools accept the same two arguments. Filters are conjunctive, so `--layer 1 --frequency high` returns the intersection. `retrieve` is unchanged on both surfaces: it selects by explicit ID, and `docs/design.md` says so in two places. (closes #30, #31)
