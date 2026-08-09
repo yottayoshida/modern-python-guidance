@@ -59,6 +59,11 @@ only-include = ["src/modern_python_guidance", "skills", "rules"]
 [tool.ruff]
 target-version = "py311"
 line-length = 99
+# Benchmark inputs, not source: they carry outdated patterns on purpose, and even
+# the "modern" variants trip rules this project's guides say nothing about. There
+# is no subset of rules that makes them clean, so they are not linted at all.
+# Everything else under bench/ — the runner and scorers — stays in scope.
+exclude = ["bench/fixtures"]
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "UP", "FURB", "B", "SIM", "RUF"]

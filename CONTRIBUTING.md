@@ -100,6 +100,10 @@ through the private channel in SECURITY.md instead.
 
 All PRs run these checks on Python 3.11, 3.12, 3.13, and 3.14:
 
-1. `ruff format --check` — formatting
-2. `ruff check` — linting
+1. `ruff format --check src/ tests/` — formatting
+2. `ruff check src/ tests/` — linting
 3. `pytest --cov` — tests with branch coverage (`fail_under = 92%`)
+
+`ruff check .` from the repository root passes too: `bench/fixtures` is excluded in
+`pyproject.toml` because those files carry outdated patterns deliberately. The runner
+and scorers under `bench/` are still linted.
