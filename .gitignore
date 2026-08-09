@@ -20,6 +20,22 @@ venv/
 .mypy_cache/
 .ruff_cache/
 .pytest_cache/
+.coverage
+.coverage.*
+
+# Written by `uv run`. Not tracked: CI installs with `uv pip install --system -e`
+# and never reads a lock file, so committing one would pin nothing.
+uv.lock
+
+# Personal Claude Code state, and what `mpg setup` creates when run inside a
+# checkout of this project. Listed individually rather than ignoring `.claude/`
+# outright: a directory-wide rule would silently swallow anything this project
+# later decides to track under there, whereas an unlisted path shows up in
+# `git status` and gets a line added on purpose.
+.claude/skills/
+.claude/rules/
+.claude/settings.local.json
+.claude/agent-memory/
 
 .vscode/
 .idea/
