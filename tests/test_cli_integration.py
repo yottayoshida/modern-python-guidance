@@ -814,3 +814,109 @@ class TestSelectionAgreesAcrossSurfaces:
             ("mcp search_guides", mcp_search),
         ]:
             assert not pydantic_v2(got), f"{name} kept incompatible guidance"
+
+
+class TestTopLevelHelp:
+    """The command list and examples in `mpg --help`.
+
+    Both are rendered from `COMMAND_GROUPS`, so comparing that constant against
+    itself would prove nothing. These read the help text argparse actually
+    produced and check it against the parser's own registered subcommands.
+    """
+
+    @staticmethod
+    def _help_text() -> str:
+        from modern_python_guidance.cli import build_parser
+
+        return build_parser().format_help()
+
+    @staticmethod
+    def _registered_commands() -> set[str]:
+        from modern_python_guidance.cli import build_parser
+
+        for action in build_parser()._subparsers._group_actions:
+            if hasattr(action, "choices") and action.choices:
+                return set(action.choices)
+        raise AssertionError("no subparsers action found on the parser")
+
+    def test_every_registered_command_is_listed(self):
+        text = self._help_text()
+        commands = self._registered_commands()
+        assert commands, "parser registered no subcommands"
+
+        listed = {
+            line.split()[0]
+            for line in text.splitlines()
+            if line.startswith("    ") and line.strip() and not line.strip().startswith("mpg ")
+        }
+        assert commands <= listed, f"missing from help: {sorted(commands - listed)}"
+
+    def test_no_listed_command_is_imaginary(self):
+        """The other direction: a name in the help must be one the parser accepts.
+
+        Without this, a command dropped from the parser but left in the listing
+        would be advertised and then rejected at the point of use.
+        """
+        from modern_python_guidance.cli import COMMAND_GROUPS
+
+        listed = {name for _title, entries in COMMAND_GROUPS for name, _d in entries}
+        assert listed, "COMMAND_GROUPS is empty"
+        assert listed <= self._registered_commands()
+
+    def test_an_unimplemented_command_is_rejected_not_ignored(self):
+        """Registering a name is not the same as implementing it.
+
+        Building the subparsers from the listing means a name added there is
+        accepted by the parser whether or not `main` dispatches it. Without the
+        else-branch such a command exits 0 having silently done nothing, which
+        is worse than being rejected — `--help` would not reveal it either,
+        since argparse answers that before any dispatch happens.
+        """
+        import pytest
+
+        import modern_python_guidance.cli as cli
+
+        ghost_entry = ("ghost-cmd", "Registered but never dispatched")
+        with_ghost = tuple(
+            (title, (*entries, ghost_entry) if title == "Integration" else entries)
+            for title, entries in cli.COMMAND_GROUPS
+        )
+        with pytest.MonkeyPatch.context() as patch:
+            patch.setattr(cli, "COMMAND_GROUPS", with_ghost)
+            assert "ghost-cmd" in cli.build_parser().format_help(), "setup did not take"
+
+            with pytest.raises(SystemExit) as excinfo:
+                cli.main(["ghost-cmd"])
+
+        parser_error_exit = 2
+        assert excinfo.value.code == parser_error_exit
+
+    def test_examples_are_present_and_parseable(self):
+        import shlex
+
+        from modern_python_guidance.cli import build_parser
+
+        examples = [
+            line.strip()
+            for line in self._help_text().splitlines()
+            if line.strip().startswith("mpg ")
+        ]
+        assert examples, "help shows no runnable examples"
+
+        parser = build_parser()
+        for example in examples:
+            argv = shlex.split(example)[1:]
+            try:
+                parser.parse_args(argv)
+            except SystemExit as exc:
+                raise AssertionError(
+                    f"example does not parse: {example!r} (exit {exc.code})"
+                ) from exc
+
+    def test_help_names_the_grouping(self):
+        from modern_python_guidance.cli import COMMAND_GROUPS
+
+        assert COMMAND_GROUPS, "COMMAND_GROUPS is empty"
+        text = self._help_text()
+        for title, _entries in COMMAND_GROUPS:
+            assert f"  {title}" in text, f"group heading missing: {title}"

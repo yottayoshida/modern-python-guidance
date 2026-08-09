@@ -33,6 +33,58 @@ from modern_python_guidance.version_detect import (
     resolve_python_version,
 )
 
+# The single source for which commands exist: `build_parser` registers exactly
+# these and `_epilog` renders exactly these, so a command cannot be in one and
+# not the other. argparse has no notion of grouped subcommands, hence composing
+# the listing here and leaving the automatic one empty by withholding `help=`
+# from each add_parser call — passing argparse.SUPPRESS prints "==SUPPRESS==".
+COMMAND_GROUPS: tuple[tuple[str, tuple[tuple[str, str], ...]], ...] = (
+    (
+        "Guidance",
+        (
+            ("search", "Search guides by keyword"),
+            ("retrieve", "Retrieve guide(s) by ID"),
+            ("list", "List available guides"),
+            ("check", "Scan a Python file for outdated patterns"),
+            ("detect-version", "Detect project Python version"),
+        ),
+    ),
+    (
+        "Integration",
+        (
+            ("setup", "Register MCP server and link Agent Skills + Rules"),
+            ("uninstall", "Reverse 'setup'"),
+            ("mcp", "Start MCP server (JSON-RPC over stdio)"),
+            ("hook", "Claude Code hook subcommands"),
+        ),
+    ),
+)
+
+EXAMPLES: tuple[tuple[str, str], ...] = (
+    ('mpg search "typing list"', "find guides by keyword"),
+    ("mpg retrieve use-builtin-generics", "print one guide in full"),
+    ("mpg list --layer 2 --frequency high", "browse a slice of the catalog"),
+    ("mpg check app.py", "scan a file for outdated patterns"),
+)
+
+
+def _epilog() -> str:
+    lines = ["commands:"]
+    for title, entries in COMMAND_GROUPS:
+        lines.append(f"  {title}")
+        lines.extend(f"    {name:<16}{description}" for name, description in entries)
+        lines.append("")
+    lines.append("examples:")
+    for command, note in EXAMPLES:
+        # The note goes on its own line so that a line starting with `mpg ` is
+        # always a complete command — the help text stays the single source for
+        # what these examples are, and checking them needs no parsing rules.
+        lines.append(f"  # {note}")
+        lines.append(f"  {command}")
+    lines.append("")
+    lines.append("Run `mpg <command> --help` for the options a command takes.")
+    return "\n".join(lines)
+
 
 def _limit_type(value: str) -> int:
     try:
@@ -124,20 +176,38 @@ def _add_dependency_arguments(
         )
 
 
-def main(argv: list[str] | None = None) -> None:
-    with contextlib.suppress(AttributeError, OSError):
-        signal.signal(signal.SIGPIPE, signal.SIG_DFL)
+def build_parser() -> argparse.ArgumentParser:
+    """Assemble the CLI parser, separately from running it.
 
+    Kept apart from ``main`` so the help text and the commands it advertises can
+    be inspected without executing anything: a subprocess cannot tell a parse
+    error from a command that parsed and then failed, since both exit 2.
+    """
     parser = argparse.ArgumentParser(
         prog="modern-python-guidance",
         description="Version-aware BAD/GOOD pattern guides for modern Python",
+        epilog=_epilog(),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
 
-    subparsers = parser.add_subparsers(dest="command")
+    subparsers = parser.add_subparsers(
+        dest="command",
+        metavar="<command>",
+        help="one of the commands listed below",
+    )
+
+    # Registered from the same table the listing is rendered from, so a command
+    # cannot exist in one and not the other. Each block below then claims its
+    # parser by name and adds the arguments it takes.
+    registered = {
+        name: subparsers.add_parser(name)
+        for _title, entries in COMMAND_GROUPS
+        for name, _description in entries
+    }
 
     # search
-    p_search = subparsers.add_parser("search", help="Search guides by keyword")
+    p_search = registered["search"]
     p_search.add_argument("query", help="Search query")
     p_search.add_argument("--python-version", help="Target Python version (e.g. 3.11)")
     _add_selection_arguments(p_search)
@@ -153,7 +223,7 @@ def main(argv: list[str] | None = None) -> None:
     )
 
     # retrieve
-    p_retrieve = subparsers.add_parser("retrieve", help="Retrieve guide(s) by ID")
+    p_retrieve = registered["retrieve"]
     p_retrieve.add_argument("ids", help="Comma-separated guide IDs")
     p_retrieve.add_argument("--python-version", help="Target Python version")
     p_retrieve.add_argument(
@@ -165,7 +235,7 @@ def main(argv: list[str] | None = None) -> None:
     _add_dependency_arguments(p_retrieve)
 
     # list
-    p_list = subparsers.add_parser("list", help="List available guides")
+    p_list = registered["list"]
     _add_selection_arguments(p_list)
     p_list.add_argument("--python-version", help="Filter by Python version")
     p_list.add_argument(
@@ -182,7 +252,7 @@ def main(argv: list[str] | None = None) -> None:
     _add_dependency_arguments(p_list, include_incompatible=True)
 
     # detect-version
-    p_detect = subparsers.add_parser("detect-version", help="Detect project Python version")
+    p_detect = registered["detect-version"]
     p_detect.add_argument("--project-dir", type=Path, help="Project directory (default: cwd)")
     p_detect.add_argument(
         "--format",
@@ -191,14 +261,10 @@ def main(argv: list[str] | None = None) -> None:
         help="Output format (default: plain)",
     )
 
-    # mcp
-    subparsers.add_parser("mcp", help="Start MCP server (JSON-RPC over stdio)")
+    # mcp takes no arguments of its own.
 
     # setup
-    p_setup = subparsers.add_parser(
-        "setup",
-        help="Register MCP server and link Agent Skills + Rules",
-    )
+    p_setup = registered["setup"]
     p_setup.add_argument("--mcp-only", action="store_true", help="MCP registration only")
     p_setup.add_argument(
         "--skills-only", action="store_true", help="Project-local artifacts only (Skills + Rules)"
@@ -227,10 +293,7 @@ def main(argv: list[str] | None = None) -> None:
     )
 
     # uninstall
-    p_uninstall = subparsers.add_parser(
-        "uninstall",
-        help="Reverse 'setup': deregister MCP server and unlink Agent Skills + Rules",
-    )
+    p_uninstall = registered["uninstall"]
     p_uninstall.add_argument("--mcp-only", action="store_true", help="MCP deregistration only")
     p_uninstall.add_argument(
         "--skills-only",
@@ -245,10 +308,7 @@ def main(argv: list[str] | None = None) -> None:
     p_uninstall.add_argument("--dry-run", action="store_true", help="Show what would be done")
 
     # check
-    p_check = subparsers.add_parser(
-        "check",
-        help="Scan a Python file for outdated patterns",
-    )
+    p_check = registered["check"]
     p_check.add_argument("file", type=Path, help="Python file to check")
     p_check.add_argument("--python-version", help="Target Python version (e.g. 3.11)")
     p_check.add_argument(
@@ -270,16 +330,21 @@ def main(argv: list[str] | None = None) -> None:
     )
 
     # hook
-    p_hook = subparsers.add_parser(
-        "hook",
-        help="Claude Code hook subcommands",
-    )
+    p_hook = registered["hook"]
     hook_sub = p_hook.add_subparsers(dest="hook_name")
     hook_sub.add_parser(
         "claude-post-tool-use",
         help="PostToolUse hook: check .py files from stdin JSON",
     )
 
+    return parser
+
+
+def main(argv: list[str] | None = None) -> None:
+    with contextlib.suppress(AttributeError, OSError):
+        signal.signal(signal.SIGPIPE, signal.SIG_DFL)
+
+    parser = build_parser()
     args = parser.parse_args(argv)
 
     if hasattr(args, "dependency_versions"):
@@ -312,6 +377,11 @@ def main(argv: list[str] | None = None) -> None:
             _cmd_check(args)
         elif args.command == "hook":
             _cmd_hook(args)
+        else:
+            # Reachable only by listing a command in COMMAND_GROUPS without
+            # wiring it here: the parser accepts it, so it would otherwise exit
+            # 0 having silently done nothing.
+            parser.error(f"command is not implemented: {args.command}")
     except BrokenPipeError:
         sys.exit(0)
 
