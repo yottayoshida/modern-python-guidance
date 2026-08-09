@@ -15,7 +15,8 @@ from modern_python_guidance import __version__
 from modern_python_guidance.compat import VERSION_RE, version_compatible
 from modern_python_guidance.dependency_compat import DependencyContext, assess_dependencies
 from modern_python_guidance.detection_coverage import detection_metadata
-from modern_python_guidance.guide_index import GuideIndex, build_index
+from modern_python_guidance.frontmatter import VALID_FREQUENCIES, VALID_LAYERS
+from modern_python_guidance.guide_index import GuideIndex, build_index, meta_selected
 from modern_python_guidance.project_dependencies import find_dependency_context
 from modern_python_guidance.retrieve import retrieve, suggest_ids
 from modern_python_guidance.search import search
@@ -157,6 +158,16 @@ TOOLS = [
                     "type": "string",
                     "description": "Filter by category (e.g. 'stdlib', 'pydantic', 'fastapi')",
                 },
+                "layer": {
+                    "type": "integer",
+                    "description": "Filter by layer: 1 stdlib, 2 frameworks, 3 toolchain",
+                    "enum": sorted(VALID_LAYERS),
+                },
+                "frequency": {
+                    "type": "string",
+                    "description": "Filter by how often the pattern is gotten wrong",
+                    "enum": sorted(VALID_FREQUENCIES),
+                },
                 "limit": {
                     "type": "integer",
                     "description": "Maximum results to return (1-50, default: 10)",
@@ -240,6 +251,16 @@ TOOLS = [
                 "category": {
                     "type": "string",
                     "description": "Filter by category (e.g. 'stdlib', 'pydantic')",
+                },
+                "layer": {
+                    "type": "integer",
+                    "description": "Filter by layer: 1 stdlib, 2 frameworks, 3 toolchain",
+                    "enum": sorted(VALID_LAYERS),
+                },
+                "frequency": {
+                    "type": "string",
+                    "description": "Filter by how often the pattern is gotten wrong",
+                    "enum": sorted(VALID_FREQUENCIES),
                 },
                 "python_version": {
                     "type": "string",
@@ -370,6 +391,36 @@ def _validate_bool(value: object, name: str, *, optional: bool = False) -> str |
     return None
 
 
+def _resolve_selection(arguments: dict) -> tuple[dict | None, str | None]:
+    """Validate the catalog selection arguments shared by search_guides and list_guides.
+
+    The enums advertised in inputSchema are a hint to the client, not something
+    this server enforces — arguments arrive as a raw dict. Without the membership
+    checks below, layer=99 would return an empty list rather than an error, which
+    reads as "no such guides" instead of "no such layer".
+    """
+    category = arguments.get("category")
+    err = _validate_type(category, "category", str, optional=True)
+    if err:
+        return None, err
+
+    layer = arguments.get("layer")
+    err = _validate_type(layer, "layer", int, optional=True)
+    if err:
+        return None, err
+    if layer is not None and layer not in VALID_LAYERS:
+        return None, f"layer must be one of {sorted(VALID_LAYERS)}, got {layer}"
+
+    frequency = arguments.get("frequency")
+    err = _validate_type(frequency, "frequency", str, optional=True)
+    if err:
+        return None, err
+    if frequency is not None and frequency not in VALID_FREQUENCIES:
+        return None, (f"frequency must be one of {sorted(VALID_FREQUENCIES)}, got {frequency!r}")
+
+    return {"category": category, "layer": layer, "frequency": frequency}, None
+
+
 def _resolve_tool_context(arguments: dict) -> tuple[_ToolContext | None, str | None]:
     pv = arguments.get("python_version")
     error = _validate_type(pv, "python_version", str, optional=True)
@@ -450,8 +501,7 @@ def _tool_search(arguments: dict) -> dict:
         return _tool_result(err, is_error=True)
     limit = max(1, min(50, raw_limit))
 
-    category = arguments.get("category")
-    err = _validate_type(category, "category", str, optional=True)
+    selection, err = _resolve_selection(arguments)
     if err:
         return _tool_result(err, is_error=True)
 
@@ -468,10 +518,10 @@ def _tool_search(arguments: dict) -> dict:
         index,
         query,
         python_version=context.python.version,
-        category=category,
         limit=limit,
         dependency_context=context.dependencies,
         include_incompatible=include_incompatible,
+        **selection,
     )
 
     out = [
@@ -536,8 +586,7 @@ def _tool_retrieve(arguments: dict) -> dict:
 
 
 def _tool_list(arguments: dict) -> dict:
-    category = arguments.get("category")
-    err = _validate_type(category, "category", str, optional=True)
+    selection, err = _resolve_selection(arguments)
     if err:
         return _tool_result(err, is_error=True)
     include_incompatible = arguments.get("include_incompatible", False)
@@ -550,8 +599,7 @@ def _tool_list(arguments: dict) -> dict:
     index = _get_index()
     metas = index.all_meta()
 
-    if category:
-        metas = [m for m in metas if m.category == category]
+    metas = [m for m in metas if meta_selected(m, **selection)]
     metas = [m for m in metas if version_compatible(m.python, context.python.version)]
 
     assessed = [

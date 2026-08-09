@@ -44,6 +44,26 @@ class GuideIndex:
         return sorted({g.meta.category for g in self.guides.values()})
 
 
+def meta_selected(
+    meta: GuideMeta,
+    *,
+    category: str | None = None,
+    layer: int | None = None,
+    frequency: str | None = None,
+) -> bool:
+    """Catalog selection on metadata alone, shared by search, list, and their MCP twins.
+
+    Truthiness rather than ``is not None`` preserves what an empty ``--category``
+    has always meant here: no filter. No valid filter value is falsy — layer is
+    validated to 1/2/3 and frequency to a non-empty word by the frontmatter parser.
+    """
+    return (
+        (not category or meta.category == category)
+        and (not layer or meta.layer == layer)
+        and (not frequency or meta.frequency == frequency)
+    )
+
+
 def build_index(guides_dir: Path | None = None) -> GuideIndex:
     if guides_dir is None:
         guides_dir = _find_guides_dir()

@@ -699,3 +699,65 @@ class TestServe:
         assert len(responses) == 2
         assert responses[0]["error"]["code"] == -32603
         assert "protocolVersion" in responses[1]["result"]
+
+
+class TestSelectionArguments:
+    """layer / frequency の検証 — inputSchema の enum はサーバが強制しないのでコードで弾く."""
+
+    def test_schema_advertises_both_filters(self):
+        for tool in mcp._get_tools():
+            props = tool["inputSchema"]["properties"]
+            if tool["name"] in {"search_guides", "list_guides"}:
+                assert props["layer"]["enum"] == [1, 2, 3]
+                assert props["frequency"]["enum"] == ["high", "low", "medium"]
+            else:
+                assert "layer" not in props
+                assert "frequency" not in props
+
+    def test_list_filters_by_layer_and_frequency(self):
+        result = mcp._tool_list({"layer": 2, "frequency": "high"})
+        assert not result.get("isError")
+        data = json.loads(result["content"][0]["text"])
+        assert data
+        assert {item["layer"] for item in data} == {2}
+        assert {item["frequency"] for item in data} == {"high"}
+
+    @pytest.mark.parametrize(
+        ("arguments", "expected"),
+        [
+            ({"layer": 99}, "layer must be one of"),
+            ({"layer": 0}, "layer must be one of"),
+            ({"layer": "2"}, "layer must be an integer"),
+            ({"layer": True}, "layer must be an integer, got bool"),
+            ({"frequency": "sometimes"}, "frequency must be one of"),
+            ({"frequency": 1}, "frequency must be a string"),
+        ],
+    )
+    def test_list_rejects_bad_selection(self, arguments, expected):
+        result = mcp._tool_list(arguments)
+        assert result.get("isError") is True
+        assert expected in result["content"][0]["text"]
+
+    @pytest.mark.parametrize(
+        ("arguments", "expected"),
+        [
+            ({"layer": 99}, "layer must be one of"),
+            ({"layer": True}, "layer must be an integer, got bool"),
+            ({"frequency": "sometimes"}, "frequency must be one of"),
+        ],
+    )
+    def test_search_rejects_bad_selection(self, arguments, expected):
+        result = mcp._tool_search({"query": "typing", **arguments})
+        assert result.get("isError") is True
+        assert expected in result["content"][0]["text"]
+
+    def test_search_fuzzy_path_applies_layer_filter(self):
+        unfiltered = json.loads(mcp._tool_search({"query": "genrics"})["content"][0]["text"])
+        assert all(item["fuzzy"] for item in unfiltered)
+        assert any(item["layer"] != 2 for item in unfiltered), "対照が成立していない"
+
+        filtered = json.loads(
+            mcp._tool_search({"query": "genrics", "layer": 2})["content"][0]["text"]
+        )
+        assert filtered
+        assert {item["layer"] for item in filtered} == {2}

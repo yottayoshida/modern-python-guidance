@@ -23,6 +23,7 @@ _FENCE = "---"
 
 REQUIRED_FIELDS = frozenset({"id", "title", "category", "layer", "tags", "python", "frequency"})
 VALID_FREQUENCIES = frozenset({"high", "medium", "low"})
+VALID_LAYERS = frozenset({1, 2, 3})
 
 
 class FrontmatterError(Exception):
@@ -141,7 +142,7 @@ def _build_meta(raw: dict[str, Any]) -> GuideMeta:
         raise FrontmatterError(f"invalid frequency '{freq}', must be one of {VALID_FREQUENCIES}")
 
     layer = raw["layer"]
-    if not isinstance(layer, int) or layer not in (1, 2, 3):
+    if not isinstance(layer, int) or layer not in VALID_LAYERS:
         raise FrontmatterError(f"layer must be 1, 2, or 3, got {layer!r}")
 
     pep_raw = raw.get("pep")

@@ -198,6 +198,20 @@ When primary search returns no results, fuzzy fallback activates:
 
 Fuzzy results are marked with `fuzzy: true` in the output.
 
+## Catalog selection
+
+`category`, `layer`, and `frequency` select on guide metadata alone. They are conjunctive: a guide is returned only if it satisfies every filter that was supplied, so `--layer 1 --frequency high` yields the intersection rather than either set. A filter that is not supplied is not applied.
+
+An *empty* value is not the same as an omitted one, and the three do not agree on it: `--category ""` has always meant "every category" and still does, while `--layer` and `--frequency` reject anything outside their vocabulary — the empty string included, on both surfaces. The predicate keeps `category` permissive on purpose, since callers that pass an unset option straight through have relied on that reading; the other two never had a prior meaning to preserve.
+
+One predicate in `guide_index.py` decides this for every path that offers the filters: the scored search, the fuzzy fallback, `mpg list`, and the `search_guides` / `list_guides` MCP tools. The paths had grown four independent copies of the category test, and a filter that a caller believes is applied but that one path quietly ignores is worse than no filter at all.
+
+Accepted values are fixed by the frontmatter vocabulary (`VALID_LAYERS`, `VALID_FREQUENCIES`) rather than restated per surface. The CLI rejects anything outside them through `argparse`; the MCP server checks them in code, because the `enum` in `inputSchema` is advertised to the client but not enforced by this server — without the check, `layer: 99` would return an empty array, which reads as "no such guides" when it means "no such layer".
+
+Filtering interacts with the fuzzy fallback: narrowing the catalog can leave the primary search with no hits, so a query that was an exact miss returns fuzzy suggestions instead of nothing. This is the fallback behaving as designed, and it applies to the `category` filter that predates these two.
+
+`mpg list --with-content` adds a `content` field to every item, carrying the same guide body `retrieve` serves. The field is absent unless the flag is passed, so the schema below is unchanged for the default invocation. `retrieve` gains nothing here — it selects by explicit ID, and that stays true (see the note under Version detection precedence).
+
 ## Version detection precedence
 
 1. `--python-version` CLI/MCP argument (explicit override)

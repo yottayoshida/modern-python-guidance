@@ -12,6 +12,7 @@ from modern_python_guidance.guide_index import (
     _find_guides_dir,
     _tokenize_body,
     build_index,
+    meta_selected,
 )
 
 
@@ -368,3 +369,52 @@ class TestFindGuidesDir:
         monkeypatch.setattr(gi_module, "__file__", str(fake_file))
         result = _find_guides_dir()
         assert result == Path("skills") / "modern-python-guidance" / "guides"
+
+
+class TestMetaSelected:
+    """The predicate every catalog-selection path shares."""
+
+    @staticmethod
+    def _meta(**overrides):
+        base = {
+            "id": "g",
+            "title": "G",
+            "category": "typing",
+            "layer": 1,
+            "tags": ["t"],
+            "python": ">=3.9",
+            "frequency": "high",
+        }
+        base.update(overrides)
+        return GuideMeta(**base)
+
+    def test_no_filters_selects_everything(self):
+        assert meta_selected(self._meta()) is True
+
+    def test_each_filter_matches_and_rejects(self):
+        meta = self._meta(category="typing", layer=1, frequency="high")
+        assert meta_selected(meta, category="typing") is True
+        assert meta_selected(meta, category="pydantic") is False
+        assert meta_selected(meta, layer=1) is True
+        assert meta_selected(meta, layer=2) is False
+        assert meta_selected(meta, frequency="high") is True
+        assert meta_selected(meta, frequency="low") is False
+
+    def test_filters_are_conjunctive(self):
+        meta = self._meta(layer=1, frequency="high")
+        assert meta_selected(meta, layer=1, frequency="high") is True
+        # One mismatch is enough to reject: these are AND, not OR.
+        assert meta_selected(meta, layer=1, frequency="low") is False
+        assert meta_selected(meta, layer=2, frequency="high") is False
+
+    def test_empty_category_keeps_meaning_no_filter(self):
+        """An empty --category still means "no filter", as it always has here.
+
+        Switching the predicate to `is not None` would silently turn it into
+        "match nothing" for callers that pass through an unset option as "".
+        """
+        assert meta_selected(self._meta(category="typing"), category="") is True
+
+    def test_layer_type_is_not_coerced(self):
+        """A string layer matches nothing, which is how the argparse bug shows up."""
+        assert meta_selected(self._meta(layer=1), layer="1") is False

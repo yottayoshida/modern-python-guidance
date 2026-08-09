@@ -13,7 +13,7 @@ from modern_python_guidance.dependency_compat import (
     assess_dependencies,
 )
 from modern_python_guidance.frontmatter import GuideMeta
-from modern_python_guidance.guide_index import Guide, GuideIndex
+from modern_python_guidance.guide_index import Guide, GuideIndex, meta_selected
 
 WEIGHT_TAG = 10
 WEIGHT_ALIAS = 8
@@ -47,6 +47,8 @@ def search(
     *,
     python_version: str | None = None,
     category: str | None = None,
+    layer: int | None = None,
+    frequency: str | None = None,
     limit: int = 10,
     dependency_context: DependencyContext | None = None,
     include_incompatible: bool = False,
@@ -65,7 +67,7 @@ def search(
     for guide_id, guide in index.guides.items():
         meta = guide.meta
 
-        if category and meta.category != category:
+        if not meta_selected(meta, category=category, layer=layer, frequency=frequency):
             continue
 
         if python_version and not version_compatible(meta.python, python_version):
@@ -98,6 +100,8 @@ def search(
             query,
             python_version=python_version,
             category=category,
+            layer=layer,
+            frequency=frequency,
             limit=limit,
             dependency_context=dependency_context,
             include_incompatible=include_incompatible,
@@ -142,13 +146,15 @@ def _fuzzy_fallback(
     *,
     python_version: str | None = None,
     category: str | None = None,
+    layer: int | None = None,
+    frequency: str | None = None,
     limit: int = FUZZY_MAX,
     dependency_context: DependencyContext | None = None,
     include_incompatible: bool = False,
 ) -> list[SearchResult]:
     candidates: dict[str, Guide] = {}
     for guide_id, guide in index.guides.items():
-        if category and guide.meta.category != category:
+        if not meta_selected(guide.meta, category=category, layer=layer, frequency=frequency):
             continue
         if python_version and not version_compatible(guide.meta.python, python_version):
             continue
