@@ -4,6 +4,15 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+
+- `search` and `list` accept `--layer` and `--frequency`, and the `search_guides` / `list_guides` MCP tools accept the same two arguments. Filters are conjunctive, so `--layer 1 --frequency high` returns the intersection. `retrieve` is unchanged on both surfaces: it selects by explicit ID, and `docs/design.md` says so in two places. (closes #30, #31)
+- `mpg list --with-content` emits each selected guide's full body alongside its metadata, which is the shape to pipe into a generated system prompt or rules file. This is where bulk retrieval belongs — the requested `retrieve --all` would have made `retrieve` a selection command and contradicted the documented guarantee that it preserves explicitly requested IDs. The body is the same one `retrieve` serves, and the field is absent unless the flag is passed, so the default `list` schema is unchanged. (closes #29)
+
+### Fixed
+
+- Catalog selection by category now runs through a single predicate rather than four independent implementations of the same comparison — the scored search, the fuzzy fallback, `mpg list`, and the `list_guides` MCP tool each had their own. Nothing was broken beforehand; the point is that adding two filters to four separate sites is how a filter comes to be applied on three paths and quietly ignored on the fourth, and the MCP tool was the copy easiest to overlook because its sibling `search_guides` already delegates to the shared search. The accepted values for both new filters come from the frontmatter vocabulary the parser validates against, so the CLI choices, the MCP schema, and the parser cannot drift apart. The MCP server checks them in code as well: an `enum` in `inputSchema` is advertised to the client, not enforced by the server, and without the check `layer: 99` would return an empty array — which reads as "no such guides" when it means "no such layer".
+
 ## [0.5.12] — 2026-08-09
 
 **Summary**: Several checks reported healthy without covering what they claimed — an identifier collision made the wheel-asset gate blind rather than noisy, the MCP stdout-purity test only stayed green because it exercised one request shape, and the release checker's `permissions` block silently dropped the scope its own checkout needs. Each now establishes its coverage or fails, and a weekly dependency audit is held to the same standard. Separately, `mpg setup` and `mpg uninstall` now disclose every symlinked directory a run writes through; the traversal is unchanged and is still not confinement.

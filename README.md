@@ -126,6 +126,16 @@ mpg detect-version
 # Filter by category
 mpg search "timeout" --category async
 
+# Filter by layer (1 stdlib, 2 frameworks, 3 toolchain) or by how often the pattern is missed
+mpg list --layer 2
+mpg list --frequency high
+
+# Filters combine — this is the intersection, not the union
+mpg list --layer 1 --frequency high
+
+# Emit the selected guides with their full bodies, for building a system prompt
+mpg list --layer 2 --frequency high --with-content --format json > guidance.json
+
 # Scan a file for outdated patterns
 mpg check app.py
 mpg check app.py --format json | jq '.summary.guide_ids'
@@ -152,6 +162,19 @@ mpg search "pydantic validator" --dependency-version package:pydantic=2.7.4
 | **3 — toolchain** | toolchain | 5 | `uv` over `pip`, `ruff` over flake8, `pickle` avoidance |
 
 Run `mpg list` to see the 41-guide catalog, or [browse it on GitHub](skills/modern-python-guidance/guides/).
+
+## Selecting a subset of the catalog
+
+`--category`, `--layer`, and `--frequency` select on guide metadata and combine as an
+intersection: `--layer 1 --frequency high` returns the guides that are both, not either.
+`search` and `list` accept all three, as do the `search_guides` and `list_guides` MCP tools.
+`mpg list --with-content` adds each guide's full body to the output, which is the shape to
+pipe into a system prompt or a generated rules file.
+
+One thing to expect when narrowing a search: `mpg search` falls back to fuzzy suggestions
+whenever the exact query matches nothing, and a filter can leave it with nothing to match.
+A precise query that returns unexpected results marked `fuzzy: true` usually means the
+filter excluded the guide you were looking for, not that the query was wrong.
 
 ## Version-aware filtering
 
@@ -188,7 +211,9 @@ Use `--project-dir PATH` to read the nearest project evidence, and repeat
 `--dependency-version KIND:NAME=VERSION` for an exact target-environment override.
 The MCP `search_guides`, `retrieve_guides`, and `list_guides` tools expose the same
 `project_dir` (relative to the MCP server), `dependency_versions` object, and
-`include_incompatible` option where filtering applies.
+`include_incompatible` option where filtering applies. `search_guides` and `list_guides`
+additionally accept `layer` and `frequency`; `retrieve_guides` takes neither, since it is
+addressed by explicit ID.
 
 Results contain additive `dependency_requirements` and `dependency_compatibility`
 objects. Status is deliberately conservative:

@@ -22,7 +22,8 @@ from modern_python_guidance.detection_coverage import (
     detection_coverage,
     detection_metadata,
 )
-from modern_python_guidance.guide_index import build_index
+from modern_python_guidance.frontmatter import VALID_FREQUENCIES, VALID_LAYERS
+from modern_python_guidance.guide_index import build_index, meta_selected
 from modern_python_guidance.project_dependencies import find_dependency_context
 from modern_python_guidance.retrieve import retrieve, suggest_ids
 from modern_python_guidance.search import search as do_search
@@ -76,6 +77,28 @@ def _dependency_overrides(
     return overrides
 
 
+def _add_selection_arguments(parser: argparse.ArgumentParser) -> None:
+    """Catalog selection flags shared by search and list.
+
+    ``--layer`` needs an explicit int type: argparse hands over strings by
+    default, and comparing a string against the parsed int layer excludes every
+    guide silently — an empty result with no error, and a CLI that disagrees
+    with the MCP tools, which receive a real JSON integer.
+    """
+    parser.add_argument("--category", help="Filter by category")
+    parser.add_argument(
+        "--layer",
+        type=int,
+        choices=sorted(VALID_LAYERS),
+        help="Filter by layer: 1 stdlib, 2 frameworks, 3 toolchain",
+    )
+    parser.add_argument(
+        "--frequency",
+        choices=sorted(VALID_FREQUENCIES),
+        help="Filter by how often the pattern is gotten wrong",
+    )
+
+
 def _add_dependency_arguments(
     parser: argparse.ArgumentParser, *, include_incompatible: bool = False
 ) -> None:
@@ -117,7 +140,7 @@ def main(argv: list[str] | None = None) -> None:
     p_search = subparsers.add_parser("search", help="Search guides by keyword")
     p_search.add_argument("query", help="Search query")
     p_search.add_argument("--python-version", help="Target Python version (e.g. 3.11)")
-    p_search.add_argument("--category", help="Filter by category")
+    _add_selection_arguments(p_search)
     p_search.add_argument(
         "--limit", type=_limit_type, default=10, help="Max results, 1-50 (default: 10)"
     )
@@ -143,8 +166,13 @@ def main(argv: list[str] | None = None) -> None:
 
     # list
     p_list = subparsers.add_parser("list", help="List available guides")
-    p_list.add_argument("--category", help="Filter by category")
+    _add_selection_arguments(p_list)
     p_list.add_argument("--python-version", help="Filter by Python version")
+    p_list.add_argument(
+        "--with-content",
+        action="store_true",
+        help="Include each guide's full body in the output",
+    )
     p_list.add_argument(
         "--format",
         choices=["json", "human"],
@@ -303,6 +331,8 @@ def _cmd_search(args: argparse.Namespace) -> None:
         args.query,
         python_version=resolution.version,
         category=args.category,
+        layer=args.layer,
+        frequency=args.frequency,
         limit=args.limit,
         dependency_context=context,
         include_incompatible=args.include_incompatible,
@@ -407,8 +437,11 @@ def _cmd_list(args: argparse.Namespace) -> None:
     resolution = _python_resolution(args)
     metas = index.all_meta()
 
-    if args.category:
-        metas = [m for m in metas if m.category == args.category]
+    metas = [
+        m
+        for m in metas
+        if meta_selected(m, category=args.category, layer=args.layer, frequency=args.frequency)
+    ]
 
     metas = [m for m in metas if version_compatible(m.python, resolution.version)]
 
@@ -444,6 +477,7 @@ def _cmd_list(args: argparse.Namespace) -> None:
                 "target_python": resolution.as_dict(),
                 **detection_metadata(index.get(m.id)),
                 **_dependency_json(m.applies_to_packages, m.applies_to_tools, assessment),
+                **({"content": index.get(m.id).body} if args.with_content else {}),
             }
             for m, assessment in assessed
         ]
@@ -457,6 +491,10 @@ def _cmd_list(args: argparse.Namespace) -> None:
                 print(f"\n[{current_cat}] (layer {m.layer})")
             suffix = _human_dependency_suffix(assessment.status, assessment.reasons)
             print(f"  {m.id:<40} {m.title}{suffix}")
+            if args.with_content:
+                print()
+                print(index.get(m.id).body)
+                print()
 
 
 def _cmd_detect_version(args: argparse.Namespace) -> None:

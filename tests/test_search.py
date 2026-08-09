@@ -415,3 +415,54 @@ class TestEdgeCases:
     def test_limit_zero_clamps_to_1(self, index):
         results = search(index, "typing", limit=0)
         assert len(results) == 1
+
+
+class TestSelectionFilters:
+    """layer / frequency filters, on both the scored path and the fuzzy fallback."""
+
+    def test_layer_filter(self, index):
+        results = search(index, "typing", layer=1)
+        assert results
+        assert all(r.meta.layer == 1 for r in results)
+
+    def test_frequency_filter(self, index):
+        results = search(index, "typing", frequency="high")
+        assert results
+        assert all(r.meta.frequency == "high" for r in results)
+
+    def test_filters_intersect_rather_than_replace(self, index):
+        by_layer = {r.guide_id for r in search(index, "typing", layer=1, limit=50)}
+        by_freq = {r.guide_id for r in search(index, "typing", frequency="high", limit=50)}
+        both = {r.guide_id for r in search(index, "typing", layer=1, frequency="high", limit=50)}
+        assert both == by_layer & by_freq
+        # Unless the intersection is a proper subset of both, this comparison
+        # would also pass for an implementation that applies only one filter.
+        assert both < by_layer
+        assert both < by_freq
+
+    def test_fuzzy_fallback_applies_layer_filter(self, index):
+        """Pins the fuzzy path against a negative control.
+
+        Asserting only "everything returned is layer 2" would also pass when the
+        filter is not wired at all and the handful of fuzzy hits happen to share
+        a layer. Establishing first that the unfiltered result spans layers makes
+        an unwired filter fail for certain.
+        """
+        unfiltered = search(index, "genrics")
+        assert unfiltered, "query stopped triggering the fuzzy fallback"
+        assert all(r.fuzzy for r in unfiltered)
+        assert any(r.meta.layer != 2 for r in unfiltered), "control no longer holds"
+
+        filtered = search(index, "genrics", layer=2)
+        assert filtered
+        assert all(r.fuzzy for r in filtered)
+        assert all(r.meta.layer == 2 for r in filtered)
+
+    def test_fuzzy_fallback_applies_frequency_filter(self, index):
+        unfiltered = search(index, "genrics")
+        assert all(r.fuzzy for r in unfiltered)
+        assert any(r.meta.frequency != "high" for r in unfiltered), "control no longer holds"
+
+        filtered = search(index, "genrics", frequency="high")
+        assert filtered
+        assert all(r.meta.frequency == "high" for r in filtered)

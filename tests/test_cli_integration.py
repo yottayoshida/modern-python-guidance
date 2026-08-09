@@ -576,3 +576,207 @@ class TestVersion:
         r = run_cli("--version")
         assert "modern-python-guidance" in r.stdout
         assert __version__ in r.stdout
+
+
+def _ids(stdout: str) -> set[str]:
+    return {item["id"] for item in json.loads(stdout)}
+
+
+class TestSelectionFilters:
+    """--layer / --frequency through the real argv path, where the int type matters."""
+
+    def test_layer_filter(self):
+        r = run_cli("list", "--layer", "2", "--format", "json")
+        assert r.returncode == 0
+        data = json.loads(r.stdout)
+        assert data
+        assert {item["layer"] for item in data} == {2}
+
+    def test_frequency_filter(self):
+        r = run_cli("list", "--frequency", "high", "--format", "json")
+        assert r.returncode == 0
+        data = json.loads(r.stdout)
+        assert data
+        assert {item["frequency"] for item in data} == {"high"}
+
+    def test_filters_intersect_through_argv(self):
+        """Runs through argv, where the declared int type for --layer matters.
+
+        Calling the library function directly bypasses argparse, so a missing
+        `type=int` — which leaves a string to be compared against the parsed int
+        layer and excludes every guide silently — would go unnoticed.
+        """
+        by_layer = _ids(run_cli("list", "--layer", "1", "--format", "json").stdout)
+        by_freq = _ids(run_cli("list", "--frequency", "high", "--format", "json").stdout)
+        both = _ids(
+            run_cli("list", "--layer", "1", "--frequency", "high", "--format", "json").stdout
+        )
+        assert both == by_layer & by_freq
+        assert both < by_layer
+        assert both < by_freq
+
+    def test_layer_outside_range_is_rejected(self):
+        r = run_cli("list", "--layer", "0", "--format", "json")
+        assert r.returncode == 2
+        assert "invalid choice" in r.stderr
+
+    def test_layer_non_integer_is_rejected(self):
+        r = run_cli("list", "--layer", "high", "--format", "json")
+        assert r.returncode == 2
+        assert "invalid int value" in r.stderr
+
+    def test_unknown_frequency_is_rejected(self):
+        r = run_cli("list", "--frequency", "sometimes", "--format", "json")
+        assert r.returncode == 2
+        assert "invalid choice" in r.stderr
+
+    def test_search_honours_selection_filters(self):
+        r = run_cli("search", "typing", "--layer", "1", "--format", "json")
+        assert r.returncode == 0
+        data = json.loads(r.stdout)
+        assert data
+        assert {item["layer"] for item in data} == {1}
+
+
+class TestListWithContent:
+    def test_content_absent_by_default(self):
+        r = run_cli("list", "--format", "json")
+        assert r.returncode == 0
+        assert "content" not in json.loads(r.stdout)[0]
+
+    def test_content_present_when_requested(self):
+        r = run_cli("list", "--with-content", "--format", "json")
+        assert r.returncode == 0
+        data = json.loads(r.stdout)
+        assert all(item["content"].strip() for item in data)
+
+    def test_human_format_prints_bodies_only_when_requested(self):
+        """The human path honours the flag too, and stays quiet without it."""
+        marker = "## BAD"
+        plain = run_cli("list", "--layer", "3", "--format", "human")
+        assert plain.returncode == 0
+        assert marker not in plain.stdout
+
+        with_content = run_cli("list", "--layer", "3", "--with-content", "--format", "human")
+        assert with_content.returncode == 0
+        assert marker in with_content.stdout
+        assert len(with_content.stdout) > len(plain.stdout)
+
+    def test_content_matches_retrieve(self):
+        """The body --with-content emits is the same one retrieve serves."""
+        listed = json.loads(run_cli("list", "--with-content", "--format", "json").stdout)
+        first = listed[0]
+        retrieved = json.loads(run_cli("retrieve", first["id"], "--format", "json").stdout)
+        assert first["content"] == retrieved[0]["content"]
+
+    def test_content_respects_filters(self):
+        r = run_cli("list", "--with-content", "--layer", "3", "--format", "json")
+        assert r.returncode == 0
+        data = json.loads(r.stdout)
+        assert data
+        assert {item["layer"] for item in data} == {3}
+        assert all("content" in item for item in data)
+
+
+OVERRIDE_CLI = ("--dependency-version", "package:pydantic=1.10.15")
+OVERRIDE_MCP = {"package:pydantic": "1.10.15"}
+
+
+class TestSelectionAgreesAcrossSurfaces:
+    """CLI and MCP resolve the same selection — the claim this change rests on.
+
+    Every case here carries the dependency override on purpose. Measured from
+    this repository's own working directory, no guide is incompatible, so
+    without it a surface that skipped the incompatibility filter entirely would
+    still agree with one that applied it.
+    """
+
+    @staticmethod
+    def _mcp_ids(tool, arguments):
+        import modern_python_guidance.mcp_server as mcp
+
+        mcp._index = None
+        result = tool(arguments)
+        assert not result.get("isError"), result["content"][0]["text"]
+        return {item["id"] for item in json.loads(result["content"][0]["text"])}
+
+    def test_pydantic_guides_are_present_without_the_override(self):
+        """Control: without the override those guides are present.
+
+        If this ever fails, the checks below are comparing empty sets and
+        prove nothing.
+        """
+        cli_ids = _ids(run_cli("list", "--format", "json").stdout)
+        assert {gid for gid in cli_ids if gid.startswith("pydantic-v2-")}
+
+    def test_list_agrees_between_cli_and_mcp(self):
+        import modern_python_guidance.mcp_server as mcp
+
+        cli_ids = _ids(
+            run_cli(
+                "list",
+                "--layer",
+                "2",
+                "--frequency",
+                "high",
+                *OVERRIDE_CLI,
+                "--format",
+                "json",
+            ).stdout
+        )
+        mcp_ids = self._mcp_ids(
+            mcp._tool_list,
+            {
+                "layer": 2,
+                "frequency": "high",
+                "dependency_versions": OVERRIDE_MCP,
+            },
+        )
+        assert cli_ids == mcp_ids
+        assert cli_ids, "override removed everything; the comparison is empty vs empty"
+
+    def test_search_agrees_between_cli_and_mcp(self):
+        import modern_python_guidance.mcp_server as mcp
+
+        cli_ids = _ids(
+            run_cli(
+                "search",
+                "pydantic",
+                "--layer",
+                "2",
+                *OVERRIDE_CLI,
+                "--format",
+                "json",
+            ).stdout
+        )
+        mcp_ids = self._mcp_ids(
+            mcp._tool_search,
+            {
+                "query": "pydantic",
+                "layer": 2,
+                "dependency_versions": OVERRIDE_MCP,
+            },
+        )
+        assert cli_ids == mcp_ids
+
+    def test_incompatible_guides_drop_out_of_every_surface(self):
+        import modern_python_guidance.mcp_server as mcp
+
+        def pydantic_v2(ids):
+            return {gid for gid in ids if gid.startswith("pydantic-v2-")}
+
+        cli_list = _ids(run_cli("list", *OVERRIDE_CLI, "--format", "json").stdout)
+        cli_search = _ids(run_cli("search", "pydantic", *OVERRIDE_CLI, "--format", "json").stdout)
+        mcp_list = self._mcp_ids(mcp._tool_list, {"dependency_versions": OVERRIDE_MCP})
+        mcp_search = self._mcp_ids(
+            mcp._tool_search,
+            {"query": "pydantic", "dependency_versions": OVERRIDE_MCP},
+        )
+
+        for name, got in [
+            ("cli list", cli_list),
+            ("cli search", cli_search),
+            ("mcp list_guides", mcp_list),
+            ("mcp search_guides", mcp_search),
+        ]:
+            assert not pydantic_v2(got), f"{name} kept incompatible guidance"
