@@ -1009,6 +1009,187 @@ class TestSetupRules:
 # --- run_setup (orchestrator) ---
 
 
+# Written out rather than imported from setup_cmd: if the test and the code read
+# the same symbol, a wrong value agrees with itself and the pair passes together.
+# 1314 is ERROR_PRIVILEGE_NOT_HELD; 206 is ERROR_FILENAME_EXCED_RANGE, a Windows
+# symlink failure that Developer Mode does not fix.
+_WIN_PRIVILEGE_NOT_HELD = 1314
+_WIN_PATH_TOO_LONG = 206
+_WIN_STRERROR = {
+    _WIN_PRIVILEGE_NOT_HELD: "A required privilege is not held by the client",
+    _WIN_PATH_TOO_LONG: "The filename or extension is too long",
+}
+
+
+class _WindowsOSError(OSError):
+    """An OSError carrying the `winerror` attribute Windows would set.
+
+    These tests run on POSIX, where OSError has no winerror at all —
+    `OSError(1314, ...)` only fills in errno, leaving the hint's condition
+    unreachable. A positive case built that way emits exactly what the negative
+    cases expect, so every parametrization would pass while the hint reached
+    nobody. (errno ends up equal to winerror here, which real Windows maps
+    differently; nothing under test reads errno.)
+    """
+
+    def __init__(self, winerror: int, message: str) -> None:
+        super().__init__(winerror, message)
+        self._winerror = winerror
+
+    @property
+    def winerror(self) -> int:
+        return self._winerror
+
+
+class TestSymlinkCreateFailureHint:
+    """#206: creating a symlink is a privileged operation on Windows.
+
+    Stock Windows — no Developer Mode, no elevation — raises WinError 1314 from
+    `os.symlink`, and the bare OSError text reads like a defect in mpg rather
+    than a privilege the OS withholds.
+
+    Driven through setup_skills and setup_rules rather than by calling the
+    shared helper: both call sites were printing their own message before, and a
+    site reverted to that would still pass a test aimed at the helper alone.
+    """
+
+    def _skills_source(self, tmp_path: Path) -> Path:
+        source = tmp_path / "pkg_skills" / SKILLS_LINK_NAME
+        source.mkdir(parents=True)
+        (source / "SKILL.md").touch()
+        return source
+
+    def _rule_source(self, tmp_path: Path) -> Path:
+        source = tmp_path / "pkg_rules" / RULE_FILE_NAME
+        source.parent.mkdir(parents=True)
+        source.write_text("rule body\n", encoding="utf-8")
+        return source
+
+    def _deny_symlink(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        platform: str,
+        winerror: int | None,
+    ) -> str:
+        """Make os.symlink fail. Returns the strerror text to expect echoed."""
+        if winerror is None:
+            message = "Permission denied"
+            exc: OSError = OSError(13, message)
+        else:
+            message = _WIN_STRERROR[winerror]
+            exc = _WindowsOSError(winerror, message)
+
+        def denied(*args: object, **kwargs: object) -> None:
+            raise exc
+
+        monkeypatch.setattr(os, "symlink", denied)
+        monkeypatch.setattr(sys, "platform", platform)
+        return message
+
+    def _run(self, which: str, tmp_path: Path) -> bool:
+        project = tmp_path / "project"
+        project.mkdir()
+        if which == "skills":
+            source = self._skills_source(tmp_path)
+            with patch("modern_python_guidance.setup_cmd._find_skills_dir", return_value=source):
+                return setup_skills(project_dir=project)
+        source = self._rule_source(tmp_path)
+        with patch("modern_python_guidance.setup_cmd._find_rule_source", return_value=source):
+            return setup_rules(project_dir=project)
+
+    @pytest.mark.parametrize("which", ["skills", "rules"])
+    @pytest.mark.parametrize(
+        ("platform", "winerror", "hinted"),
+        [
+            ("win32", _WIN_PRIVILEGE_NOT_HELD, True),
+            ("win32", _WIN_PATH_TOO_LONG, False),
+            ("linux", None, False),
+            ("darwin", None, False),
+        ],
+    )
+    def test_remediation_hint_is_scoped_to_the_error_it_remedies(
+        self,
+        which: str,
+        platform: str,
+        winerror: int | None,
+        hinted: bool,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """The three negative cases carry the weight.
+
+        A hint keyed only on the platform would fire for the too-long path as
+        well, answering a filesystem limit with a privileges setting. And on
+        POSIX the same OSError means a read-only mount or a denied parent, where
+        a Windows setting is not merely unhelpful but nonexistent.
+        """
+        message = self._deny_symlink(monkeypatch, platform, winerror)
+
+        ok = self._run(which, tmp_path)
+
+        assert ok is False
+        err = capsys.readouterr().err
+        assert "Error creating symlink" in err
+        assert message in err, "the platform's own error text must survive to the user"
+        assert ("Developer Mode" in err) is hinted
+        assert ("Administrator" in err) is hinted
+
+
+class TestSymlinkTargetType:
+    """A directory link and a file link are different objects on Windows.
+
+    `os.symlink` types the link when it creates it there, so the skills link —
+    which points at a directory — passes target_is_directory while the rule link
+    does not. POSIX ignores the argument, so no test here can observe the
+    consequence; what it can pin is the call shape, which is the only part under
+    this project's control.
+    """
+
+    def _record_symlink(self, monkeypatch: pytest.MonkeyPatch) -> list[dict[str, object]]:
+        real = os.symlink
+        seen: list[dict[str, object]] = []
+
+        def recording(src: object, dst: object, **kwargs: object) -> None:
+            seen.append(dict(kwargs))
+            real(src, dst)  # type: ignore[arg-type]
+
+        monkeypatch.setattr(os, "symlink", recording)
+        return seen
+
+    def test_the_skills_link_declares_a_directory_target(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        source = tmp_path / "pkg_skills" / SKILLS_LINK_NAME
+        source.mkdir(parents=True)
+        (source / "SKILL.md").touch()
+        project = tmp_path / "project"
+        project.mkdir()
+        seen = self._record_symlink(monkeypatch)
+
+        with patch("modern_python_guidance.setup_cmd._find_skills_dir", return_value=source):
+            assert setup_skills(project_dir=project) is True
+
+        assert seen == [{"target_is_directory": True}]
+
+    def test_the_rule_link_does_not_claim_to_be_a_directory(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The control. Without it, passing the flag unconditionally at both
+        sites would look identical to passing it at the one that needs it."""
+        source = tmp_path / "pkg_rules" / RULE_FILE_NAME
+        source.parent.mkdir(parents=True)
+        source.write_text("rule body\n", encoding="utf-8")
+        project = tmp_path / "project"
+        project.mkdir()
+        seen = self._record_symlink(monkeypatch)
+
+        with patch("modern_python_guidance.setup_cmd._find_rule_source", return_value=source):
+            assert setup_rules(project_dir=project) is True
+
+        assert seen == [{}]
+
+
 class TestRunSetup:
     """V-012, V-013, V-014, V-045~V-048, V-058~V-060: exit codes and partial success."""
 

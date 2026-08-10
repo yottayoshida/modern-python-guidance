@@ -429,6 +429,36 @@ def _print_flattened_symlink_error(
     print("Then re-run: mpg setup", file=sys.stderr)
 
 
+ERROR_PRIVILEGE_NOT_HELD = 1314
+"""Windows error raised by os.symlink without Developer Mode or elevation."""
+
+
+def _print_symlink_create_error(exc: OSError) -> None:
+    """Shared failure message for the two os.symlink call sites.
+
+    On stock Windows — no Developer Mode, no elevated prompt — os.symlink
+    raises WinError 1314, "A required privilege is not held by the client".
+    Printed alone it reads like a defect in mpg rather than a privilege the OS
+    withholds, and the user is left with two of the advertised delivery methods
+    missing and no idea what to change.
+
+    Narrowed to that one error rather than to the platform. Windows raises
+    OSError here for reasons the hint does not address — a path exceeding
+    MAX_PATH, a read-only volume, a parent directory denying write — and
+    answering those with "enable Developer Mode" sends the reader after a
+    setting that will not help. A hint that fires for every failure is a claim
+    about causes it cannot support.
+    """
+    print(f"Error creating symlink: {exc}", file=sys.stderr)
+    if sys.platform == "win32" and getattr(exc, "winerror", None) == ERROR_PRIVILEGE_NOT_HELD:
+        print(
+            "On Windows, creating a symlink requires Developer Mode or an elevated "
+            "terminal. Either enable Settings > Privacy & security > For developers > "
+            "Developer Mode, or re-run mpg setup from an Administrator prompt.",
+            file=sys.stderr,
+        )
+
+
 def setup_skills(
     *,
     project_dir: Path | None = None,
@@ -467,9 +497,15 @@ def setup_skills(
 
     try:
         skills_parent.mkdir(parents=True, exist_ok=True)
-        os.symlink(source, link_path)
+        # target_is_directory is ignored everywhere this is tested, and it is
+        # the one place Windows types the link at creation time rather than
+        # following the target. CPython may well infer it from the existing
+        # source directory — but that inference cannot be checked from here, and
+        # passing the flag removes the question instead of resting on it. The
+        # rule link below is a file and correctly omits it.
+        os.symlink(source, link_path, target_is_directory=True)
     except OSError as e:
-        print(f"Error creating symlink: {e}", file=sys.stderr)
+        _print_symlink_create_error(e)
         return False
 
     print(f"Agent Skills linked to {link_path.relative_to(root)}")
@@ -522,7 +558,7 @@ def setup_rules(
         rules_parent.mkdir(parents=True, exist_ok=True)
         os.symlink(source, link_path)
     except OSError as e:
-        print(f"Error creating symlink: {e}", file=sys.stderr)
+        _print_symlink_create_error(e)
         return False
 
     print(f"Rule linked to {link_path.relative_to(root)}")
