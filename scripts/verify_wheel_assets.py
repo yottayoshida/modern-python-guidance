@@ -70,6 +70,22 @@ def main() -> None:
     ensure_outside_checkout("rule file", rule_file, checkout)
 
     pkg_root = module_path.parent
+
+    # PEP 561: without this marker at the package root, mypy and pyright treat
+    # the install as untyped no matter how annotated the source is — so the
+    # `Typing :: Typed` classifier shipped to PyPI is a claim only this file can
+    # keep honest. It went missing for 35 releases precisely because nothing
+    # looked (#204). Checked against the installed package rather than the
+    # checkout: the source tree having the file proves nothing about the wheel.
+    if not (pkg_root / "py.typed").is_file():
+        fail(
+            f"installed wheel has no py.typed at the package root ({pkg_root}) — the"
+            " 'Typing :: Typed' classifier in pyproject.toml promises PEP 561 inline"
+            " types, and without the marker every consumer's type checker ignores them;"
+            " check that src/modern_python_guidance/py.typed exists and that"
+            " [tool.hatch.build.targets.wheel] still includes the package directory"
+        )
+
     for label, path in (("skills directory", skills_dir), ("rule file", rule_file)):
         if not path.is_relative_to(pkg_root):
             fail(
@@ -145,7 +161,7 @@ def main() -> None:
         )
 
     print(
-        f"OK: wheel bundles SKILL.md, {len(actual)} guides, and {rule_file.name};"
+        f"OK: wheel bundles py.typed, SKILL.md, {len(actual)} guides, and {rule_file.name};"
         f" 'mpg list' indexes all {len(listed)} guides"
     )
 
