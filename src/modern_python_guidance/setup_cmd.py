@@ -125,10 +125,14 @@ Before a framework or tool pattern, inspect project evidence or explicit overrid
 - `datetime.utcnow()` → `datetime.now(UTC)` (>=3.11)
 - `session.query(User).filter()` → `session.execute(select(User).where())` (SQLAlchemy 2.0)
 - `subprocess.run(f"cmd {arg}", shell=True)` → `subprocess.run(["cmd", arg], check=True)`
+- Bare `@dataclass` → `@dataclass(frozen=True, slots=True, kw_only=True)` where the type allows (>=3.10)
+- Looping over cases inside one test → `@pytest.mark.parametrize` (each case reports separately)
+- `[tool.flake8]` + `[tool.isort]` + `[tool.black]` → `[tool.ruff]` (one tool, lint and format)
+- `python -m venv` + `pip install` → `uv venv` + `uv pip install` (or `uv add` in a pyproject-native project)
 
-## Beyond these 5 patterns
+## Beyond these patterns
 
-Writing Python outside them (FastAPI, Django, httpx, pytest, or anything in the 41-guide catalog below)? Call `mcp__mpg__search_guides` before committing to a pattern.
+Writing Python outside them (FastAPI, Django, httpx, or anything in the catalog below)? Call `mcp__mpg__search_guides` before committing to a pattern.
 
 ## All 41 guides by category
 

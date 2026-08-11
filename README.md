@@ -5,14 +5,14 @@
 [![Python](https://img.shields.io/pypi/pyversions/modern-python-guidance.svg)](https://pypi.org/project/modern-python-guidance/)
 [![License](https://img.shields.io/github/license/yottayoshida/modern-python-guidance.svg)](LICENSE)
 
-Stop your AI from writing `typing.List`, `@validator`, and `setup.py`. 41 version-aware BAD/GOOD pattern guides that teach AI coding agents to write modern Python — delivered via MCP, CLI, or Agent Skills.
+Stop your AI from writing `typing.List`, `@validator`, and `setup.py`. 41 version-aware BAD/GOOD pattern guides that teach AI coding agents to write modern Python — carried by a rules file that loads whenever you edit Python or project config, a check that runs on each `.py` file you save, and MCP/CLI lookup for the rest of the catalog.
 
 ## Highlights
 
 - **Evidence status**: Historical V5 content-efficacy evidence is documented with its model, prompt, sample, metric, and delivery scope; it is not a product-wide effectiveness claim ([V5 benchmark details](docs/benchmark-v5.md))
 - **41 guides** across stdlib, Pydantic, FastAPI, Django, SQLAlchemy, pytest, and toolchain
 - **Version- and dependency-aware**: filters Python-version-incompatible guidance and qualifies framework/tool guidance from project evidence
-- **4 delivery methods**: MCP server, CLI, Agent Skills, and Rules (auto-injects on `.py` file touch)
+- **Delivery, in the order it reaches you**: a Rules file auto-loaded when you edit Python files *or* project config (`pyproject.toml`, `requirements*.txt`, `setup.cfg`, `.python-version`, `Pipfile`) — this is the path carrying the embedded patterns; a PostToolUse hook checking each saved `.py`; Agent Skills; and MCP/CLI lookup for the rest of the catalog
 - **Not Ruff**: Ruff auto-fixes syntax (`List` → `list`). mpg guides design decisions that Ruff can't touch — `TaskGroup` over `gather`, Pydantic V2 migration, SQLAlchemy 2.0 style
 
 <!-- mpg-benchmark-claims:start -->

@@ -24,6 +24,23 @@ from modern_python_guidance.setup_cmd import _build_rule_text
 GUIDES_DIR = _find_guides_dir()
 EXPECTED_GUIDE_COUNT = 41
 
+# The four guides #208 found stranded: frequency: high, no detector (so the
+# hook can never surface them), and missing from the embedded section — which
+# left the MCP catalog as their only route, and #152 measured that route as
+# unused.
+#
+# Each marker is lifted from the guide's own GOOD section rather than written
+# to suit the rules line. A draft of this change told readers to run
+# `uv sync`, a command uv-over-pip never mentions and whose GOOD section keeps
+# `uv pip install -r requirements.txt`. A marker invented for the rules file
+# cannot catch that: it agrees with the very text it was invented for.
+EMBEDDED_HIGH_FREQUENCY = (
+    ("dataclass-modern", "data-structures", "frozen=True"),
+    ("pytest-parametrize", "pytest", "@pytest.mark.parametrize"),
+    ("ruff-over-flake8", "toolchain", "[tool.ruff]"),
+    ("uv-over-pip", "toolchain", "uv pip install"),
+)
+
 REQUIRED_HEADING_ORDER = {
     0: "BAD",
     1: "GOOD",
@@ -168,6 +185,64 @@ class TestRuleFileSync:
         index = build_index()
         for guide_id in index.guides:
             assert f"`{guide_id}`" in body, f"guide ID missing from thin Rules: {guide_id}"
+
+    def _embedded_section(self) -> str:
+        """Only the embedded-patterns block, not the catalog index below it.
+
+        #208 was found by scoping a check this way. The index further down
+        names all 41 ids, so a grep for a guide id succeeds even when the
+        guide contributes nothing to what the always-loaded file carries —
+        the issue says as much ("a naive grep lie"). A check written without
+        the same scoping reproduces the bug it is meant to catch.
+        """
+        _, body = self._rule_parts()
+        start = body.index("## Embedded patterns")
+        end = body.index("\n## ", start + 1)
+        return body[start:end]
+
+    @pytest.mark.parametrize(("guide_id", "category", "marker"), EMBEDDED_HIGH_FREQUENCY)
+    def test_high_frequency_guides_are_carried_by_the_rules_body(self, guide_id, category, marker):
+        """#208: with no detector and no embedded entry, the MCP catalog was
+        the only way these four could reach a session."""
+        assert marker in self._embedded_section(), (
+            f"{guide_id} has no embedded entry: its recommendation appears nowhere in"
+            " the always-loaded section"
+        )
+
+    @pytest.mark.parametrize(("guide_id", "category", "marker"), EMBEDDED_HIGH_FREQUENCY)
+    def test_the_embedded_entry_recommends_what_the_guide_recommends(
+        self, guide_id, category, marker
+    ):
+        """The other half, and the one that catches over-claiming.
+
+        The check above only asks whether some agreed string is present in the
+        rules body. If that string were written for the rules line rather than
+        taken from the guide, both sides would agree with each other and
+        neither with the catalog. That is not hypothetical: a draft of this
+        change recommended `uv sync`, which appears nowhere in uv-over-pip —
+        whose GOOD section keeps `uv pip install -r requirements.txt` and does
+        not ask anyone to abandon requirements.txt at all.
+        """
+        text = (GUIDES_DIR / category / f"{guide_id}.md").read_text(encoding="utf-8")
+        good = text.split("## GOOD", 1)[1].split("\n## ", 1)[0]
+        assert marker in good, (
+            f"the rules body recommends {marker!r} for {guide_id}, but the guide's own"
+            " GOOD section never says it"
+        )
+
+    def test_the_embedded_section_stops_before_the_catalog_index(self):
+        """The control for the four checks above.
+
+        Every guide id is listed in the index further down, so a section
+        boundary that overran would make those checks pass for guides that
+        are only catalogued. `django-json-field` is catalogued and not
+        embedded, which is exactly what must stay invisible from here.
+        """
+        section = self._embedded_section()
+        assert "django-json-field" not in section, (
+            "the extracted section reaches into the catalog index — a guide that is"
+            " only listed there is visible to checks meant to see embedded ones"
+        )
 
 
 class TestDetectPatterns:

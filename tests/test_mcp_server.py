@@ -169,6 +169,32 @@ class TestToolsList:
         actual_count = len(build_index())
         assert f"{actual_count} guides" in tools["search_guides"]["description"]
 
+    def test_search_guides_description_does_not_name_an_embedded_category(self):
+        """#208: the description tells agents to search for patterns *outside*
+        the ones the rules file already carries, and lists example categories.
+        Naming a category that is now embedded sends the agent looking for
+        guidance it was just handed — and this list went stale the moment
+        pytest-parametrize moved into the rules body.
+
+        Scoped to pytest rather than derived from the embedded set. Deriving
+        it would mean sharing the embedded list between two test modules, and
+        the general case has occurred once. When a second category moves in,
+        that is the point to generalise.
+        """
+        responses = _run_mcp(
+            *_init_handshake(),
+            {"jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {}},
+        )
+        tools = {t["name"]: t for t in responses[1]["result"]["tools"]}
+        description = tools["search_guides"]["description"]
+        marker = "already embedded in your project rules"
+        assert marker in description, "the description no longer explains when to search"
+        examples = description.split(marker, 1)[1].split(")", 1)[0]
+        assert "pytest" not in examples, (
+            "search_guides lists pytest as a reason to search, but pytest-parametrize"
+            " is carried by the rules file"
+        )
+
 
 class TestSearchGuides:
     def test_search_returns_results(self):
