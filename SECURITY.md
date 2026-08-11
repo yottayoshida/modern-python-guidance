@@ -2,16 +2,17 @@
 
 ## Supported versions
 
-<!-- supported-release-line: 0.6.x -->
+<!-- supported-release-line: 1.0.x -->
 
 | Release line | Security fixes |
 |---|---|
-| 0.6.x | Supported |
-| < 0.6 | Unsupported; upgrade before requesting a fix |
+| 1.0.x | Supported |
+| < 1.0 | Unsupported; upgrade before requesting a fix |
 
-While modern-python-guidance is pre-1.0, security fixes are provided only for
-the latest minor release line. We do not promise security backports to older
-minor lines.
+Security fixes go to the latest minor release line. Backports to older minor
+lines are not promised, and upgrading within 1.x is not a breaking change:
+[docs/VERSIONING.md](docs/VERSIONING.md) lists the surfaces that stay fixed
+until 2.0, so moving to the supported line does not require a rewrite.
 
 ## Reporting a vulnerability
 
