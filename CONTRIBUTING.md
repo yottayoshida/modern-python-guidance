@@ -15,7 +15,7 @@ src/modern_python_guidance/
 
 skills/modern-python-guidance/
 ├── SKILL.md            # Agent Skills plugin entry point
-└── guides/             # 41 guide files by category
+└── guides/             # guide files, one directory per category
 ```
 
 See [docs/design.md](docs/design.md) for the full design document.
@@ -45,7 +45,7 @@ See [docs/design.md](docs/design.md) for the full design document.
 ```bash
 uv venv && source .venv/bin/activate
 uv pip install -e ".[dev]"
-pytest                              # 510+ tests including guide structure validation
+pytest                              # full suite, including guide structure validation
 ruff check src/ tests/              # lint
 ruff format --check src/ tests/     # format check (CI enforced)
 ```
