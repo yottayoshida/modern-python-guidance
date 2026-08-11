@@ -2,7 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). What a version number promises — which surfaces are frozen and what holds each one — is set out in [docs/VERSIONING.md](docs/VERSIONING.md).
+
 ## [Unreleased]
+
+### Added
+
+- `docs/VERSIONING.md` states what a version number promises. Five surfaces are frozen from 1.0 onward — the CLI surface, the MCP tool schemas, the JSON output field sets (additive only), the guide frontmatter schema, and the PostToolUse hook stdout contract — and each names what holds it in place, because a frozen surface nothing reads back is the failure this project already made with `Typing :: Typed`. Three were held already: by the design.md schema comparison, by the hook's stdout tests, and by the frontmatter parser refusing violations. The CLI surface and the MCP schemas were not, and each gained a test — command names, positionals and option names read back from `build_parser()`, and every tool's whole `inputSchema` compared against a snapshot, so a `layer` changing from integer to string or a `limit.maximum` cut from 50 to 5 fails rather than slipping past a comparison of parameter names. Three things are deliberately outside the freeze because nothing compares them today: `check` and `detect-version` JSON output, and exit-code semantics; naming them would have made the document's own claim false in its opening paragraph, and widening a freeze later is not a breaking change. `maxItems` is excluded for a different reason — derived from the catalog size, so freezing it would freeze the catalog — with a control test pinning the premise of that exclusion. The Python import API and the guide catalog are named as not frozen, ids included, since `retrieve` selects by them and a rename is a breaking change recorded here rather than made quietly. (closes #203)
 
 ### Changed
 
