@@ -308,6 +308,10 @@ pytest
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for project structure and guide authoring details.
 
+## Versioning
+
+Semantic Versioning. From 1.0 onward the CLI surface, the MCP tool schemas, the JSON output field sets, the guide frontmatter schema, and the PostToolUse hook contract are frozen. [docs/VERSIONING.md](docs/VERSIONING.md) says what each of those covers, what holds it in place, and what is deliberately left outside the freeze.
+
 ## License
 
 Apache-2.0 OR MIT — see [LICENSE](LICENSE) and [LICENSE-MIT](LICENSE-MIT).

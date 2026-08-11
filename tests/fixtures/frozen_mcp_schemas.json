@@ -1,0 +1,152 @@
+{
+  "detect_python_version": {
+    "properties": {
+      "project_dir": {
+        "description": "Relative path to project directory (relative to server CWD). Defaults to current directory. Absolute paths are rejected.",
+        "type": "string"
+      }
+    },
+    "type": "object"
+  },
+  "list_guides": {
+    "properties": {
+      "category": {
+        "description": "Filter by category (e.g. 'stdlib', 'pydantic')",
+        "type": "string"
+      },
+      "dependency_versions": {
+        "additionalProperties": {
+          "type": "string"
+        },
+        "description": "Exact overrides keyed by package:name or tool:name.",
+        "type": "object"
+      },
+      "frequency": {
+        "description": "Filter by how often the pattern is gotten wrong",
+        "enum": [
+          "high",
+          "low",
+          "medium"
+        ],
+        "type": "string"
+      },
+      "include_incompatible": {
+        "default": false,
+        "description": "Include guidance proven incompatible with the project (default: false).",
+        "type": "boolean"
+      },
+      "layer": {
+        "description": "Filter by layer: 1 stdlib, 2 frameworks, 3 toolchain",
+        "enum": [
+          1,
+          2,
+          3
+        ],
+        "type": "integer"
+      },
+      "project_dir": {
+        "description": "Relative project directory for dependency evidence (default: server CWD).",
+        "type": "string"
+      },
+      "python_version": {
+        "description": "Filter by Python version compatibility (e.g. '3.13')",
+        "pattern": "^\\d+\\.\\d+$",
+        "type": "string"
+      }
+    },
+    "type": "object"
+  },
+  "retrieve_guides": {
+    "properties": {
+      "dependency_versions": {
+        "additionalProperties": {
+          "type": "string"
+        },
+        "description": "Exact overrides keyed by package:name or tool:name.",
+        "type": "object"
+      },
+      "guide_ids": {
+        "description": "Guide IDs to retrieve (max 41)",
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      },
+      "project_dir": {
+        "description": "Relative project directory for dependency evidence (default: server CWD).",
+        "type": "string"
+      },
+      "python_version": {
+        "description": "Target Python version for compatibility check (e.g. '3.12')",
+        "pattern": "^\\d+\\.\\d+$",
+        "type": "string"
+      }
+    },
+    "required": [
+      "guide_ids"
+    ],
+    "type": "object"
+  },
+  "search_guides": {
+    "properties": {
+      "category": {
+        "description": "Filter by category (e.g. 'stdlib', 'pydantic', 'fastapi')",
+        "type": "string"
+      },
+      "dependency_versions": {
+        "additionalProperties": {
+          "type": "string"
+        },
+        "description": "Exact overrides keyed by package:name or tool:name.",
+        "type": "object"
+      },
+      "frequency": {
+        "description": "Filter by how often the pattern is gotten wrong",
+        "enum": [
+          "high",
+          "low",
+          "medium"
+        ],
+        "type": "string"
+      },
+      "include_incompatible": {
+        "default": false,
+        "description": "Include guidance proven incompatible with the project (default: false).",
+        "type": "boolean"
+      },
+      "layer": {
+        "description": "Filter by layer: 1 stdlib, 2 frameworks, 3 toolchain",
+        "enum": [
+          1,
+          2,
+          3
+        ],
+        "type": "integer"
+      },
+      "limit": {
+        "default": 10,
+        "description": "Maximum results to return (1-50, default: 10)",
+        "maximum": 50,
+        "minimum": 1,
+        "type": "integer"
+      },
+      "project_dir": {
+        "description": "Relative project directory for dependency evidence (default: server CWD).",
+        "type": "string"
+      },
+      "python_version": {
+        "description": "Filter by Python version (e.g. '3.12'). Only returns guides applicable to this version.",
+        "pattern": "^\\d+\\.\\d+$",
+        "type": "string"
+      },
+      "query": {
+        "description": "Search keywords (e.g. 'typing list', 'pydantic v2', 'httpx')",
+        "type": "string"
+      }
+    },
+    "required": [
+      "query"
+    ],
+    "type": "object"
+  }
+}
