@@ -52,3 +52,24 @@ def test_readme_does_not_claim_catalog_availability_is_active_checking() -> None
     assert "full 41-guide catalog" not in text
     assert "all 41 guides" not in text
     assert "#152" in text
+
+
+def test_readme_delivery_claim_matches_the_rule_paths() -> None:
+    """README says the Rules file loads on Python files *and* project config.
+    That is a claim about `RULE_FRONTMATTER`, not about prose.
+
+    A plan for #208 asserted the opposite — that Rules covered `.py` only —
+    and built a delivery model on top of it, concluding that the toolchain
+    guides were out of reach. Nothing here would have caught it: the paths
+    list had never been read back by anything that also read the README.
+    """
+    from modern_python_guidance.setup_cmd import RULE_FRONTMATTER
+
+    text = README.read_text(encoding="utf-8")
+    for config_path in ("pyproject.toml", "requirements*.txt", "setup.cfg"):
+        assert config_path in RULE_FRONTMATTER, (
+            f"{config_path} left the rule paths — the README claim is now false"
+        )
+        assert config_path in text, (
+            f"README no longer names {config_path}, which the rule paths still cover"
+        )
