@@ -310,7 +310,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for project structure and guide authoring
 
 ## Versioning
 
-Semantic Versioning. From 1.0 onward the CLI surface, the MCP tool schemas, the JSON output field sets, the guide frontmatter schema, and the PostToolUse hook contract are frozen. [docs/VERSIONING.md](docs/VERSIONING.md) says what each of those covers, what holds it in place, and what is deliberately left outside the freeze.
+Semantic Versioning. From 1.0 onward the CLI surface, the MCP tool schemas, the JSON output fields, the guide frontmatter schema, the PostToolUse hook contract, and the documented exit-code rows are frozen. [docs/VERSIONING.md](docs/VERSIONING.md) says what each of those covers, what holds it in place, and what is deliberately left outside the freeze — including which side of each JSON surface is actually compared, and why exit codes are frozen row by row rather than as semantics in general.
 
 ## License
 
