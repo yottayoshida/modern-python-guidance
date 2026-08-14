@@ -8,7 +8,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from conftest import extract_design_md_keys
+from conftest import design_md_field_paths, extract_design_md_keys, field_paths
 
 from modern_python_guidance import __version__
 
@@ -306,6 +306,17 @@ class TestDetectVersion:
             "source": ".python-version",
         }
 
+    def test_detect_json_matches_the_documented_field_paths(self, tmp_path):
+        """The field names, read back from design.md rather than restated here.
+
+        The assertion above pins one resolution's values; this pins the shape
+        against the document, the same way the other frozen JSON surfaces are
+        held. Without it, `mpg detect-version --format json` is a surface the
+        README points at as the audit path with nothing comparing its form.
+        """
+        r = run_cli("detect-version", "--project-dir", str(tmp_path), "--format", "json")
+        assert field_paths(json.loads(r.stdout)) == design_md_field_paths("detect-version")
+
 
 class TestPipeOutput:
     def test_no_ansi_in_json_output(self):
@@ -372,30 +383,34 @@ class TestCheck:
         assert r.returncode == 1
         assert "outdated pattern" in r.stdout
 
-    def test_check_json_schema(self, tmp_path):
+    def test_check_json_matches_the_documented_field_paths(self, tmp_path):
+        """Every path design.md shows, and no path it does not.
+
+        Two directions, where the rest of this file compares one. The `<=`
+        comparisons elsewhere pass when a field is deleted from design.md —
+        the documented set shrinks and the smaller subset still fits — so
+        they hold the serializer against the document but not the document
+        against the serializer. This surface is frozen from 1.0, which means
+        a field appearing in the output without appearing in design.md has
+        to fail: that is what turns the additive-only promise into a record
+        instead of an intention.
+
+        The path set is recursive, so `target_python.source` and
+        `matches[].dependency_compatibility.status` are covered. A
+        comparison of top-level names would let either disappear.
+        """
         p = tmp_path / "sample.py"
         p.write_text("import pickle\n")
         r = run_cli("check", str(p), "--format", "json")
         data = json.loads(r.stdout)
-        assert "file" in data
-        assert "mpg_version" in data
-        assert "matches" in data
-        assert "summary" in data
-        assert "total_matches" in data["summary"]
-        assert "unique_guides" in data["summary"]
-        assert "guide_ids" in data["summary"]
-        if data["matches"]:
-            m = data["matches"][0]
-            for key in (
-                "line",
-                "source_line",
-                "guide_id",
-                "guide_title",
-                "category",
-                "frequency",
-                "snippet",
-            ):
-                assert key in m
+
+        # An empty `matches` contributes no `matches[].*` paths, so the
+        # comparison below would still pass while checking strictly less.
+        # Depends on a detector for `no-pickle` existing; the catalog is not
+        # frozen, so retiring it means changing this input.
+        assert data["matches"], "fixture matched nothing; matches[] paths would go unchecked"
+
+        assert field_paths(data) == design_md_field_paths("check")
 
     def test_check_file_not_found(self, tmp_path):
         r = run_cli("check", str(tmp_path / "nonexistent.py"), "--format", "json")
