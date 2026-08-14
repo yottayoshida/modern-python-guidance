@@ -275,6 +275,12 @@ remain byte-silent; silence is not a certificate for advisory-only guidance.
 
 The CLI defaults to JSON when piped and human-readable when attached to a TTY. The `--format` flag overrides this.
 
+`detect-version` is the exception, and deliberately so. Its `--format` takes `json` or `plain`
+rather than `json` or `human`, and defaults to `plain` whether or not a pipe is attached — the
+plain version string is what scripts read, and switching it to JSON on detection of a pipe would
+change what every existing `$(mpg detect-version)` receives. The four guidance commands
+(`search`, `retrieve`, `list`, `check`) follow the rule above; `detect-version` does not.
+
 The MCP server tools (`search_guides`, `retrieve_guides`, `list_guides`) return the same JSON shapes as the CLI's `--format json` output, with one exception: `mpg list --with-content` adds a `content` field that `list_guides` has no equivalent for, because an MCP caller reaches the same bodies through `retrieve_guides`. Otherwise only the exit semantics differ: the CLI exits 1 on empty results or missing IDs, while the MCP server returns the same payload as a non-error tool result.
 
 These examples are real captured outputs: the field set is the contract (maintained against the serializers in `cli.py` and `mcp_server.py`), while values such as `score`, `token_estimate`, and `snippet` vary by query and guide revision.
@@ -406,6 +412,87 @@ is retained and must be verified before applying the guide.
   }
 }
 ```
+
+### JSON schema (detect-version)
+
+`mpg detect-version --format json` and the MCP tool `detect_python_version` return the same
+two fields. This is the audit path for the resolution described under
+[Version detection precedence](#version-detection-precedence): the guidance commands apply the
+resolved version silently, and this is where the decision can be read back.
+
+```json
+{
+  "python_version": "3.11",
+  "source": "default"
+}
+```
+
+`source` is one of:
+
+```
+explicit
+project.requires-python
+poetry.dependencies.python
+.python-version
+default
+```
+
+The label is a fixed vocabulary, not a rendering of where the value was found: it never contains
+a filesystem path. A new detection route means a new label here, which is a change to this list
+and not merely to the resolver.
+
+### Exit codes
+
+Each row below is a guarantee: the command, a condition an outside caller can produce, and the
+status the process exits with.
+
+| Command | Condition | Code |
+|---|---|---|
+| `mpg` | invoked with no command | 2 |
+| `search` | at least one guide matches | 0 |
+| `search` | no guide matches the filters | 1 |
+| `retrieve` | every requested id resolves | 0 |
+| `retrieve` | the id list is empty | 1 |
+| `retrieve` | any requested id is unknown | 1 |
+| `list` | at least one guide remains after filters | 0 |
+| `list` | no guide remains after filters | 1 |
+| `check` | no outdated pattern found | 0 |
+| `check` | at least one outdated pattern found | 1 |
+| `check` | patterns found and `--exit-zero` given | 0 |
+| `check` | the file cannot be read | 2 |
+| `detect-version` | a version resolves | 0 |
+| `mcp` | stdin reaches end of file | 0 |
+| `setup` | every step succeeds | 0 |
+| `setup` | any step fails | 1 |
+| `setup` | mutually exclusive options combined | 1 |
+| `uninstall` | every step succeeds | 0 |
+| `uninstall` | any step fails | 1 |
+| `uninstall` | mutually exclusive options combined | 1 |
+
+**Outside this table**, and not part of what it guarantees:
+
+- **Exits argparse produces on its own** — an unknown option, a missing argument, an invalid
+  `--format` choice. These are 2 as well, but they belong to argparse's contract rather than
+  to this one, and a caller distinguishing "bad usage" from "no results" reads 2 from either.
+- **Termination by signal.** `main()` restores the default `SIGPIPE` disposition, so a closed
+  pipe kills the process rather than raising `BrokenPipeError` — a shell reports 141, and a
+  parent process reading the raw status sees `-SIGPIPE`. The `except BrokenPipeError` clause
+  in `cli.py` covers only the interpreter-level path that remains when the signal is handled
+  elsewhere; it is not the observable behaviour of `mpg search … | head`.
+- **Uncaught exceptions**, which exit 1 like a legitimate empty result. A caller separating
+  a crash from an empty result needs stderr, not the status.
+- **`hook`**, whose exit status belongs to the PostToolUse hook stdout contract in
+  [VERSIONING.md](VERSIONING.md) and is held there rather than duplicated here.
+
+Several rows depend on the catalog, which is not frozen. The success rows for `search`,
+`retrieve`, and `list` need a non-empty catalog, and `retrieve`'s names a guide id — ids are
+explicitly not frozen, so retiring that guide means the row needs a different one. The two
+`check` rows that expect a match need a detector for the pattern in the fixture to still
+exist. In every case what changes is the input the row is measured with, not the guarantee. The
+rows that expect an *empty* result narrow the exposure by filtering on a category no guide
+declares, but do not remove it: `category` is a free-form string with no fixed vocabulary,
+so that is a chosen name rather than a guarantee, and a guide adopting it would make those
+rows non-empty.
 
 ## Guide layers
 

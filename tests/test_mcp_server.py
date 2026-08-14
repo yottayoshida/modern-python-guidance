@@ -7,7 +7,7 @@ import subprocess
 import sys
 
 import pytest
-from conftest import extract_design_md_keys
+from conftest import design_md_field_paths, extract_design_md_keys, field_paths
 
 BIN = [sys.executable, "-m", "modern_python_guidance", "mcp"]
 
@@ -516,6 +516,26 @@ class TestDetectPythonVersion:
         assert "isError" not in result
         data = json.loads(result["content"][0]["text"])
         assert "python_version" in data
+
+    def test_detect_version_matches_the_documented_field_paths(self):
+        """The MCP payload against the same section the CLI is held to.
+
+        `_tool_detect_version` builds its own dict rather than calling the CLI
+        serializer, so the two can drift apart while each looks right on its
+        own. design.md documents one shape for both; this is the MCP half of
+        holding them to it.
+        """
+        responses = _run_mcp(
+            *_init_handshake(),
+            {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "tools/call",
+                "params": {"name": "detect_python_version", "arguments": {}},
+            },
+        )
+        data = json.loads(responses[1]["result"]["content"][0]["text"])
+        assert field_paths(data) == design_md_field_paths("detect-version")
 
     def test_detect_version_rejects_absolute_path(self):
         responses = _run_mcp(

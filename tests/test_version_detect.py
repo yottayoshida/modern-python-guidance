@@ -2,13 +2,16 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
+from typing import get_args
 
 import pytest
+from conftest import design_md_enum
 
 from modern_python_guidance.version_detect import (
     _MAX_CONFIG_SIZE,
     DEFAULT_VERSION,
     PythonVersionResolution,
+    PythonVersionSource,
     detect_configured_version,
     detect_version,
     find_configured_version,
@@ -65,6 +68,55 @@ class TestResolutionSources:
         nested.mkdir(parents=True)
         result = resolve_python_version(project_dir=nested)
         assert result == PythonVersionResolution(version="3.10", source="project.requires-python")
+
+    def test_every_label_in_the_type_is_produced_by_some_input(self, tmp_path: Path):
+        """The vocabulary, checked from the resolver end rather than the type end.
+
+        `PythonVersionSource` is a `Literal`, which nothing enforces at runtime.
+        A label added to it and to design.md agrees with itself while no input
+        ever produces it, so the documented vocabulary would describe a value
+        the audit path can never show. Running one input per label and
+        comparing the labels collected against the type closes that: an
+        unreachable label leaves the observed set short, and a label the
+        resolver returns without declaring leaves it long.
+
+        The tests above assert these one at a time; this is the same five read
+        as a set, which is the part that fails when a sixth appears.
+        """
+        pep621 = tmp_path / "pep621"
+        pep621.mkdir()
+        (pep621 / "pyproject.toml").write_text('[project]\nrequires-python = ">=3.10"\n')
+
+        poetry = tmp_path / "poetry"
+        poetry.mkdir()
+        (poetry / "pyproject.toml").write_text('[tool.poetry.dependencies]\npython = "^3.11"\n')
+
+        pyenv = tmp_path / "pyenv"
+        pyenv.mkdir()
+        (pyenv / ".python-version").write_text("3.12\n")
+
+        empty = tmp_path / "empty"
+        empty.mkdir()
+
+        observed = {
+            resolve_python_version(explicit_version="3.12", project_dir=empty).source,
+            resolve_python_version(project_dir=pep621).source,
+            resolve_python_version(project_dir=poetry).source,
+            resolve_python_version(project_dir=pyenv).source,
+            resolve_python_version(project_dir=empty).source,
+        }
+        assert observed == set(get_args(PythonVersionSource))
+
+    def test_documented_source_labels_match_the_type(self):
+        """design.md's list against the type, read from the schema section only.
+
+        `## Version detection precedence` names all five in prose, so a
+        file-wide search agrees no matter what the schema section says — and
+        the schema section is the one the freeze points at. Scoping the read
+        is what makes a deletion there visible.
+        """
+        documented = design_md_enum("### JSON schema (detect-version)")
+        assert documented == set(get_args(PythonVersionSource))
 
 
 class TestPyprojectToml:

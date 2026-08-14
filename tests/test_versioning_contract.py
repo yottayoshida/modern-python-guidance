@@ -1,10 +1,11 @@
 """What VERSIONING.md freezes, checked against what the code exposes.
 
-Five surfaces are declared frozen. Three were already held: JSON output field
-sets by `conftest.extract_design_md_keys` against design.md, the hook stdout
-contract by `test_cli_unit.py`, and the frontmatter schema by `frontmatter.py`
-refusing to parse violations. The two with no check at all were the CLI surface
-and the MCP tool schemas, and those are what this file adds.
+Six surfaces are declared frozen, held in four places. JSON output fields are
+held by two helpers in `conftest.py` against design.md, the hook stdout contract
+by `test_cli_unit.py`, the frontmatter schema by `frontmatter.py` refusing to
+parse violations, and the exit-code rows by `test_exit_code_contract.py`. The
+two with no check at all were the CLI surface and the MCP tool schemas, and
+those are what this file adds.
 
 A frozen surface nothing reads back is the failure the document itself cites:
 `Typing :: Typed` shipped false for 35 releases because no test looked (#204).
@@ -234,7 +235,7 @@ def test_every_frozen_surface_names_what_holds_it() -> None:
     text = VERSIONING.read_text(encoding="utf-8")
     frozen = text.split("## Frozen surfaces", 1)[1].split("\n## Not frozen", 1)[0]
     sections = [s for s in re.split(r"\n### ", frozen) if s.strip()]
-    assert len(sections) == 5, f"expected 5 frozen surfaces, found {len(sections)}"
+    assert len(sections) == 6, f"expected 6 frozen surfaces, found {len(sections)}"
     for section in sections:
         title = section.splitlines()[0]
         assert "Held by" in section or "enforced at parse time" in section, (
@@ -246,10 +247,10 @@ def test_every_named_holder_exists() -> None:
     """The check above reads words; this one resolves them.
 
     "Held by `tests/nonexistent.py`" satisfies a search for the phrase and
-    holds nothing. Three of the five surfaces delegate to tests written
+    holds nothing. Four of the six surfaces delegate to tests written
     elsewhere, so the names have to resolve or the delegation is fiction.
     """
-    from modern_python_guidance import frontmatter
+    from modern_python_guidance import frontmatter, version_detect
 
     text = VERSIONING.read_text(encoding="utf-8")
 
@@ -258,15 +259,19 @@ def test_every_named_holder_exists() -> None:
     for relative in sorted(named_files):
         assert (REPO_ROOT / relative).is_file(), f"VERSIONING names {relative}, which is absent"
 
-    for symbol in ("REQUIRED_FIELDS", "VALID_LAYERS", "VALID_FREQUENCIES"):
-        assert symbol in text, f"VERSIONING stopped naming {symbol} as the frontmatter holder"
-        assert hasattr(frontmatter, symbol), f"frontmatter no longer defines {symbol}"
+    for module, symbols in (
+        (frontmatter, ("REQUIRED_FIELDS", "VALID_LAYERS", "VALID_FREQUENCIES")),
+        (version_detect, ("PythonVersionSource",)),
+    ):
+        for symbol in symbols:
+            assert symbol in text, f"VERSIONING stopped naming {symbol} as a holder"
+            assert hasattr(module, symbol), f"{module.__name__} no longer defines {symbol}"
 
-    # `tests` is not a package, so the conftest helper cannot be imported by
-    # name here; read the file it lives in instead.
-    assert "extract_design_md_keys" in text
+    # `tests` is not a package, so the conftest helpers cannot be imported by
+    # name here; read the file they live in instead.
     conftest = (REPO_ROOT / "tests" / "conftest.py").read_text(encoding="utf-8")
-    assert "def extract_design_md_keys" in conftest, (
-        "VERSIONING names extract_design_md_keys as the JSON-shape holder, but"
-        " conftest no longer defines it"
-    )
+    for helper in ("extract_design_md_keys", "design_md_field_paths"):
+        assert helper in text, f"VERSIONING stopped naming {helper} as a JSON-shape holder"
+        assert f"def {helper}" in conftest, (
+            f"VERSIONING names {helper} as a JSON-shape holder, but conftest no longer defines it"
+        )
