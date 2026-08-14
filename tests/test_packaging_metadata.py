@@ -31,6 +31,7 @@ from pathlib import Path
 import pytest
 from packaging.version import Version
 
+from modern_python_guidance import __version__
 from modern_python_guidance.version_detect import _min_version_from_specifier
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -83,6 +84,37 @@ def assert_typing_promise_is_kept(*, classifier: bool, marker: bool) -> None:
         " A classifier without the marker makes every installation untyped under PEP 561;"
         " a marker without the classifier hides that the package ships types at all."
     )
+
+
+def assert_version_declarations_agree(packaged: str, imported: str) -> None:
+    """The version in pyproject.toml against the one the package exposes.
+
+    Two hand-edited declarations with nothing comparing them. A bump that
+    updated only `pyproject.toml` shipped once already: the wheel carried the
+    new number while `mpg --version` reported the old one, and the version
+    number was spent to correct it. Every other check here derives from
+    `pyproject.toml` alone, so all of them stay green while the two disagree.
+    """
+    assert packaged == imported, (
+        f"pyproject.toml declares {packaged} but the package reports {imported} —"
+        " a bump updated one of the two and not the other"
+    )
+
+
+def test_the_version_declarations_agree() -> None:
+    """The imported value, not the source text.
+
+    What a user sees is what `import` produced; reading the file back would
+    agree with itself even when the value actually loaded is stale.
+    """
+    assert_version_declarations_agree(_project()["version"], __version__)
+
+
+def test_a_bump_that_missed_the_module_fails_the_guard() -> None:
+    """The failure the guard exists for, since the live tree agrees by
+    construction and an assertion that always passed would look identical."""
+    with pytest.raises(AssertionError):
+        assert_version_declarations_agree("1.0.1", "1.0.0")
 
 
 def test_development_status_matches_the_current_version() -> None:
