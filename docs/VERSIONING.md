@@ -17,7 +17,7 @@ failure this project has already made — the `Typing :: Typed` classifier shipp
 Command names, their positional arguments, and their option names.
 
 ```
-check  detect-version  hook  list  mcp  retrieve  search  setup  uninstall
+check  detect-version  doctor  hook  list  mcp  retrieve  search  setup  uninstall
 ```
 
 Held by `tests/test_versioning_contract.py`: the list above is compared against

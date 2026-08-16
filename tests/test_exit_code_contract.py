@@ -89,6 +89,56 @@ SETUP_STEPS = ("setup_mcp", "setup_skills", "setup_rules", "setup_hook")
 UNINSTALL_STEPS = ("uninstall_mcp", "uninstall_skills", "uninstall_rules", "uninstall_hook")
 
 
+def _flattened_rule_project(tmp_path: Path) -> str:
+    """A project whose rule symlink has been replaced by a real file.
+
+    One degraded channel is enough for the row, and this is the shape that
+    actually happened: a symlink flattened by tooling, its content frozen while
+    the packaged rule moved on. The other three read `absent` — nothing else is
+    set up here, and `_doctor_status` puts `claude` out of reach so the MCP
+    channel cannot vary with the machine — and `absent` does not change what
+    "any channel is degraded" produces.
+    """
+    rules = tmp_path / ".claude" / "rules"
+    rules.mkdir(parents=True, exist_ok=True)
+    (rules / "modern-python.md").write_text("flattened into a real file\n")
+    return str(tmp_path)
+
+
+def _doctor_status(argv: list[str], extra: tuple[str, dict] | None = None) -> int:
+    """`doctor`'s exit status, in-process and with `claude` off the PATH.
+
+    In-process, unlike most rows here, for two reasons.
+
+    The MCP channel asks `claude mcp get`, which reads a *user-scoped*
+    registration belonging to whoever runs the tests. Through `_run` these rows
+    would pass or fail by the state of a developer's machine — and the exact
+    breakage this command was written to find, a registration pinned to a
+    replaced interpreter, is what would turn the exit-0 row red. Forcing
+    `shutil.which` to None puts every machine in the state CI is already in:
+    no `claude`, so the MCP channel reads `absent`. The row then measures
+    "present or absent" with absent alone, which satisfies it; a healthy tree
+    with all four channels `present` is measured in `test_doctor.py` instead.
+
+    And `unknown` cannot be produced from outside at all without breaking the
+    installation the tests run from. That patch names `doctor`'s own binding:
+    it imports `_find_skills_dir` at module load, so patching `setup_cmd`'s
+    copy would leave the function `doctor` actually calls untouched and the row
+    would silently measure the healthy path.
+    """
+    from modern_python_guidance import cli
+
+    with ExitStack() as stack:
+        stack.enter_context(_preserved_sigpipe())
+        stack.enter_context(patch("shutil.which", return_value=None))
+        if extra is not None:
+            target, kwargs = extra
+            stack.enter_context(patch(target, **kwargs))
+        with pytest.raises(SystemExit) as exit_info:
+            cli.main(argv)
+    return 0 if exit_info.value.code is None else int(exit_info.value.code)
+
+
 @contextmanager
 def _preserved_sigpipe() -> Iterator[None]:
     """Put the SIGPIPE disposition back after calling `main()` in-process.
@@ -214,6 +264,23 @@ SCENARIOS: dict[tuple[str, str], object] = {
     ("uninstall", "mutually exclusive options combined"): lambda tmp: _run(
         "uninstall", "--mcp-only", "--skills-only"
     ),
+    ("doctor", "every channel is present or absent"): lambda tmp: _doctor_status(
+        ["doctor", "--project-dir", str(tmp)]
+    ),
+    ("doctor", "any channel is degraded"): lambda tmp: _doctor_status(
+        ["doctor", "--project-dir", _flattened_rule_project(tmp)]
+    ),
+    ("doctor", "any channel cannot be determined"): lambda tmp: _doctor_status(
+        ["doctor", "--project-dir", str(tmp)],
+        (
+            "modern_python_guidance.doctor._find_skills_dir",
+            {"side_effect": FileNotFoundError("cannot locate the bundled skills")},
+        ),
+    ),
+    (
+        "doctor",
+        "`--project-dir` names something that is not a directory",
+    ): lambda tmp: _run("doctor", "--project-dir", str(tmp / "no-such-directory")),
 }
 
 
@@ -246,7 +313,7 @@ def test_documented_exit_code_is_the_observed_one(row: tuple[str, str], tmp_path
 def test_calling_main_in_process_leaves_no_signal_disposition_behind(tmp_path: Path) -> None:
     """The restoration above, held rather than trusted.
 
-    Four rows call `main()` in this process, and `main()` sets SIGPIPE to
+    Several rows call `main()` in this process, and `main()` sets SIGPIPE to
     `SIG_DFL` without putting it back. Left in place, the change outlives the
     test and belongs to the runner: a later write to a closed pipe would kill
     pytest instead of raising `BrokenPipeError`. That failure would surface far

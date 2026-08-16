@@ -23,7 +23,7 @@ LLMs frequently generate outdated Python patterns: `typing.List` instead of `lis
 ┌─────────────────────────────────────────────────────────┐
 │ CLI (cli.py)                                            │
 │  search │ retrieve │ list │ detect-version │ check      │
-│  setup │ uninstall                                      │
+│  setup │ uninstall │ doctor                             │
 ├─────────┴──────────┴──────┴─────────────────────────────┤
 │                                                         │
 │  ┌──────────────┐  ┌──────────────┐  ┌───────────────┐  │
@@ -73,6 +73,7 @@ LLMs frequently generate outdated Python patterns: `typing.List` instead of `lis
 | `check.py` | Scan a Python file for outdated patterns against guide definitions (regex + tokenize, not AST) |
 | `setup_cmd.py` | Automate MCP server registration and Agent Skills symlink creation |
 | `uninstall_cmd.py` | Reverse `mpg setup`: deregister the MCP server and remove the Skills symlink |
+| `doctor.py` | Read-only verdict on each delivery channel `setup` writes (present / degraded / absent / unknown). Reports and never repairs; `setup` stays the repair tool |
 | `mcp_server.py` | MCP server — JSON-RPC 2.0 over stdio, zero external dependencies |
 
 ## Guide format
@@ -468,12 +469,29 @@ status the process exits with.
 | `uninstall` | every step succeeds | 0 |
 | `uninstall` | any step fails | 1 |
 | `uninstall` | mutually exclusive options combined | 1 |
+| `doctor` | every channel is present or absent | 0 |
+| `doctor` | any channel is degraded | 1 |
+| `doctor` | any channel cannot be determined | 2 |
+| `doctor` | `--project-dir` names something that is not a directory | 2 |
+
+`doctor`'s three states can co-occur, so the rows are ordered: a run with both a degraded and an
+undeterminable channel exits 2, not 1. "Could not tell" outranks "is broken" because a run that
+failed to examine a channel cannot claim to have found every broken one. A `--project-dir` that
+is not a directory exits 2 for the same reason it would exit 2 having evaluated nothing at all:
+nothing was inspected, and every channel reading `absent` against a path that does not exist
+would otherwise answer a typo with 0.
 
 **Outside this table**, and not part of what it guarantees:
 
 - **Exits argparse produces on its own** — an unknown option, a missing argument, an invalid
   `--format` choice. These are 2 as well, but they belong to argparse's contract rather than
   to this one, and a caller distinguishing "bad usage" from "no results" reads 2 from either.
+  This collides with `doctor`, where 2 is a *result* rather than a usage error: a mistyped
+  `--porject-dir` and "a channel could not be determined" both leave 2. Stdout does not break
+  the tie either. `doctor` writes its per-channel verdict there when it inspects something,
+  but the row above for a `--project-dir` that is not a directory writes to stderr and leaves
+  stdout empty — the same shape argparse produces for a bad option. A script that reads only
+  the status should treat `doctor`'s 2 as "look at the output".
 - **Termination by signal.** `main()` restores the default `SIGPIPE` disposition, so a closed
   pipe kills the process rather than raising `BrokenPipeError` — a shell reports 141, and a
   parent process reading the raw status sees `-SIGPIPE`. The `except BrokenPipeError` clause

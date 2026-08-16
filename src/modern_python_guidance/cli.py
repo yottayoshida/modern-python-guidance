@@ -22,6 +22,7 @@ from modern_python_guidance.detection_coverage import (
     detection_coverage,
     detection_metadata,
 )
+from modern_python_guidance.doctor import diagnose_all, summarize
 from modern_python_guidance.frontmatter import VALID_FREQUENCIES, VALID_LAYERS
 from modern_python_guidance.guide_index import build_index, meta_selected
 from modern_python_guidance.project_dependencies import find_dependency_context
@@ -54,6 +55,7 @@ COMMAND_GROUPS: tuple[tuple[str, tuple[tuple[str, str], ...]], ...] = (
         (
             ("setup", "Register MCP server and link Agent Skills + Rules"),
             ("uninstall", "Reverse 'setup'"),
+            ("doctor", "Report the state of every delivery channel"),
             ("mcp", "Start MCP server (JSON-RPC over stdio)"),
             ("hook", "Claude Code hook subcommands"),
         ),
@@ -307,6 +309,14 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_uninstall.add_argument("--dry-run", action="store_true", help="Show what would be done")
 
+    # doctor
+    p_doctor = registered["doctor"]
+    p_doctor.add_argument(
+        "--project-dir",
+        type=Path,
+        help="Project whose Skills/Rules/hook to inspect (default: nearest project root)",
+    )
+
     # check
     p_check = registered["check"]
     p_check.add_argument("file", type=Path, help="Python file to check")
@@ -373,6 +383,8 @@ def main(argv: list[str] | None = None) -> None:
             _cmd_setup(args)
         elif args.command == "uninstall":
             _cmd_uninstall(args)
+        elif args.command == "doctor":
+            _cmd_doctor(args)
         elif args.command == "check":
             _cmd_check(args)
         elif args.command == "hook":
@@ -606,6 +618,44 @@ def _cmd_uninstall(args: argparse.Namespace) -> None:
         dry_run=args.dry_run,
     )
     sys.exit(code)
+
+
+def _cmd_doctor(args: argparse.Namespace) -> None:
+    """Report every delivery channel, then exit with the summary status.
+
+    Human-readable only. `--format json` was deliberately left out, which makes
+    the exit status the machine-readable half of this command: 0 healthy,
+    1 something is broken, 2 something could not be determined.
+    """
+    if args.project_dir is not None and not args.project_dir.is_dir():
+        # Every channel would read as `absent` against a directory that is not
+        # there, and absent is healthy — so a mistyped path would be answered
+        # with "everything is fine". Nothing was inspected, so the status says
+        # exactly that, via the same rule an empty report set uses.
+        print(f"{args.project_dir} is not a directory; nothing was inspected.", file=sys.stderr)
+        print(
+            "Check the path, or omit --project-dir to use the nearest project root.",
+            file=sys.stderr,
+        )
+        sys.exit(summarize([]))
+
+    reports = diagnose_all(args.project_dir)
+    width = max((len(report.channel) for report in reports), default=0)
+    for report in reports:
+        print(f"{report.channel:<{width}}  {report.state:<8}  {report.detail}")
+        if report.fix:
+            print(f"{' ' * width}  {' ' * 8}  -> {report.fix}")
+    if args.project_dir is not None:
+        # Setup registers MCP in user scope by default, and no --project-dir
+        # narrows that. Three channels answer for the given project and one
+        # answers globally, so the mixed answer is labelled rather than left
+        # for the reader to infer.
+        print(
+            "\nNote: --project-dir selects where the Skills/Rules/hook are looked up."
+            " The MCP registration is resolved the way Claude Code resolves it,"
+            " which is user scope unless a project-local one shadows it."
+        )
+    sys.exit(summarize(reports))
 
 
 def _cmd_check(args: argparse.Namespace) -> None:
