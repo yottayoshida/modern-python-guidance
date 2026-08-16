@@ -781,6 +781,73 @@ class TestSetupSkills:
         assert ok is True
         assert link.resolve() == source.resolve()
 
+    def test_a_link_reached_through_a_symlinked_parent_is_left_alone(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ):
+        """The branch `link_state` spends the most words justifying.
+
+        `os.readlink` returns what was written, which can differ textually from
+        a path resolving to the same directory — `/var` -> `/private/var` on
+        macOS, or any `.claude` that is itself a symlink. Without the second
+        comparison, setup would replace a link it had just created, and doctor
+        would report it as pointing somewhere else.
+
+        Nothing measured this before. Inline, the two comparisons were one
+        `or` expression on a single line, so line coverage could not tell which
+        half ran; extracting the predicate is what made the gap visible.
+        """
+        source = self._make_source(tmp_path)
+        alias = tmp_path / "alias"
+        os.symlink(source.parent, alias)
+        project = tmp_path / "project"
+        link = project / ".claude" / "skills" / "modern-python-guidance"
+        link.parent.mkdir(parents=True)
+        os.symlink(alias / source.name, link)
+        assert os.readlink(link) != str(source), "the two paths must differ textually"
+        assert link.resolve() == source.resolve(), "and must resolve to the same place"
+
+        with patch("modern_python_guidance.setup_cmd._find_skills_dir", return_value=source):
+            ok = setup_skills(project_dir=project)
+
+        assert ok is True
+        assert "already linked" in capsys.readouterr().out
+        assert os.readlink(link) == str(alias / source.name), "the link was not rewritten"
+
+    def test_a_looped_symlink_is_replaced_rather_than_raising(self, tmp_path: Path):
+        """The one behaviour the `link_state` extraction changed.
+
+        The predicate used to be written inline here and called
+        `Path.resolve()` with nothing catching it, so a symlink loop came out
+        of `mpg setup` as an exception instead of a replaced link. Nothing
+        covered that path, which is why it took extracting the predicate to
+        notice it.
+
+        The assertion is the outcome, not the mechanism, because the mechanism
+        is version dependent. Measured: 3.12.12 raises RuntimeError and the
+        `except` clause answers `stale`; 3.13.14 and 3.14.6 return the input
+        unchanged and the equality test answers `stale` instead.
+
+        Which means this only proves the fix on the legs that raise — on the
+        others it passes against the pre-fix code too. Asserting the outcome is
+        what keeps it valid everywhere rather than red somewhere and broken
+        elsewhere; asserting which branch ran would fail on three of the four
+        supported versions.
+        """
+        source = self._make_source(tmp_path)
+        project = tmp_path / "project"
+        link = project / ".claude" / "skills" / "modern-python-guidance"
+        link.parent.mkdir(parents=True)
+        partner = tmp_path / "loop-partner"
+        os.symlink(partner, link)
+        os.symlink(link, partner)
+        assert link.is_symlink()
+
+        with patch("modern_python_guidance.setup_cmd._find_skills_dir", return_value=source):
+            ok = setup_skills(project_dir=project)
+
+        assert ok is True
+        assert link.resolve() == source.resolve()
+
     def test_non_symlink_blocker(self, tmp_path: Path, capsys: pytest.CaptureFixture[str]):
         """V-004: regular file/dir at link path produces error."""
         source = self._make_source(tmp_path)

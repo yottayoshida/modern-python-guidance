@@ -463,6 +463,66 @@ def _print_symlink_create_error(exc: OSError) -> None:
         )
 
 
+LINK_LINKED = "linked"
+"""The path is mpg's symlink and it leads to the bundled source."""
+
+LINK_STALE = "stale"
+"""The path is a symlink, but not to this installation's source (dangling included)."""
+
+LINK_FLATTENED = "flattened"
+"""Something that is not a symlink occupies the path."""
+
+LINK_ABSENT = "absent"
+"""Nothing is there."""
+
+
+def link_state(link_path: Path, source: Path) -> str:
+    """Classify what occupies `link_path` relative to the bundled `source`.
+
+    The single predicate `setup_skills`, `setup_rules`, and `doctor` all decide
+    "is this delivery path healthy?" with. Keeping it in one place is the point:
+    the two setup call sites used to carry the test inline, and a fourth reader
+    written against only half of it would disagree with setup about the very
+    links setup created — the failure `_print_flattened_symlink_error` was
+    extracted to prevent, one level up from the wording.
+
+    "Leads to the source" is deliberately two branches. A link recorded as
+    written (`os.readlink`) can differ textually from one that resolves to the
+    same file — `/var` -> `/private/var` on macOS, or any `.claude` that is
+    itself a symlink — and treating those as stale would have `doctor` report a
+    link that `setup` calls "already linked".
+
+    A dangling link is `stale`, not `absent`: it names a destination, and the
+    caller's remedy (replace the link) is the same one a wrong destination
+    needs. `Path.exists()` follows links, so the `is_symlink()` test has to come
+    first or a dangling link would fall through to `absent`.
+
+    `resolve()` walks the filesystem and can fail, and how it fails is version
+    dependent. Measured here: 3.12.12 raises RuntimeError on a symlink loop,
+    while 3.13.14 and 3.14.6 return the input unchanged and the equality test
+    below answers `stale` without any exception. A hostile or racing tree can
+    raise OSError on any of them. Every one of those is answered with `stale` —
+    the link leads nowhere usable, which is what a caller needs to know.
+
+    **This is the one behavioural change in the extraction**: the inline form
+    let those exceptions escape, so on the versions that raise, a looped link
+    crashed `mpg setup` instead of replacing the link. No existing test covered
+    that path.
+    """
+    if link_path.is_symlink():
+        if Path(os.readlink(link_path)) == source:
+            return LINK_LINKED
+        try:
+            if link_path.resolve() == source.resolve():
+                return LINK_LINKED
+        except (OSError, RuntimeError):
+            return LINK_STALE
+        return LINK_STALE
+    if link_path.exists():
+        return LINK_FLATTENED
+    return LINK_ABSENT
+
+
 def setup_skills(
     *,
     project_dir: Path | None = None,
@@ -483,14 +543,11 @@ def setup_skills(
         print(f"Would link: {link_path} -> {source}")
         return True
 
-    if link_path.is_symlink():
-        current_target = Path(os.readlink(link_path))
-        if current_target == source or link_path.resolve() == source.resolve():
-            print(f"Agent Skills already linked at {link_path.relative_to(root)}")
-            return True
-        # Stale or broken symlink — replace
-        link_path.unlink()
-    elif link_path.exists():
+    state = link_state(link_path, source)
+    if state == LINK_LINKED:
+        print(f"Agent Skills already linked at {link_path.relative_to(root)}")
+        return True
+    if state == LINK_FLATTENED:
         _print_flattened_symlink_error(
             link_path,
             root,
@@ -498,6 +555,8 @@ def setup_skills(
             remove_cmd=f"rm -rf {shlex.quote(str(link_path))}",
         )
         return False
+    if state == LINK_STALE:
+        link_path.unlink()  # replace it below
 
     try:
         skills_parent.mkdir(parents=True, exist_ok=True)
@@ -540,13 +599,11 @@ def setup_rules(
         print(f"Would link: {link_path} -> {source}")
         return True
 
-    if link_path.is_symlink():
-        current_target = Path(os.readlink(link_path))
-        if current_target == source or link_path.resolve() == source.resolve():
-            print(f"Rule already linked at {link_path.relative_to(root)}")
-            return True
-        link_path.unlink()
-    elif link_path.exists():
+    state = link_state(link_path, source)
+    if state == LINK_LINKED:
+        print(f"Rule already linked at {link_path.relative_to(root)}")
+        return True
+    if state == LINK_FLATTENED:
         _print_flattened_symlink_error(
             link_path,
             root,
@@ -557,6 +614,8 @@ def setup_rules(
             ),
         )
         return False
+    if state == LINK_STALE:
+        link_path.unlink()  # replace it below
 
     try:
         rules_parent.mkdir(parents=True, exist_ok=True)

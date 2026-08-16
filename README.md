@@ -106,6 +106,17 @@ mpg uninstall --dry-run  # preview what would be removed
 
 When `--scope local` is used, `--project-dir` is also the cwd for every MCP add, replacement, health-check, and removal operation. A missing target is created before local setup; uninstall fails closed for a missing explicit target instead of touching the caller's local registration. User-scope MCP operations remain global and do not use this path.
 
+**Check the install** — `mpg doctor` reports what each delivery channel is actually doing. It repairs nothing; `mpg setup` remains the repair tool.
+
+```bash
+mpg doctor                        # inspect the nearest project root
+mpg doctor --project-dir ./app    # inspect a specific project
+```
+
+Each channel reads as `present`, `degraded`, `absent`, or `unknown`, with the fix printed beside anything broken. The exit status is the machine-readable half: **0** when every channel is present or absent, **1** when any is degraded, **2** when any could not be determined. `absent` is not a failure — `--mcp-only`, `--skills-only`, and `--no-hook` each make it a configuration someone chose. `unknown` is never folded into health, because a check that cannot tell "working" from "not measured" is not a check.
+
+Inspecting the MCP registration runs `claude mcp get`, which starts the server to answer, so `mpg doctor` takes roughly 1.5 seconds rather than being instant. That is also why it does not use `claude mcp list` — that connects to every server you have configured, and took 30 seconds on the machine this was measured on.
+
 </details>
 
 ## CLI usage
