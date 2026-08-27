@@ -115,6 +115,10 @@ mpg doctor --project-dir ./app    # inspect a specific project
 
 Each channel reads as `present`, `degraded`, `absent`, or `unknown`, with the fix printed beside anything broken. The exit status is the machine-readable half: **0** when every channel is present or absent, **1** when any is degraded, **2** when any could not be determined. `absent` is not a failure — `--mcp-only`, `--skills-only`, and `--no-hook` each make it a configuration someone chose. `unknown` is never folded into health, because a check that cannot tell "working" from "not measured" is not a check.
 
+`present` means the delivery path is intact and carries something. For the Skills and Rules symlinks that means the target is opened and read, not just named — a link whose destination has the right name and nothing behind it is `degraded`. For the hook it means the registration is the shape Claude Code runs: the entry is a `command` entry, its arguments are the ones that invoke mpg, and exactly one entry matches each of the tools mpg hooks. A registration that only matches other tools never fires on an edit, and two that match the same tool are one more than `mpg setup` writes; both read as `degraded`. Every mpg entry in the file is examined, not the first one found.
+
+`doctor` never runs the registered command. The interpreter path in a settings file is an arbitrary string, so executing it to find out whether the hook works would make a read-only diagnostic a way to run whatever a settings file names — including one that arrived with a repository you cloned. The consequence is a gap this states rather than hides: an interpreter that exists but no longer has mpg installed into it reads as `present`.
+
 Inspecting the MCP registration runs `claude mcp get`, which starts the server to answer, so `mpg doctor` takes roughly 1.5 seconds rather than being instant. That is also why it does not use `claude mcp list` — that connects to every server you have configured, and took 30 seconds on the machine this was measured on.
 
 </details>

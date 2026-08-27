@@ -18,6 +18,7 @@ from modern_python_guidance.hook_config import (
     write_settings_atomic,
 )
 from modern_python_guidance.setup_cmd import (
+    LINK_STALE,
     RULE_FILE_NAME,
     SKILLS_LINK_NAME,
     _find_project_root,
@@ -764,6 +765,32 @@ class TestSetupSkills:
 
         assert ok is True
         assert link.resolve() == source.resolve()
+
+    def test_a_stale_verdict_never_deletes_a_real_file(self, tmp_path: Path):
+        """`stale` stopped meaning "definitely a symlink".
+
+        `link_state` used to let a failed `os.readlink` escape; it now answers
+        `stale`, which is right for its own callers and changed what `stale`
+        guarantees. Setup deletes on that answer, so a path that became a real
+        file between the classification and the delete would be unlinked here —
+        the file the `flattened` branch refuses to touch, removed through the
+        other door. The check that decides now sits next to the delete.
+        """
+        source = self._make_source(tmp_path)
+        project = tmp_path / "project"
+        link = project / ".claude" / "skills" / "modern-python-guidance"
+        link.parent.mkdir(parents=True)
+        link.write_text("not mpg's to delete\n")
+
+        with (
+            patch("modern_python_guidance.setup_cmd._find_skills_dir", return_value=source),
+            patch("modern_python_guidance.setup_cmd.link_state", return_value=LINK_STALE),
+        ):
+            ok = setup_skills(project_dir=project)
+
+        assert ok is False
+        assert link.is_file()
+        assert link.read_text() == "not mpg's to delete\n"
 
     def test_broken_symlink_replaced(self, tmp_path: Path):
         """V-011: dangling symlink is replaced."""

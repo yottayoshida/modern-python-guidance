@@ -14,6 +14,7 @@ import contextlib
 import copy
 import json
 import os
+import re
 import stat
 import sys
 import tempfile
@@ -105,22 +106,103 @@ def build_mpg_group(python: str) -> dict:
     return {"matcher": HOOK_MATCHER, "hooks": [build_mpg_hook_entry(python)]}
 
 
-def find_mpg_group(settings: dict) -> dict | None:
-    """Return mpg's PostToolUse group dict if present, else None."""
+def find_mpg_entries(settings: dict) -> list[tuple[dict, dict]]:
+    """Every (group, entry) pair in `PostToolUse` whose entry belongs to mpg.
+
+    Entry granularity, matching `_strip_mpg_entries`. The writing side has
+    always assumed more than one can exist — `merge_hook` promises to converge
+    "from ANY starting state ... a settings file that somehow already has 2+
+    matching entries/groups" — while the only reader was `find_mpg_group`,
+    which stops at the first group. A reader that stops early cannot see a
+    second registration at all, and a second registration is exactly the shape
+    `merge_hook` was written to clean up.
+    """
     hooks = settings.get("hooks")
     if not isinstance(hooks, dict):
-        return None
+        return []
     post = hooks.get(HOOK_EVENT)
     if not isinstance(post, list):
-        return None
+        return []
+    found: list[tuple[dict, dict]] = []
     for group in post:
-        if _group_has_mpg_entry(group):
-            return group
-    return None
+        # Guarantees `group` is a dict whose `hooks` is a list, so the
+        # comprehension below can index it directly — the same guarantee
+        # `_strip_mpg_entries` relies on.
+        if not _group_has_mpg_entry(group):
+            continue
+        found.extend((group, entry) for entry in group["hooks"] if _is_mpg_entry(entry))
+    return found
+
+
+def find_mpg_group(settings: dict) -> dict | None:
+    """Return mpg's first PostToolUse group if present, else None.
+
+    Defined in terms of `find_mpg_entries` rather than carrying its own scan:
+    two traversals of the same structure would be two definitions of "an mpg
+    entry", and the one that drifted would be the one nobody read.
+
+    First-match is the right answer for the callers that ask a yes/no question
+    (`has_mpg_hook`: is anything registered, is there anything to remove).
+    Callers that read *into* what they find want `find_mpg_entries`.
+    """
+    entries = find_mpg_entries(settings)
+    return entries[0][0] if entries else None
 
 
 def has_mpg_hook(settings: dict) -> bool:
     return find_mpg_group(settings) is not None
+
+
+# Claude Code decides how to read a matcher from the characters it holds: only
+# letters, digits, `_`, `-`, spaces, `,` and `|` make it an exact string (or a
+# `|`/`,`-separated list of exact strings); anything else makes it an
+# unanchored regular expression. So `Edit|Write` is a two-name list, not an
+# alternation — it does not fire for `NotebookEdit`.
+_SIMPLE_MATCHER = re.compile(r"[A-Za-z0-9_ ,|-]*")
+
+MATCH_EVERYTHING = (None, "", "*")
+"""Matcher values Claude Code treats as "every tool"."""
+
+HOOK_TOOLS: tuple[str, ...] = tuple(HOOK_MATCHER.split("|"))
+"""The tools mpg's own matcher names. Derived from `HOOK_MATCHER` so a change
+to what mpg registers cannot leave a second list behind saying otherwise."""
+
+
+def matcher_fires_on(matcher: object, tool: str) -> bool | None:
+    """Whether a hook group's `matcher` selects `tool`.
+
+    `None` means the question could not be answered here, and is never folded
+    into `False`. Claude Code evaluates the regular-expression form in
+    JavaScript; Python's `re` accepts a different language at the edges, so a
+    pattern this process cannot compile is one it has not measured. Reporting
+    "does not fire" for it would state a result that was never obtained — and
+    would call a matcher broken that Claude Code runs perfectly well.
+    """
+    if matcher in MATCH_EVERYTHING:
+        return True
+    if not isinstance(matcher, str):
+        # A non-string matcher is not something this function can evaluate;
+        # saying so is different from saying the hook does not fire.
+        return None
+    # `fullmatch`, not `match`: Python's `$` also matches just before a trailing
+    # newline, so `^...$` calls `"Edit|Write\n"` simple. The newline puts it in
+    # the regular-expression form, where `Write` does not match at all — the
+    # misclassification turns "does not fire" into "fires", which is the
+    # direction this whole change exists to stop.
+    if _SIMPLE_MATCHER.fullmatch(matcher):
+        names = {part.strip() for part in re.split(r"[|,]", matcher)}
+        return tool in names
+    try:
+        return re.search(matcher, tool) is not None
+    except Exception:
+        # Not just `re.error`. A large enough repetition count raises
+        # `OverflowError` and deep nesting can exhaust the stack, neither of
+        # which is an `re.error` — and a matcher out of a settings file is
+        # untrusted input, so a narrow `except` here is a way to end `mpg
+        # doctor` in a traceback by writing one line of JSON. Everything that
+        # goes wrong evaluating it means the same thing to the caller: not
+        # measured.
+        return None
 
 
 def _strip_mpg_entries(post: list) -> list:

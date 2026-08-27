@@ -14,6 +14,7 @@ implementation fails it:
 
 from __future__ import annotations
 
+import os
 import subprocess
 from pathlib import Path
 
@@ -34,6 +35,7 @@ from modern_python_guidance.doctor import (
     diagnose_skills,
     summarize,
 )
+from modern_python_guidance.setup_cmd import LINK_STALE, link_state
 
 # Captured from a live `claude mcp get mpg` (2026-08-16), trimmed to the lines
 # the parser reads. Kept verbatim rather than hand-written so the check-mark and
@@ -69,11 +71,25 @@ def _completed(
     )
 
 
+def _install_skills(at: Path) -> Path:
+    """A skills directory with something in it.
+
+    The `SKILL.md` is not decoration. This fixture used to make a bare
+    directory, and every skills assertion in this file was therefore written
+    against an installation that delivers nothing — the exact false positive
+    `_skills_are_delivered` exists to catch. Keeping the fixture empty and
+    loosening the predicate would have been the other way to make these tests
+    pass, and would have deleted the check instead of satisfying it.
+    """
+    at.mkdir(parents=True)
+    (at / "SKILL.md").write_text("---\nname: modern-python-guidance\n---\n")
+    return at
+
+
 @pytest.fixture
 def bundled(tmp_path: Path) -> tuple[Path, Path]:
     """A stand-in for the packaged skills directory and rule file."""
-    skills = tmp_path / "installed" / "skills" / "modern-python-guidance"
-    skills.mkdir(parents=True)
+    skills = _install_skills(tmp_path / "installed" / "skills" / "modern-python-guidance")
     rule = tmp_path / "installed" / "rules" / "modern-python.md"
     rule.parent.mkdir(parents=True, exist_ok=True)
     rule.write_text("---\npaths: []\n---\n")
@@ -142,8 +158,7 @@ class TestSkillsAndRules:
         interpreter invoked doctor — measured against a real workspace, where
         both links were reported degraded while being perfectly healthy.
         """
-        other = tmp_path / "other-install" / "skills" / "modern-python-guidance"
-        other.mkdir(parents=True)
+        other = _install_skills(tmp_path / "other-install" / "skills" / "modern-python-guidance")
         _link_skills(project, other)
         report = diagnose_skills(project)
         assert report.state == PRESENT
@@ -201,6 +216,80 @@ class TestSkillsAndRules:
         monkeypatch.setattr(doctor, "_find_rule_source", missing)
         assert diagnose_skills(project).state == UNKNOWN
         assert diagnose_rules(project).state == UNKNOWN
+
+    def test_an_empty_target_is_degraded_on_both_paths_to_present(
+        self, project: Path, sources: tuple[Path, Path], tmp_path: Path
+    ) -> None:
+        """A link can be perfectly formed and deliver nothing.
+
+        There are two ways to reach `present`, and both used to accept a target
+        nobody had opened: a link to the bundled source, which is accepted on
+        `is_dir()` / `is_file()`, and a link into another installation, accepted
+        on the final path component alone. Named separately here because an
+        implementation that guards only one of them passes half of this test —
+        which is what the first draft of this change did.
+
+        The healthy half is in the same test so that a predicate stuck at
+        "always degraded" cannot pass either.
+        """
+        skills, rule = sources
+        # --- the bundled source itself is hollow (`LINK_LINKED`)
+        (skills / "SKILL.md").unlink()
+        rule.write_text("")
+        _link_skills(project, skills)
+        _link_rule(project, rule)
+        assert diagnose_skills(project).state == DEGRADED
+        assert diagnose_rules(project).state == DEGRADED
+
+        # --- another installation, right name, nothing behind it (`LINK_STALE`)
+        hollow = tmp_path / "hollow-install" / "skills" / "modern-python-guidance"
+        hollow.mkdir(parents=True)
+        (project / ".claude" / "skills" / "modern-python-guidance").unlink()
+        _link_skills(project, hollow)
+        report = diagnose_skills(project)
+        assert report.state == DEGRADED
+        assert "no readable" in report.detail
+
+        # --- control: the same two shapes, with content
+        (skills / "SKILL.md").write_text("---\nname: modern-python-guidance\n---\n")
+        rule.write_text("---\npaths: []\n---\n")
+        (project / ".claude" / "skills" / "modern-python-guidance").unlink()
+        _link_skills(project, skills)
+        assert diagnose_skills(project).state == PRESENT
+        assert diagnose_rules(project).state == PRESENT
+
+        (skills / "SKILL.md").write_text("x")
+        (project / ".claude" / "skills" / "modern-python-guidance").unlink()
+        live = _install_skills(tmp_path / "live-install" / "modern-python-guidance")
+        _link_skills(project, live)
+        assert diagnose_skills(project).state == PRESENT
+
+    def test_a_readlink_failure_reaches_neither_caller(
+        self, project: Path, sources: tuple[Path, Path], tmp_path: Path, monkeypatch
+    ) -> None:
+        """The tree can move between the two reads of the same link.
+
+        `link_state` classifies a link, then `_link_report` reads its
+        destination again for the wording. Both calls used to be able to raise
+        into the caller, and `link_state`'s docstring promised otherwise. A
+        read-only diagnostic that tracebacks because a link vanished mid-run has
+        failed at its only job.
+
+        `os.readlink` itself is replaced, not `setup_cmd`'s binding, because the
+        second read goes through `Path.readlink` in `doctor`. Patching one
+        module's name would leave that call site untested — and an
+        implementation that fixed only `link_state` would pass.
+        """
+        skills, _ = sources
+        link = _link_skills(project, tmp_path / "elsewhere" / "modern-python-guidance")
+
+        def vanished(*args: object, **kwargs: object) -> str:
+            raise OSError("the link is gone")
+
+        monkeypatch.setattr(os, "readlink", vanished)
+        assert link_state(link, skills) == LINK_STALE
+        report = diagnose_skills(project)  # must not raise
+        assert report.state == DEGRADED
 
 
 class TestHook:
@@ -280,6 +369,162 @@ class TestHook:
         assert report.state == DEGRADED
         assert "legacy" in report.detail
         assert "does not exist" not in report.detail
+
+    def test_what_fires_is_counted_per_tool_not_per_group(self, project: Path) -> None:
+        """A registration can be well formed and never run, or run twice.
+
+        Three shapes in one test, because each of them is what a different wrong
+        implementation gets right:
+
+        (a) a matcher that names another tool. The entry is exactly what setup
+            writes; it simply never sees an edit. Nothing looked at `matcher`
+            before, so this read `present`.
+        (b) two mpg entries inside one group. Counting groups finds one and
+            calls it healthy — the shape `merge_hook` exists to converge, seen
+            by the reader as a single registration.
+        (c) `Edit` and `Write` split across two groups. This is the control:
+            counting groups calls it a duplicate, when between them they cover
+            exactly what mpg's own matcher covers.
+        """
+        canonical = (
+            '{"type": "command", "command": "/usr/bin/env", "args": ["-m",'
+            ' "modern_python_guidance", "hook", "claude-post-tool-use"]}'
+        )
+        settings = project / ".claude" / "settings.local.json"
+
+        settings.write_text(
+            f'{{"hooks": {{"PostToolUse": [{{"matcher": "Bash", "hooks": [{canonical}]}}]}}}}'
+        )
+        report = diagnose_hook(project)
+        assert report.state == DEGRADED
+        assert "no entry's matcher selects" in report.detail
+
+        settings.write_text(
+            '{"hooks": {"PostToolUse": [{"matcher": "Edit|Write", "hooks": ['
+            f"{canonical}, {canonical}]}}]}}}}"
+        )
+        report = diagnose_hook(project)
+        assert report.state == DEGRADED
+        assert "2 mpg hook entries" in report.detail
+
+        settings.write_text(
+            '{"hooks": {"PostToolUse": ['
+            f'{{"matcher": "Edit", "hooks": [{canonical}]}},'
+            f'{{"matcher": "Write", "hooks": [{canonical}]}}]}}}}'
+        )
+        assert diagnose_hook(project).state == PRESENT
+
+    def test_an_entry_that_will_not_invoke_mpg_is_degraded(self, project: Path) -> None:
+        """`_is_mpg_entry` answers "is this ours", not "will this invoke us".
+
+        It matches on the subcommand token appearing anywhere in `args`, which
+        is the right test for ownership and no test at all for the invocation.
+        An entry can carry that token, be found, and run something else.
+        """
+        settings = project / ".claude" / "settings.local.json"
+        settings.write_text(
+            '{"hooks": {"PostToolUse": [{"matcher": "Edit|Write", "hooks": ['
+            '{"type": "command", "command": "/usr/bin/env", "args": ["-m",'
+            ' "some_other_module", "hook", "claude-post-tool-use"]}]}]}}'
+        )
+        report = diagnose_hook(project)
+        assert report.state == DEGRADED
+        assert "some_other_module" in report.detail
+
+        settings.write_text(
+            '{"hooks": {"PostToolUse": [{"matcher": "Edit|Write", "hooks": ['
+            '{"type": "prompt", "command": "/usr/bin/env", "args": ["-m",'
+            ' "modern_python_guidance", "hook", "claude-post-tool-use"]}]}]}}'
+        )
+        report = diagnose_hook(project)
+        assert report.state == DEGRADED
+        assert "prompt" in report.detail
+
+    def test_a_command_that_cannot_be_spawned_is_degraded(
+        self, project: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Existing is not the same as being runnable.
+
+        `Path("/").exists()` is True, and so is a text file's. Claude Code can
+        spawn neither, so the check that only asked whether the path existed
+        was reporting `present` about a hook that cannot start — the shape of
+        false positive the rest of this change is about.
+        """
+        _write_hook(project, "/")
+        report = diagnose_hook(project)
+        assert report.state == DEGRADED
+        assert "not a file" in report.detail
+
+        # pytest's tmp dir sits under a system temp root, which the ephemeral
+        # check answers first. That check has its own test above; silencing it
+        # here isolates the execute bit rather than removing anything.
+        monkeypatch.setattr(doctor, "is_ephemeral_interpreter", lambda _: False)
+        not_executable = project / "plain.txt"
+        not_executable.write_text("#!/bin/sh\n")
+        _write_hook(project, str(not_executable))
+        report = diagnose_hook(project)
+        assert report.state == DEGRADED
+        assert "not executable" in report.detail
+
+    def test_a_hollow_check_does_not_block_on_a_fifo(
+        self, project: Path, sources: tuple[Path, Path], tmp_path: Path
+    ) -> None:
+        """Opening `SKILL.md` must not hand control to whoever wrote the tree.
+
+        A skills directory lives in a repository, so `SKILL.md` can be a symlink
+        to a fifo and arrive by `git clone`. A blocking `open()` on it stops
+        `mpg doctor` — the command someone runs *because* they do not trust the
+        state of the tree — until the process is killed. If this test ever hangs
+        rather than fails, that is the bug.
+        """
+        install = tmp_path / "fifo-install" / "modern-python-guidance"
+        install.mkdir(parents=True)
+        os.mkfifo(install / "SKILL.md")
+        _link_skills(project, install)
+        report = diagnose_skills(project)
+        assert report.state == DEGRADED
+        assert "no readable" in report.detail
+
+    def test_a_certain_duplicate_survives_an_unevaluable_matcher(self, project: Path) -> None:
+        """What one entry hides must not erase what the others showed.
+
+        Two canonical entries are a duplicate whatever a third turns out to be.
+        Folding the whole tool into `unknown` on the first thing it could not
+        read threw away a determined verdict — and its fix — in favour of a
+        report that tells the reader nothing to do.
+        """
+        canonical = (
+            '{"type": "command", "command": "/bin/sh", "args": ["-m",'
+            ' "modern_python_guidance", "hook", "claude-post-tool-use"]}'
+        )
+        settings = project / ".claude" / "settings.local.json"
+        settings.write_text(
+            '{"hooks": {"PostToolUse": ['
+            f'{{"matcher": "Edit|Write", "hooks": [{canonical}, {canonical}]}},'
+            f'{{"matcher": "Edit(", "hooks": [{canonical}]}}]}}}}'
+        )
+        report = diagnose_hook(project)
+        assert report.state == DEGRADED
+        assert "2 mpg hook entries" in report.detail
+        assert report.fix
+
+    def test_a_matcher_this_cannot_evaluate_is_unknown_not_degraded(self, project: Path) -> None:
+        """Claude Code evaluates the regex form in JavaScript.
+
+        Python's `re` is a different language at the edges, so a pattern it
+        refuses is one this process has not measured — not one Claude Code
+        cannot run. Calling it degraded would report a healthy registration as
+        broken on the strength of a check that never completed.
+        """
+        settings = project / ".claude" / "settings.local.json"
+        settings.write_text(
+            '{"hooks": {"PostToolUse": [{"matcher": "Edit(", "hooks": ['
+            '{"type": "command", "command": "/usr/bin/env", "args": ["-m",'
+            ' "modern_python_guidance", "hook", "claude-post-tool-use"]}]}]}}'
+        )
+        report = diagnose_hook(project)
+        assert report.state == UNKNOWN
+        assert "not established" in report.detail
 
     def test_a_group_without_a_command_is_degraded(self, project: Path) -> None:
         (project / ".claude" / "settings.local.json").write_text(
