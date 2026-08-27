@@ -345,8 +345,7 @@ def _entry_shape_report(entry: dict, path: Path) -> ChannelReport:
         return ChannelReport(
             CHANNEL_HOOK,
             DEGRADED,
-            f"the mpg hook entry in {path} runs {entry.get('args')!r}, not"
-            f" {expected_args!r}",
+            f"the mpg hook entry in {path} runs {entry.get('args')!r}, not {expected_args!r}",
             "Run `mpg setup --with-hook` to rewrite it",
         )
 
@@ -441,8 +440,7 @@ def _tool_coverage_reports(found: list[tuple[dict, dict]], path: Path) -> list[C
                 ChannelReport(
                     CHANNEL_HOOK,
                     DEGRADED,
-                    f"{firing} mpg hook entries in {path} select {tool}; setup writes"
-                    " exactly one",
+                    f"{firing} mpg hook entries in {path} select {tool}; setup writes exactly one",
                     "Run `mpg setup --with-hook` to converge them into one",
                 )
             )

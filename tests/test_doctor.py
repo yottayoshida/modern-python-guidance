@@ -393,8 +393,7 @@ class TestHook:
         settings = project / ".claude" / "settings.local.json"
 
         settings.write_text(
-            '{"hooks": {"PostToolUse": [{"matcher": "Bash", "hooks": ['
-            f"{canonical}]}}]}}}}"
+            f'{{"hooks": {{"PostToolUse": [{{"matcher": "Bash", "hooks": [{canonical}]}}]}}}}'
         )
         report = diagnose_hook(project)
         assert report.state == DEGRADED
