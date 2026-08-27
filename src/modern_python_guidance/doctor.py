@@ -17,16 +17,21 @@ failure would make a red result meaningless.
 
 from __future__ import annotations
 
+import os
 import shutil
+import stat
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
 from modern_python_guidance.hook_config import (
     HOOK_SUBCOMMAND,
+    HOOK_TOOLS,
     HookConfigError,
-    _is_mpg_entry,
-    find_mpg_group,
+    build_mpg_hook_entry,
+    find_mpg_entries,
     is_ephemeral_interpreter,
+    matcher_fires_on,
     read_settings,
     settings_local_path,
 )
@@ -65,6 +70,17 @@ UNKNOWN = "unknown"
 distinguish "healthy" from "not measured" is not a check."""
 
 
+_SEVERITY = {PRESENT: 0, ABSENT: 0, DEGRADED: 1, UNKNOWN: 2}
+"""How states rank, and what each rank exits with.
+
+One table, read twice: folding several observations of one channel into a
+verdict, and folding several channels into the process's exit status. Those are
+the same ordering — `unknown` outranks `degraded` because "could not be
+measured" must not be reported as a measured failure, and neither may be
+flattened into health — and writing it twice would be two places to change with
+only one of them read on any given day."""
+
+
 @dataclass(frozen=True, slots=True)
 class ChannelReport:
     """One channel's verdict, plus what to do about it."""
@@ -75,7 +91,79 @@ class ChannelReport:
     fix: str = ""
 
 
-def _link_report(channel: str, link_path: Path, source: Path, what: str) -> ChannelReport:
+def _worst(reports: list[ChannelReport]) -> ChannelReport:
+    """The report that decides the channel. Ties keep the first, so the order
+    the observations were made in is the order the reader sees them explained."""
+    return max(reports, key=lambda report: _SEVERITY[report.state])
+
+
+def _first_byte_readable(path: Path) -> bool:
+    """Whether `path` is a regular file with content this process can read.
+
+    Reading a byte rather than asking `stat` for a size: an unreadable file has
+    a size, and a directory standing where a file belongs answers `st_size`
+    too. The question is whether a consumer opening this path would get
+    anything, and the only way to answer it is to open it.
+
+    Opened `O_NONBLOCK`, and confirmed to be a regular file *through the
+    descriptor* before anything is read. Both matter, and neither is
+    hypothetical: a skills directory is a directory in a repository, so a
+    `SKILL.md` that is a symlink to a fifo or to `/dev/stdin` can be committed
+    and cloned. A plain `open()` on it blocks, and `mpg doctor` — a read-only
+    command someone runs precisely because they do not trust the state of the
+    tree — hangs forever. Checking `is_file()` first and opening after would
+    still leave the gap between the two calls, so the check is made on the
+    descriptor that gets read.
+    """
+    try:
+        fd = os.open(path, os.O_RDONLY | os.O_NONBLOCK)
+    except OSError:
+        return False
+    try:
+        if not stat.S_ISREG(os.fstat(fd).st_mode):
+            return False
+        return bool(os.read(fd, 1))
+    except OSError:
+        return False
+    finally:
+        os.close(fd)
+
+
+def _skills_are_delivered(link_path: Path) -> bool:
+    """A skills directory that would actually deliver something.
+
+    Applied through the link, not to the resolved target, because what matters
+    is what a reader following this path sees. The bundled layout puts
+    `SKILL.md` at the top of the directory, and it is what Claude Code loads.
+    """
+    return link_path.is_dir() and _first_byte_readable(link_path / "SKILL.md")
+
+
+def _rule_is_delivered(link_path: Path) -> bool:
+    return link_path.is_file() and _first_byte_readable(link_path)
+
+
+def _link_target(link_path: Path) -> str:
+    """A symlink's recorded destination, for wording only.
+
+    `link_state` has already classified the link by the time this runs, so this
+    is a second read of a path the first one no longer owns. A read-only
+    diagnostic that tracebacks because the tree moved under it has failed at
+    the one job it has, so a failure here degrades to a phrase.
+    """
+    try:
+        return str(link_path.readlink())
+    except OSError:
+        return "a destination that could no longer be read"
+
+
+def _link_report(
+    channel: str,
+    link_path: Path,
+    source: Path,
+    what: str,
+    delivers: Callable[[Path], bool],
+) -> ChannelReport:
     """Turn `link_state` into a report. Shared by the skills and rules channels,
     which differ only in wording.
 
@@ -92,9 +180,25 @@ def _link_report(channel: str, link_path: Path, source: Path, what: str) -> Chan
     command against an already-repaired workspace called both links degraded.
     So a stale link is degraded only when it leads nowhere — `exists()` follows
     the link, so it answers exactly that.
+
+    `delivers` guards **both** paths to `present`. Neither of them used to look
+    at the target: one trusted the bundled source, which is accepted on
+    `is_dir()` / `is_file()` alone, and the other compared the final path
+    component and then told the reader it had found "a different mpg
+    installation". An empty directory carrying the right name satisfied that,
+    which is the decay this module's own docstring opens by naming — a link
+    whose target moved still resolves as a name.
     """
     state = link_state(link_path, source)
     if state == LINK_LINKED:
+        if not delivers(link_path):
+            return ChannelReport(
+                channel,
+                DEGRADED,
+                f"{link_path} is linked to {source}, which holds no readable {what}"
+                " content — the link is right and there is nothing behind it",
+                "Reinstall mpg, then run `mpg setup`",
+            )
         return ChannelReport(channel, PRESENT, f"linked to {source}")
     if state == LINK_FLATTENED:
         return ChannelReport(
@@ -105,7 +209,7 @@ def _link_report(channel: str, link_path: Path, source: Path, what: str) -> Chan
             "Remove it and re-run `mpg setup` (setup refuses to overwrite it for you)",
         )
     if state == LINK_STALE:
-        target = link_path.readlink()
+        target = _link_target(link_path)
         if not link_path.exists():
             return ChannelReport(
                 channel,
@@ -126,6 +230,14 @@ def _link_report(channel: str, link_path: Path, source: Path, what: str) -> Chan
         except (OSError, RuntimeError):
             leads_to_an_mpg_asset = False
         if leads_to_an_mpg_asset:
+            if not delivers(link_path):
+                return ChannelReport(
+                    channel,
+                    DEGRADED,
+                    f"{link_path} points at {target}, which carries an mpg {what}'s name"
+                    " and no readable content behind it",
+                    "Run `mpg setup` to re-point it at this installation",
+                )
             return ChannelReport(
                 channel,
                 PRESENT,
@@ -154,7 +266,13 @@ def diagnose_skills(project_dir: Path | None = None) -> ChannelReport:
         source = _find_skills_dir()
     except FileNotFoundError as e:
         return ChannelReport(CHANNEL_SKILLS, UNKNOWN, f"cannot locate the bundled skills: {e}")
-    return _link_report(CHANNEL_SKILLS, _skills_link_path(project_dir), source, "directory")
+    return _link_report(
+        CHANNEL_SKILLS,
+        _skills_link_path(project_dir),
+        source,
+        "directory",
+        _skills_are_delivered,
+    )
 
 
 def diagnose_rules(project_dir: Path | None = None) -> ChannelReport:
@@ -162,52 +280,31 @@ def diagnose_rules(project_dir: Path | None = None) -> ChannelReport:
         source = _find_rule_source()
     except FileNotFoundError as e:
         return ChannelReport(CHANNEL_RULES, UNKNOWN, f"cannot locate the bundled rule: {e}")
-    return _link_report(CHANNEL_RULES, _rules_file_path(project_dir), source, "file")
+    return _link_report(
+        CHANNEL_RULES,
+        _rules_file_path(project_dir),
+        source,
+        "file",
+        _rule_is_delivered,
+    )
 
 
-def diagnose_hook(project_dir: Path | None = None) -> ChannelReport:
-    """Report the PostToolUse hook registration.
+def _entry_shape_report(entry: dict, path: Path) -> ChannelReport:
+    """One mpg entry, judged on its written shape alone.
 
-    A `HookConfigError` is `degraded`, not `unknown`: the settings file is there
-    and mpg cannot read it, which is a broken state a user can act on — the four
-    shapes `read_settings` rejects (a symlinked file, an unreadable one, invalid
-    JSON, a non-object) are all things that went wrong, not things that could
-    not be measured. An absent file is not an error at all; `read_settings`
-    returns `{}` for it and the hook reads as `absent`.
+    Nothing here runs the registered command. `command` is an arbitrary string
+    out of a settings file — it need not be a Python interpreter, and a binary
+    is free to ignore whatever arguments it is handed — so executing it to find
+    out whether the hook works would turn a read-only diagnostic into a way to
+    run anything a settings file names. What can be established without that:
+    the entry is the shape Claude Code will run, and the shape mpg writes.
     """
-    root = project_dir or _find_project_root()
-    path = settings_local_path(root)
-    try:
-        settings = read_settings(path)
-    except HookConfigError as e:
-        return ChannelReport(
-            CHANNEL_HOOK,
-            DEGRADED,
-            f"cannot read {path}: {e}",
-            "Fix or remove that file, then run `mpg setup --with-hook`",
-        )
-
-    group = find_mpg_group(settings)
-    if group is None:
-        return ChannelReport(
-            CHANNEL_HOOK,
-            ABSENT,
-            f"no mpg PostToolUse hook in {path}",
-            "Run `mpg setup --with-hook`",
-        )
-
-    # mpg's own entry, not merely the first one in the group. `find_mpg_group`
-    # returns the group *containing* an mpg entry, and `_strip_mpg_entries`
-    # exists precisely because a group may mix mpg's entry with a foreign
-    # tool's — taking the first entry would have doctor judging somebody
-    # else's hook and reporting its binary as mpg's.
-    entry = next((e for e in group.get("hooks", []) if _is_mpg_entry(e)), None)
-    command = entry.get("command", "") if entry else ""
+    command = entry.get("command", "")
     if not isinstance(command, str) or not command:
         return ChannelReport(
             CHANNEL_HOOK,
             DEGRADED,
-            f"the mpg hook group in {path} has no usable command",
+            f"an mpg hook entry in {path} has no usable command",
             "Run `mpg setup --with-hook` to rewrite it",
         )
 
@@ -229,6 +326,30 @@ def diagnose_hook(project_dir: Path | None = None) -> ChannelReport:
             "Run `mpg setup --with-hook` to pin an absolute interpreter path",
         )
 
+    entry_type = entry.get("type")
+    if entry_type != "command":
+        return ChannelReport(
+            CHANNEL_HOOK,
+            DEGRADED,
+            f"the mpg hook entry in {path} has type {entry_type!r}, so Claude Code will"
+            " not run it as a command",
+            "Run `mpg setup --with-hook` to rewrite it",
+        )
+
+    # Compared against the canonical shape rather than merely looked for. The
+    # identity check that found this entry (`_is_mpg_entry`) is satisfied by the
+    # subcommand token appearing anywhere in `args`, which is the right test for
+    # "is this ours" and no test at all for "will this invoke us".
+    expected_args = build_mpg_hook_entry(command)["args"]
+    if entry.get("args") != expected_args:
+        return ChannelReport(
+            CHANNEL_HOOK,
+            DEGRADED,
+            f"the mpg hook entry in {path} runs {entry.get('args')!r}, not"
+            f" {expected_args!r}",
+            "Run `mpg setup --with-hook` to rewrite it",
+        )
+
     # `is_ephemeral_interpreter` is applied to the *registered* command, not to
     # `sys.executable` the way setup applies it: setup asks "would pinning this
     # interpreter be a mistake", doctor asks "was that mistake already made".
@@ -241,14 +362,140 @@ def diagnose_hook(project_dir: Path | None = None) -> ChannelReport:
             f"the hook is pinned to a throwaway interpreter ({command})",
             "Re-run `mpg setup --with-hook` from a durable installation",
         )
-    if not Path(command).exists():
+    # Existing is not the same as being runnable, and this channel now claims
+    # the latter. `Path("/")` exists; so does a text file with no execute bit.
+    # Claude Code can spawn neither, so reporting either as `present` would
+    # state exactly the thing this change was written to stop.
+    interpreter = Path(command)
+    if not interpreter.exists():
         return ChannelReport(
             CHANNEL_HOOK,
             DEGRADED,
             f"the hook runs {command}, which does not exist",
             "Run `mpg setup --with-hook` to re-point it",
         )
+    if not interpreter.is_file():
+        return ChannelReport(
+            CHANNEL_HOOK,
+            DEGRADED,
+            f"the hook runs {command}, which is not a file",
+            "Run `mpg setup --with-hook` to re-point it",
+        )
+    if not os.access(interpreter, os.X_OK):
+        return ChannelReport(
+            CHANNEL_HOOK,
+            DEGRADED,
+            f"the hook runs {command}, which is not executable",
+            "Run `mpg setup --with-hook` to re-point it",
+        )
     return ChannelReport(CHANNEL_HOOK, PRESENT, f"registered in {path}, running {command}")
+
+
+def _tool_coverage_reports(found: list[tuple[dict, dict]], path: Path) -> list[ChannelReport]:
+    """One report per tool mpg means to hook, counting the entries that select it.
+
+    Counted per tool rather than per group. Two groups is not the same as two
+    registrations: `matcher: "Edit"` beside `matcher: "Write"` is two groups
+    covering one tool each, which is what mpg's own matcher covers in one — and
+    a single group whose `hooks` list holds two mpg entries is one group holding
+    two registrations. Counting groups gets both of those backwards.
+
+    The report for a duplicate says how many entries are registered, and stops
+    there. Claude Code's documented de-duplication covers the same handler
+    appearing in more than one settings file; what it does with a repeat inside
+    one file is not something this can claim to know.
+    """
+    reports: list[ChannelReport] = []
+    for tool in HOOK_TOOLS:
+        verdicts = [matcher_fires_on(group.get("matcher"), tool) for group, _ in found]
+        unevaluated = sum(verdict is None for verdict in verdicts)
+        firing = sum(verdict is True for verdict in verdicts)
+        # An entry nobody could evaluate does not erase what the others
+        # established. Two canonical entries are already a duplicate whatever a
+        # third turns out to be, and the duplicate carries a fix while
+        # "not established" carries none. Only the counts that a further
+        # matcher could still change are reported as unmeasured.
+        if unevaluated and firing < 2:
+            reports.append(
+                ChannelReport(
+                    CHANNEL_HOOK,
+                    UNKNOWN,
+                    f"a matcher this cannot evaluate appears on {unevaluated} of the"
+                    f" {len(found)} mpg hook entries in {path}, so the number reaching"
+                    f" {tool} was not established (at least {firing})",
+                )
+            )
+            continue
+        if firing == 0:
+            reports.append(
+                ChannelReport(
+                    CHANNEL_HOOK,
+                    DEGRADED,
+                    f"the hook is registered in {path}, but no entry's matcher selects"
+                    f" {tool}, so editing a file never reaches it",
+                    "Run `mpg setup --with-hook` to register mpg's own matcher",
+                )
+            )
+        elif firing > 1:
+            reports.append(
+                ChannelReport(
+                    CHANNEL_HOOK,
+                    DEGRADED,
+                    f"{firing} mpg hook entries in {path} select {tool}; setup writes"
+                    " exactly one",
+                    "Run `mpg setup --with-hook` to converge them into one",
+                )
+            )
+    return reports
+
+
+def diagnose_hook(project_dir: Path | None = None) -> ChannelReport:
+    """Report the PostToolUse hook registration.
+
+    A `HookConfigError` is `degraded`, not `unknown`: the settings file is there
+    and mpg cannot read it, which is a broken state a user can act on — the four
+    shapes `read_settings` rejects (a symlinked file, an unreadable one, invalid
+    JSON, a non-object) are all things that went wrong, not things that could
+    not be measured. An absent file is not an error at all; `read_settings`
+    returns `{}` for it and the hook reads as `absent`.
+
+    Every mpg entry is examined, not the first one found. The writing side has
+    always allowed for more than one — `merge_hook` converges "from ANY starting
+    state" — so a reader that stops at the first can call the channel healthy
+    with a second, broken registration sitting behind it.
+    """
+    root = project_dir or _find_project_root()
+    path = settings_local_path(root)
+    try:
+        settings = read_settings(path)
+    except HookConfigError as e:
+        return ChannelReport(
+            CHANNEL_HOOK,
+            DEGRADED,
+            f"cannot read {path}: {e}",
+            "Fix or remove that file, then run `mpg setup --with-hook`",
+        )
+
+    found = find_mpg_entries(settings)
+    if not found:
+        return ChannelReport(
+            CHANNEL_HOOK,
+            ABSENT,
+            f"no mpg PostToolUse hook in {path}",
+            "Run `mpg setup --with-hook`",
+        )
+
+    reports = [_entry_shape_report(entry, path) for _, entry in found]
+    reports.extend(_tool_coverage_reports(found, path))
+    worst = _worst(reports)
+    if worst.state != PRESENT or len(found) == 1:
+        return worst
+    commands = ", ".join(sorted({entry.get("command", "") for _, entry in found}))
+    return ChannelReport(
+        CHANNEL_HOOK,
+        PRESENT,
+        f"registered in {path} as {len(found)} entries, running {commands}",
+    )
 
 
 def _parse_mcp_fields(stdout: bytes) -> dict[str, str]:
@@ -384,9 +631,4 @@ def summarize(reports: list[ChannelReport]) -> int:
     """
     if not reports:
         return 2
-    states = {report.state for report in reports}
-    if UNKNOWN in states:
-        return 2
-    if DEGRADED in states:
-        return 1
-    return 0
+    return max(_SEVERITY[report.state] for report in reports)

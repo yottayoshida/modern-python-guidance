@@ -15,11 +15,15 @@ import pytest
 
 from modern_python_guidance.hook_config import (
     HOOK_EVENT,
+    HOOK_MATCHER,
+    HOOK_TOOLS,
     HookConfigError,
     build_mpg_hook_entry,
+    find_mpg_entries,
     find_mpg_group,
     has_mpg_hook,
     is_ephemeral_interpreter,
+    matcher_fires_on,
     merge_hook,
     read_settings,
     settings_local_path,
@@ -730,3 +734,116 @@ class TestBuildMpgHookEntry:
         assert entry["type"] == "command"
         assert isinstance(entry["args"], list)
         assert " " not in entry["command"] or entry["command"] == PYTHON
+
+
+class TestFindMpgEntries:
+    """Entry granularity, matching what `_strip_mpg_entries` removes.
+
+    `merge_hook` promises to converge from any starting state, including one
+    that already holds several matching entries. Until now nothing could read
+    that state back: the only finder stopped at the first group.
+    """
+
+    def _settings(self, *groups: dict) -> dict:
+        return {"hooks": {HOOK_EVENT: list(groups)}}
+
+    def _group(self, matcher: str, *commands: str) -> dict:
+        return {
+            "matcher": matcher,
+            "hooks": [build_mpg_hook_entry(command) for command in commands],
+        }
+
+    def test_every_entry_is_returned_with_its_group(self):
+        settings = self._settings(
+            self._group("Edit|Write", "/a/python", "/b/python"),
+            self._group("Edit", "/c/python"),
+        )
+        found = find_mpg_entries(settings)
+        assert [entry["command"] for _, entry in found] == ["/a/python", "/b/python", "/c/python"]
+        assert [group["matcher"] for group, _ in found] == ["Edit|Write", "Edit|Write", "Edit"]
+
+    def test_foreign_entries_are_not_returned(self):
+        group = self._group("Edit|Write", "/a/python")
+        group["hooks"].insert(0, {"type": "command", "command": "/somebody/else.sh"})
+        found = find_mpg_entries(self._settings(group))
+        assert [entry["command"] for _, entry in found] == ["/a/python"]
+
+    def test_the_first_group_finder_is_the_head_of_this_one(self):
+        """Two traversals would be two definitions of "an mpg entry"."""
+        settings = self._settings(
+            {"matcher": "Bash", "hooks": [{"type": "command", "command": "/other.sh"}]},
+            self._group("Edit|Write", "/a/python"),
+        )
+        assert find_mpg_group(settings) is find_mpg_entries(settings)[0][0]
+        assert has_mpg_hook(settings)
+
+    def test_shapes_that_hold_nothing_return_empty(self):
+        assert find_mpg_entries({}) == []
+        assert find_mpg_entries({"hooks": "not a dict"}) == []
+        assert find_mpg_entries({"hooks": {HOOK_EVENT: "not a list"}}) == []
+        assert find_mpg_entries(self._settings({"hooks": "not a list"})) == []
+        assert find_mpg_group({}) is None
+
+
+class TestMatcherFiresOn:
+    """Claude Code decides how to read a matcher from the characters it holds.
+
+    Simple characters make it an exact name or a `|`/`,`-separated list of exact
+    names; anything else makes it an unanchored regular expression. Written from
+    the hooks reference rather than guessed — the first draft of this change
+    treated every matcher as a regex, which quietly turns `Edit|Write` into an
+    alternation that also selects `NotebookEdit`.
+    """
+
+    def test_the_canonical_matcher_covers_exactly_the_tools_mpg_names(self):
+        for tool in HOOK_TOOLS:
+            assert matcher_fires_on(HOOK_MATCHER, tool) is True
+        assert matcher_fires_on(HOOK_MATCHER, "NotebookEdit") is False
+        assert matcher_fires_on(HOOK_MATCHER, "Bash") is False
+
+    def test_the_tool_list_comes_from_the_matcher_mpg_writes(self):
+        assert tuple(HOOK_MATCHER.split("|")) == HOOK_TOOLS
+
+    @pytest.mark.parametrize("matcher", [None, "", "*"])
+    def test_the_wildcard_forms_select_everything(self, matcher):
+        assert matcher_fires_on(matcher, "Edit") is True
+        assert matcher_fires_on(matcher, "Bash") is True
+
+    def test_a_comma_list_is_exact_names_too(self):
+        assert matcher_fires_on("Edit, Write", "Write") is True
+        assert matcher_fires_on("Edit, Write", "Writer") is False
+
+    def test_a_pattern_character_switches_to_an_unanchored_regex(self):
+        assert matcher_fires_on("^Edit$", "Edit") is True
+        assert matcher_fires_on("Edit.*", "NotebookEdit") is True
+        assert matcher_fires_on("^Edit$", "NotebookEdit") is False
+
+    def test_what_cannot_be_evaluated_is_none_rather_than_false(self):
+        """`None` is not folded into "does not fire".
+
+        Claude Code runs the regex in JavaScript. A pattern Python refuses is
+        one this process has not measured, and reporting it as not firing would
+        call a working registration broken.
+        """
+        assert matcher_fires_on("Edit(", "Edit") is None
+        assert matcher_fires_on(42, "Edit") is None
+
+    def test_a_matcher_cannot_end_the_process_it_is_read_by(self):
+        """A matcher is untrusted input, and `re` raises more than `re.error`.
+
+        A large enough repetition count comes back as `OverflowError`, which a
+        narrow `except re.error` lets through — one line of JSON in a settings
+        file, and `mpg doctor` ends in a traceback instead of a report.
+        """
+        assert matcher_fires_on("(?:a){4294967295}", "Edit") is None
+
+    def test_a_trailing_newline_does_not_pass_for_a_simple_list(self):
+        """Python's `$` also matches before a trailing newline.
+
+        `Edit|Write\\n` classified as a simple list reads as covering both
+        tools. It holds a character the simple form does not allow, so the real
+        rule makes it a regular expression, where `Write` does not match at
+        all — the misclassification turns "does not fire" into "fires".
+        """
+        assert matcher_fires_on("Edit|Write\n", "Edit") is True
+        assert matcher_fires_on("Edit|Write\n", "Write") is False

@@ -508,11 +508,18 @@ def link_state(link_path: Path, source: Path) -> str:
     let those exceptions escape, so on the versions that raise, a looped link
     crashed `mpg setup` instead of replacing the link. No existing test covered
     that path.
+
+    `os.readlink` is inside the same `try`, and was not at first. It is a
+    second syscall against a path `is_symlink()` no longer owns: the link can
+    be replaced or removed in between, and a parent can stop being readable.
+    Left outside, it made the promise above true only for `resolve()` — the
+    docstring said "answered with stale" while one of the two reads could still
+    take the caller down.
     """
     if link_path.is_symlink():
-        if Path(os.readlink(link_path)) == source:
-            return LINK_LINKED
         try:
+            if Path(os.readlink(link_path)) == source:
+                return LINK_LINKED
             if link_path.resolve() == source.resolve():
                 return LINK_LINKED
         except (OSError, RuntimeError):
@@ -521,6 +528,37 @@ def link_state(link_path: Path, source: Path) -> str:
     if link_path.exists():
         return LINK_FLATTENED
     return LINK_ABSENT
+
+
+def _remove_stale_link(link_path: Path, root: Path, **flattened: object) -> bool:
+    """Take a stale link out of the way so a fresh one can be written.
+
+    The symlink test is taken again here rather than inherited from
+    `link_state`. `stale` now covers two different situations: a link that
+    leads somewhere wrong, and a link this process could not read at all —
+    including one that stopped being a link between the classification and
+    now. Unlinking on the second would delete a real file, which is precisely
+    what the `flattened` branch exists to refuse. Widening `link_state` to stop
+    raising made that reachable, so the delete carries its own check.
+
+    Returns False when the caller must stop, having already explained why.
+    """
+    if not link_path.is_symlink():
+        # `exists()` follows links, and a link is exactly what this branch has
+        # ruled out — so it answers the same question `lexists` would here,
+        # without reaching for `os.path`.
+        if link_path.exists():
+            _print_flattened_symlink_error(link_path, root, **flattened)
+            return False
+        # Gone entirely between the two looks. Nothing to remove, and the
+        # caller is about to create the link it wanted anyway.
+        return True
+    try:
+        link_path.unlink()
+    except OSError as e:
+        print(f"Error: cannot replace {link_path}: {e}", file=sys.stderr)
+        return False
+    return True
 
 
 def setup_skills(
@@ -555,8 +593,13 @@ def setup_skills(
             remove_cmd=f"rm -rf {shlex.quote(str(link_path))}",
         )
         return False
-    if state == LINK_STALE:
-        link_path.unlink()  # replace it below
+    if state == LINK_STALE and not _remove_stale_link(
+        link_path,
+        root,
+        kind="path",
+        remove_cmd=f"rm -rf {shlex.quote(str(link_path))}",
+    ):
+        return False
 
     try:
         skills_parent.mkdir(parents=True, exist_ok=True)
@@ -614,8 +657,16 @@ def setup_rules(
             ),
         )
         return False
-    if state == LINK_STALE:
-        link_path.unlink()  # replace it below
+    if state == LINK_STALE and not _remove_stale_link(
+        link_path,
+        root,
+        kind="file",
+        remove_cmd=f"rm {shlex.quote(str(link_path))}",
+        extra_note=(
+            " Its content will be replaced by the up-to-date rule once removed and re-linked."
+        ),
+    ):
+        return False
 
     try:
         rules_parent.mkdir(parents=True, exist_ok=True)
