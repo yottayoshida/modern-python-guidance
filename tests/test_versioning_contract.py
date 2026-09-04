@@ -47,7 +47,7 @@ FROZEN_CLI: dict[str, tuple[set[str], set[str]]] = {
         },
     ),
     "detect-version": (set(), {"--format", "--project-dir"}),
-    "doctor": (set(), {"--project-dir"}),
+    "doctor": (set(), {"--project-dir", "--run-interpreter"}),
     "hook": ({"hook_name"}, set()),
     "list": (
         set(),

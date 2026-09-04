@@ -17,11 +17,14 @@ from __future__ import annotations
 import importlib.resources
 import os
 import subprocess
+import sys
+import time
 from pathlib import Path
 
 import pytest
 
-from modern_python_guidance import doctor, setup_cmd
+from modern_python_guidance import __version__, doctor, setup_cmd
+from modern_python_guidance.cli import main as cli_main
 from modern_python_guidance.doctor import (
     ABSENT,
     CHANNELS,
@@ -125,6 +128,39 @@ def _link_rule(project: Path, target: Path) -> Path:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.symlink_to(target)
     return path
+
+
+def _recording_interpreter(directory: Path, marker: Path) -> Path:
+    """A fake interpreter that records having been run, then answers correctly.
+
+    It prints what a healthy `--version` prints, so a probe reaching it reads as
+    `present` — the marker distinguishes "was not run" from "was run and
+    failed", which a verdict alone cannot.
+    """
+    script = directory / "recording-interpreter.sh"
+    script.write_text(f'#!/bin/sh\n: > "{marker}"\necho "modern-python-guidance {__version__}"\n')
+    script.chmod(0o755)
+    return script
+
+
+def _survivors(script: Path) -> list[str]:
+    """Processes still running this script, by name.
+
+    The probe's contract is that a timed-out child does not outlive the answer.
+    Asserting on the report alone cannot see that: a version of this code
+    returned `unknown` on time and left `sleep` running for a day.
+    """
+    listing = subprocess.run(
+        ["/bin/ps", "-Ao", "pid=,command="], capture_output=True, text=True, check=False
+    )
+    return [line for line in listing.stdout.splitlines() if str(script) in line]
+
+
+def _run_cli_doctor(project: Path, *flags: str) -> int:
+    """Run the doctor CLI in-process and return its exit status."""
+    with pytest.raises(SystemExit) as excinfo:
+        cli_main(["doctor", "--project-dir", str(project), *flags])
+    return int(excinfo.value.code or 0)
 
 
 def _write_hook(project: Path, command: str) -> None:
@@ -620,6 +656,321 @@ class TestHook:
         report = diagnose_hook(project)
         assert report.state == DEGRADED
         assert "no usable command" in report.detail
+
+
+class TestProbeTheRegisteredInterpreter:
+    """#236: the opt-in check that runs the interpreter a settings file names.
+
+    Its own class because every test here has to silence the ephemeral-path
+    check first. `tmp_path` is derived from `tempfile.gettempdir()`, which is
+    `/tmp` on Linux and resolves under `/private/var/folders` on macOS —
+    both of them roots `is_ephemeral_interpreter` rejects. Left alone, every
+    probe test would be answered `degraded` by the shape checks and pass
+    without the probe ever running, on either platform.
+
+    Silencing it here isolates the probe; the ephemeral check keeps its own
+    tests in the class above.
+    """
+
+    @pytest.fixture(autouse=True)
+    def _allow_temp_interpreters(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(doctor, "is_ephemeral_interpreter", lambda _: False)
+
+    def test_a_probe_is_not_run_unless_asked_for(self, project: Path, tmp_path: Path) -> None:
+        """#236: the default is the security boundary, so measure it from outside.
+
+        A script that records having run, registered as the interpreter. Without
+        the flag the marker must not appear — checked through `diagnose_hook`
+        *and* through `main(["doctor"])`, because a default of False in the
+        function still executes if the CLI passes True unconditionally, and
+        neither test catches the other's mutation.
+
+        The marker path is absolute: the probe runs with a cut-down environment in
+        a scratch directory, so a relative one would land somewhere this test
+        cannot see and the assertion would pass for the wrong reason.
+        """
+        marker = tmp_path / "probe-ran"
+        interpreter = _recording_interpreter(tmp_path, marker)
+        _write_hook(project, str(interpreter))
+
+        assert diagnose_hook(project).state == PRESENT
+        assert not marker.exists(), "diagnose_hook ran the interpreter without being asked"
+
+        exit_code = _run_cli_doctor(project)
+        assert not marker.exists(), "the doctor CLI ran the interpreter without --run-interpreter"
+        assert exit_code == 0
+
+        # The positive control: the same registration, asked to probe, does run
+        # it. Without this the assertions above pass for an implementation that
+        # can never probe at all.
+        _run_cli_doctor(project, "--run-interpreter")
+        assert marker.exists(), "--run-interpreter did not reach the interpreter"
+
+    def test_an_interpreter_without_mpg_is_degraded_even_when_it_succeeds(
+        self, project: Path, tmp_path: Path
+    ) -> None:
+        """Exit status is not the test — measured, not assumed.
+
+        A script that ignores its arguments and exits 0 passes every shape check
+        and every exit-status probe, while loading nothing. Comparing the output
+        against what `--version` prints is what separates it from a real
+        interpreter, and this test fails if that comparison is dropped.
+        """
+        liar = tmp_path / "liar.sh"
+        liar.write_text("#!/bin/sh\nexit 0\n")
+        liar.chmod(0o755)
+        _write_hook(project, str(liar))
+
+        report = diagnose_hook(project, run_interpreter=True)
+        assert report.state == DEGRADED
+        assert "without printing mpg's version" in report.detail
+
+    def test_a_real_interpreter_with_mpg_is_present(self, project: Path) -> None:
+        """The healthy control for the two tests around it: a probe that answers
+        correctly still reads `present`, so neither "always degraded" nor a
+        comparison against the wrong string survives."""
+        _write_hook(project, sys.executable)
+        report = diagnose_hook(project, run_interpreter=True)
+        assert report.state == PRESENT, report.detail
+        assert __version__ in report.detail
+
+    def test_what_the_cli_prints_is_what_the_probe_recognises(self) -> None:
+        """Two definitions of one string, held together.
+
+        `doctor` recognises `modern-python-guidance <version>`; the CLI prints
+        argparse's `prog` and the package version. If either moves, every
+        healthy installation reads as degraded — a failure that would look like
+        a broken environment rather than a broken constant. Run through the same
+        argv the probe uses, so a change to that shape is caught here too.
+        """
+        proc = subprocess.run(
+            doctor._probe_command(sys.executable),
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        assert doctor._version_from_probe_output(proc.stdout.strip()) == __version__
+
+    def test_a_broken_shebang_is_degraded_not_unknown(self, project: Path, tmp_path: Path) -> None:
+        """Failing to start is not the same as failing to measure.
+
+        A script whose interpreter does not exist passes exists/is_file/X_OK and
+        then fails at exec. Claude Code spawning the same hook hits the same
+        wall, so this is a measured failure — `degraded`, exit 1 — not an
+        unmeasured one. Folding it into `unknown` would exit 2 and tell the
+        reader nothing was established, when in fact something was.
+        """
+        broken = tmp_path / "broken.sh"
+        broken.write_text("#!/nonexistent-interpreter\nexit 0\n")
+        broken.chmod(0o755)
+        _write_hook(project, str(broken))
+
+        report = diagnose_hook(project, run_interpreter=True)
+        assert report.state == DEGRADED
+        assert "cannot be executed" in report.detail
+        assert report.fix
+
+    def test_a_child_that_escapes_the_process_group_cannot_hang_the_probe(
+        self, project: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The probe must return even when the killing does not work.
+
+        `start_new_session` puts the child in its own process group and the
+        timeout kills the group — but a child that calls `setsid()` itself and
+        leaves a grandchild holding stdout escapes it. Draining the pipe after
+        that waits for an EOF that never comes, and `mpg doctor
+        --run-interpreter` hangs with no message at all. Found by review, with
+        this shape; if this test hangs rather than fails, it is back.
+
+        The grandchild outlives the test by design, so it is given a short life
+        of its own rather than relying on being killed.
+        """
+        monkeypatch.setattr(doctor, "PROBE_TIMEOUT_SECONDS", 0.5)
+        escaper = tmp_path / "escaper.sh"
+        escaper.write_text(
+            "#!/bin/sh\n"
+            f'{sys.executable} -c "import os,time; os.setsid(); time.sleep(20)" &\n'
+            "sleep 20\n"
+        )
+        escaper.chmod(0o755)
+        _write_hook(project, str(escaper))
+
+        started = time.monotonic()
+        report = diagnose_hook(project, run_interpreter=True)
+        elapsed = time.monotonic() - started
+
+        assert report.state == UNKNOWN
+        assert "did not answer" in report.detail
+        assert elapsed < 10, f"the probe took {elapsed:.1f}s — it waited on the escaped child"
+        # Returning on time is only half of it. The first fix did that and left
+        # the child running, because the early return jumped over the kill.
+        assert not _survivors(escaper), "the probe returned but left its direct child alive"
+
+    def test_a_chatty_interpreter_cannot_exhaust_memory(
+        self, project: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Output is read up to a limit, not to EOF.
+
+        `cat /dev/zero` as the registered command took this process to 2.3 GB
+        resident in one second when the pipe was drained without a bound
+        (measured in review). The check needs about thirty bytes.
+        """
+        monkeypatch.setattr(doctor, "PROBE_TIMEOUT_SECONDS", 0.5)
+        monkeypatch.setattr(doctor, "PROBE_OUTPUT_LIMIT", 256)
+        firehose = tmp_path / "firehose.sh"
+        firehose.write_text("#!/bin/sh\nexec cat /dev/zero\n")
+        firehose.chmod(0o755)
+        _write_hook(project, str(firehose))
+
+        captured: list[bytes] = []
+        real_read = doctor._read_bounded
+
+        def recording(proc: subprocess.Popen[bytes]) -> doctor._ProbeOutput:
+            output = real_read(proc)
+            captured.append(output.data)
+            return output
+
+        monkeypatch.setattr(doctor, "_read_bounded", recording)
+        report = diagnose_hook(project, run_interpreter=True)
+
+        assert captured, "the probe never read the child's output"
+        assert len(captured[0]) <= 256, f"read {len(captured[0])} bytes past the limit"
+        assert report.state in {DEGRADED, UNKNOWN}
+
+    def test_an_older_mpg_in_the_hook_interpreter_is_still_present(
+        self, project: Path, tmp_path: Path
+    ) -> None:
+        """A hook wired to a different mpg version is working, not broken.
+
+        Comparing the probe's output against *this* process's `__version__`
+        would report an interpreter holding mpg 1.0.9 as "not an interpreter
+        with mpg installed" — false, and the same mistake `_link_report` avoids
+        for a link into another installation.
+        """
+        older = tmp_path / "older-mpg.sh"
+        older.write_text('#!/bin/sh\necho "modern-python-guidance 0.0.1-not-this-one"\n')
+        older.chmod(0o755)
+        _write_hook(project, str(older))
+
+        report = diagnose_hook(project, run_interpreter=True)
+        assert report.state == PRESENT, report.detail
+        assert "0.0.1-not-this-one" in report.detail
+
+    def test_output_that_only_resembles_a_version_is_not_accepted(
+        self, project: Path, tmp_path: Path
+    ) -> None:
+        """The control for the test above: accepting any version must not become
+        accepting any output. A bare echo of the program name is not a version,
+        and neither is a sentence that happens to start with it."""
+        for script_body in (
+            'echo "modern-python-guidance"\n',
+            'echo "modern-python-guidance is not installed here"\n',
+            'echo "something-else 1.1.0"\n',
+        ):
+            impostor = tmp_path / "impostor.sh"
+            impostor.write_text(f"#!/bin/sh\n{script_body}")
+            impostor.chmod(0o755)
+            _write_hook(project, str(impostor))
+
+            report = diagnose_hook(project, run_interpreter=True)
+            assert report.state == DEGRADED, f"{script_body!r} was accepted: {report.detail}"
+
+    def test_an_interpreter_that_never_answers_is_unknown(
+        self, project: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The other half of the classification, and the timeout path itself.
+
+        The timeout is shortened rather than waited out; what is being checked
+        is that a child which outlives it is killed and reported as unmeasured,
+        not how long five seconds is.
+        """
+        monkeypatch.setattr(doctor, "PROBE_TIMEOUT_SECONDS", 0.3)
+        sleeper = tmp_path / "sleeper.sh"
+        sleeper.write_text("#!/bin/sh\nsleep 30\n")
+        sleeper.chmod(0o755)
+        _write_hook(project, str(sleeper))
+
+        report = diagnose_hook(project, run_interpreter=True)
+        assert report.state == UNKNOWN
+        assert "did not answer" in report.detail
+        assert not _survivors(sleeper), "the timed-out child outlived the answer"
+
+    def test_the_child_gets_only_path_and_home(self, project: Path, tmp_path: Path) -> None:
+        """What the probe hands the child, measured from the child.
+
+        The bounds this feature is argued from are listed in the README, and one
+        of them is the environment. When it went from empty to `PATH` and `HOME`
+        — so pyenv and conda shims could start — four prose descriptions of it
+        stayed behind, because nothing here read the value. This is that reader.
+        """
+        dump = tmp_path / "env-dump"
+        reporter = tmp_path / "report-env.sh"
+        reporter.write_text(f'#!/bin/sh\nenv > "{dump}"\necho "modern-python-guidance 1.0"\n')
+        reporter.chmod(0o755)
+        _write_hook(project, str(reporter))
+
+        assert diagnose_hook(project, run_interpreter=True).state == PRESENT
+        seen = {line.split("=", 1)[0] for line in dump.read_text().splitlines() if "=" in line}
+        # `_` and `PWD` are set by the shell itself, not inherited.
+        assert seen - {"_", "PWD", "SHLVL"} == {"PATH", "HOME"}, sorted(seen)
+
+    def test_at_most_four_interpreters_are_actually_run(
+        self, project: Path, tmp_path: Path
+    ) -> None:
+        """The limit is on executions, not on the wording of a report.
+
+        Six distinct commands, each recording that it ran: exactly four markers
+        must appear. Counting the report's sentences instead would pass for an
+        implementation that runs all six and mentions four.
+        """
+        entries = []
+        markers = []
+        for index in range(6):
+            marker = tmp_path / f"ran-{index}"
+            markers.append(marker)
+            script = tmp_path / f"interp-{index}.sh"
+            script.write_text(f'#!/bin/sh\n: > "{marker}"\necho "modern-python-guidance 1.0"\n')
+            script.chmod(0o755)
+            entries.append(
+                '{"type": "command", "command": "' + str(script) + '", "args": ["-m",'
+                ' "modern_python_guidance", "hook", "claude-post-tool-use"]}'
+            )
+        (project / ".claude" / "settings.local.json").write_text(
+            '{"hooks": {"PostToolUse": [{"matcher": "Edit|Write", "hooks": ['
+            + ", ".join(entries)
+            + "]}]}}"
+        )
+
+        report = diagnose_hook(project, run_interpreter=True)
+        assert sum(marker.exists() for marker in markers) == doctor.PROBE_LIMIT
+        assert report.state == UNKNOWN
+        assert "were not run" in report.detail
+
+    def test_probe_output_cannot_forge_the_report(self, project: Path, tmp_path: Path) -> None:
+        """The probe prints part of the child's output back to a terminal.
+
+        A version accepted as "any token without spaces" let this through:
+
+            modern-python-guidance 1.1.0\\x1b[2K\\rhook  present  registered and healthy
+
+        `ESC [ 2K` erases the line and `\\r` returns to its start, so the child
+        rewrites doctor's own verdict — from a settings file that, as the README
+        says, may have arrived with a cloned repository. Found in review, with
+        exactly this script.
+        """
+        esc = chr(27)
+        forger = tmp_path / "forger.sh"
+        forger.write_text(
+            "#!/bin/sh\n"
+            f"printf 'modern-python-guidance 1.1.0{esc}[2K\\rhook\\tpresent\\tall good\\n'\n"
+        )
+        forger.chmod(0o755)
+        _write_hook(project, str(forger))
+
+        report = diagnose_hook(project, run_interpreter=True)
+        assert report.state == DEGRADED, report.detail
+        assert esc not in report.detail
+        assert "\r" not in report.detail
 
 
 class TestMcp:

@@ -316,6 +316,15 @@ def build_parser() -> argparse.ArgumentParser:
         type=Path,
         help="Project whose Skills/Rules/hook to inspect (default: nearest project root)",
     )
+    p_doctor.add_argument(
+        "--run-interpreter",
+        action="store_true",
+        help=(
+            "Run the hook's registered interpreter to check mpg loads in it."
+            " Off by default: the command comes from a settings file, which may"
+            " have arrived with a cloned repository"
+        ),
+    )
 
     # check
     p_check = registered["check"]
@@ -639,7 +648,7 @@ def _cmd_doctor(args: argparse.Namespace) -> None:
         )
         sys.exit(summarize([]))
 
-    reports = diagnose_all(args.project_dir)
+    reports = diagnose_all(args.project_dir, run_interpreter=args.run_interpreter)
     width = max((len(report.channel) for report in reports), default=0)
     for report in reports:
         print(f"{report.channel:<{width}}  {report.state:<8}  {report.detail}")
