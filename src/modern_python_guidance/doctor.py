@@ -382,6 +382,17 @@ def _tool_coverage_reports(found: list[tuple[dict, dict]], path: Path) -> list[C
         # third turns out to be, and the duplicate carries a fix while
         # "not established" carries none. Only the counts that a further
         # matcher could still change are reported as unmeasured.
+        #
+        # `fix` stays empty on purpose — there is nothing to repair when the
+        # measurement is what failed, and offering one would assert a diagnosis
+        # this branch does not have. The sentence about `--with-hook` is in the
+        # detail instead, and is worded as what that command does rather than as
+        # advice: a matcher outside the portable subset may be doing exactly
+        # what its author intended, and this branch cannot tell that case from a
+        # registration that never fires. Without it the reader is told a hook
+        # may not be reaching them and given no way forward at all, which is
+        # what a working-but-unevaluable matcher used to get as `degraded` with
+        # a fix attached.
         if unevaluated and firing < 2:
             reports.append(
                 ChannelReport(
@@ -389,7 +400,9 @@ def _tool_coverage_reports(found: list[tuple[dict, dict]], path: Path) -> list[C
                     UNKNOWN,
                     f"a matcher this cannot evaluate appears on {unevaluated} of the"
                     f" {len(found)} mpg hook entries in {path}, so the number reaching"
-                    f" {tool} was not established (at least {firing})",
+                    f" {tool} was not established (at least {firing})."
+                    " `mpg setup --with-hook` would replace it with mpg's own matcher,"
+                    " which this can evaluate",
                 )
             )
             continue

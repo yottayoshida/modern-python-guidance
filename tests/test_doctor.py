@@ -585,6 +585,33 @@ class TestHook:
         assert report.state == UNKNOWN
         assert "not established" in report.detail
 
+    def test_a_matcher_only_one_engine_accepts_is_unknown_through_the_whole_channel(
+        self, project: Path
+    ) -> None:
+        """#237, end to end rather than at `matcher_fires_on`.
+
+        `(?P<x>Edit)|Write` compiles in Python and selects both tools; in
+        JavaScript, where Claude Code evaluates it, named groups are
+        `(?<x>...)` and this is a syntax error — so the hook never runs. The
+        channel used to read `present` for it, which is the silent wrong answer
+        this whole check exists to stop. Written through `diagnose_hook` because
+        the unit test cannot show that the verdict survives to the channel.
+        """
+        settings = project / ".claude" / "settings.local.json"
+        settings.write_text(
+            '{"hooks": {"PostToolUse": [{"matcher": "(?P<x>Edit)|Write", "hooks": ['
+            '{"type": "command", "command": "/usr/bin/env", "args": ["-m",'
+            ' "modern_python_guidance", "hook", "claude-post-tool-use"]}]}]}}'
+        )
+        report = diagnose_hook(project)
+        assert report.state == UNKNOWN
+        assert "not established" in report.detail
+        # An unevaluable matcher leaves the reader with no `fix` by design, so
+        # the one thing they can still do belongs in the detail. Without this
+        # the channel says a hook may not be reaching them and stops there.
+        assert "--with-hook" in report.detail
+        assert not report.fix
+
     def test_a_group_without_a_command_is_degraded(self, project: Path) -> None:
         (project / ".claude" / "settings.local.json").write_text(
             '{"hooks": {"PostToolUse": [{"matcher": "Edit|Write", "hooks":'

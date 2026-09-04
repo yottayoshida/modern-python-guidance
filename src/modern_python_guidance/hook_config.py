@@ -160,6 +160,55 @@ def has_mpg_hook(settings: dict) -> bool:
 # alternation — it does not fire for `NotebookEdit`.
 _SIMPLE_MATCHER = re.compile(r"[A-Za-z0-9_ ,|-]*")
 
+# The regular-expression subset this process will evaluate on Claude Code's
+# behalf. Every construct it admits was checked against both engines rather
+# than reasoned about: 271,452 strings of length <= 5 over these characters,
+# evaluated in node v26.7.0 and CPython 3.14.7 against `Edit` and `Write`,
+# agreed on every one (46,441 of them by being a syntax error in both).
+# Measured 2026-09-04.
+#
+# `( ) + ?` are deliberately absent:
+#
+# * `+` and `?` build the possessive quantifiers `*+` `++` `?+`, which Python
+#   3.11 added and JavaScript does not have. A sweep over a set that admitted
+#   them (16 characters, lengths 1-4) generated 69,904 strings, of which 69,104 survived a second
+#   test excluding `(?` — and 555 of those disagreed. Every disagreement was a
+#   possessive, and every one of them a matcher Python calls firing while
+#   JavaScript refuses to compile it: exactly the wrong answer this exists to
+#   stop. `requires-python = ">=3.11"`, so the hole is open on every
+#   interpreter this package supports.
+# * Without `?` there is no `(?`, so the named-group and inline-flag forms that
+#   differ between the engines cannot be spelled at all. `(` measures clean on
+#   its own, but admitting it would make this a set *plus* a separate test for
+#   `(?`, and that second test has to be re-argued whenever either character
+#   moves. The cost of leaving it out is that `(Edit|Write)` and
+#   `^(Edit|Write)$` read as `unknown`.
+#
+# What this subset does NOT buy is a matcher that always comes back. `".*" * 200
+# + "Z"` is admitted here and does not answer within 20 seconds (measured):
+# catastrophic backtracking needs no parentheses, and it is not an exception, so
+# the `except` below cannot see it. That is older than this subset and unchanged
+# by it — tracked in #242.
+#
+# `-` sits last so it stays a literal, and `^` is not first so it does not
+# negate the class.
+_PORTABLE_MATCHER = re.compile("[A-Za-z0-9_ ,|.^$*\n-]*")
+
+# What a matcher gets evaluated against. The equivalence above holds for the
+# subset only while the subject is a tool name, and two constructs are why:
+#
+# * `$` matches before a trailing newline in Python and only at the end in
+#   JavaScript, so `Edit$` splits on a name ending in LF.
+# * `.` excludes different characters — CR, LF, U+2028 and U+2029 in
+#   JavaScript, only LF in Python — so `.` splits on a lone CR.
+#
+# No shipped caller reaches this: `doctor` asks about `HOOK_TOOLS`, and both
+# `Edit` and `Write` are plain names. It is here because the equivalence above
+# is stated about tool names, and a premise left in a docstring is one the next
+# person can widen the caller past without noticing. Only the tests exercise it
+# today, and that is the point of writing it as code.
+_PLAIN_TOOL_NAME = re.compile("[A-Za-z0-9_-]*")
+
 MATCH_EVERYTHING = (None, "", "*")
 """Matcher values Claude Code treats as "every tool"."""
 
@@ -177,6 +226,34 @@ def matcher_fires_on(matcher: object, tool: str) -> bool | None:
     pattern this process cannot compile is one it has not measured. Reporting
     "does not fire" for it would state a result that was never obtained — and
     would call a matcher broken that Claude Code runs perfectly well.
+
+    Failing to compile is not the only way the two engines part, and it is the
+    harmless way — the answer comes back `None` and the reader is told nothing
+    was established. The damaging case is a pattern **both** engines accept and
+    read differently, or one Python accepts and JavaScript rejects: there the
+    old code returned a confident `True`, `doctor` printed `present`, and the
+    hook never ran. `(?P<x>Edit)|Write` is that shape (Python: fires;
+    JavaScript: `SyntaxError`, named groups are `(?<x>...)` there), and so is
+    every possessive quantifier, `(?i)`, and `\\Z`.
+
+    So the regular-expression branch is entered only for patterns written in
+    `_PORTABLE_MATCHER`'s subset, and only for tool names matching
+    `_PLAIN_TOOL_NAME`; both constants carry the measurements that drew them.
+    Anything outside either is `None` — the honest answer for a matcher whose
+    behaviour under Claude Code's engine this process has not established.
+
+    That guarantee covers the regular-expression form, and only it. The simple
+    form above never reaches an engine on either side: it is answered by
+    splitting on `|` and `,` and comparing names, from the rule written in
+    `_SIMPLE_MATCHER`'s comment rather than from a measurement of what Claude
+    Code does with `"Edit , Write"`. Anything still able to reach `present`
+    through a disagreement lives there, not here.
+
+    The cost is real and one-directional: matchers that do work, like
+    `(Edit|Write)`, `\\d`, or `[A-Za-z]+`, now read as `unknown` rather than
+    `present`. That trade is deliberate. `unknown` exits 2 and is visible; a
+    wrong `present` is silent, and silence about a hook that never fires is the
+    failure `doctor` was written to end.
     """
     if matcher in MATCH_EVERYTHING:
         return True
@@ -192,6 +269,12 @@ def matcher_fires_on(matcher: object, tool: str) -> bool | None:
     if _SIMPLE_MATCHER.fullmatch(matcher):
         names = {part.strip() for part in re.split(r"[|,]", matcher)}
         return tool in names
+    # Both tests belong here rather than at the top of the function: the simple
+    # form is an exact string comparison in both engines, so it cannot disagree
+    # whatever the tool is called, and refusing it for an odd tool name would
+    # turn a measured `False` into `None` for no reason.
+    if not _PORTABLE_MATCHER.fullmatch(matcher) or not _PLAIN_TOOL_NAME.fullmatch(tool):
+        return None
     try:
         return re.search(matcher, tool) is not None
     except Exception:
