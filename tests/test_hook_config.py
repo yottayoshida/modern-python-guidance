@@ -13,6 +13,7 @@ from pathlib import Path
 
 import pytest
 
+from modern_python_guidance import hook_config
 from modern_python_guidance.hook_config import (
     HOOK_EVENT,
     HOOK_MATCHER,
@@ -847,3 +848,95 @@ class TestMatcherFiresOn:
         """
         assert matcher_fires_on("Edit|Write\n", "Edit") is True
         assert matcher_fires_on("Edit|Write\n", "Write") is False
+
+
+class TestMatchersTheTwoEnginesReadDifferently:
+    """#237: Python answering for JavaScript, and the subset where it may.
+
+    Failing to compile was already handled. What was not: a pattern Python
+    compiles and JavaScript rejects, which came back as a confident `True` and
+    reached the reader as `present` for a hook that never fires.
+
+    The `node_said` column is a measurement (node v26.7.0 against CPython
+    3.14.7, 2026-09-04) recorded so a reader can see *why* each row belongs
+    here. It is not asserted against: nothing in this process runs node, so
+    the column is provenance, and the test itself only checks that a matcher
+    the two engines were measured to read differently comes back `None`.
+    """
+
+    # (matcher, tool, what node answered). ERROR means SyntaxError there.
+    ENGINES_DISAGREE = (
+        # Python 3.11's possessive quantifiers. JavaScript has none of them,
+        # and this family is the whole reason `+` and `?` are out of the subset.
+        ("Edit*+", "Edit", "ERROR"),
+        ("Edit++", "Edit", "ERROR"),
+        ("Edit?+", "Edit", "ERROR"),
+        ("^Edit++$", "Edit", "ERROR"),
+        # Named groups are spelled differently; inline flags do not exist there.
+        ("(?P<x>Edit)|Write", "Edit", "ERROR"),
+        ("(?P<x>Edit)|Write", "Write", "ERROR"),
+        ("(?i)edit", "Edit", "ERROR"),
+        # Compiles in both, means different things: `\Z` is an anchor in Python
+        # and a literal `Z` in JavaScript.
+        ("Edit\\Z", "Edit", "false"),
+    )
+
+    @pytest.mark.parametrize(
+        ("matcher", "tool"),
+        [(matcher, tool) for matcher, tool, _node_said in ENGINES_DISAGREE],
+        ids=[f"{matcher}-{tool}-node:{said}" for matcher, tool, said in ENGINES_DISAGREE],
+    )
+    def test_a_matcher_the_engines_read_differently_is_unknown(self, matcher, tool):
+        """Every one of these used to return True. Python's answer is not the
+        one that matters when node either refuses the pattern or reads it
+        another way, so the only honest verdict is "not established".
+
+        What node answered is carried in the test id rather than asserted —
+        see the class docstring on why it cannot be a check.
+        """
+        assert matcher_fires_on(matcher, tool) is None
+
+    def test_the_subset_still_answers_the_matchers_that_agree(self):
+        """The control. A guard stuck at `None` passes every assertion above
+        and fails here, and so does a subset drawn too narrowly to admit the
+        three regex forms the older tests pin."""
+        assert matcher_fires_on("Edit|Write", "Edit") is True
+        assert matcher_fires_on("Edit|Write", "Bash") is False
+        assert matcher_fires_on("^Edit$", "Edit") is True
+        assert matcher_fires_on("^Edit$", "NotebookEdit") is False
+        assert matcher_fires_on("Edit.*", "NotebookEdit") is True
+        assert matcher_fires_on("Edit|Write\n", "Edit") is True
+
+    def test_the_subset_is_the_set_that_was_measured(self):
+        """`-` last so it is a literal, `^` not first so it does not negate.
+
+        Getting either wrong silently changes which patterns are admitted:
+        a `-` in the middle becomes a range, and a leading `^` inverts the
+        whole class — turning the guard into its own opposite while every
+        other test in this class still passes.
+        """
+        admits = hook_config._PORTABLE_MATCHER.fullmatch
+        for char in "AZaz09_ ,|.^$*-\n":
+            assert admits(char), f"{char!r} should be in the measured subset"
+        for char in "()+?[]{}\\/<>%&#@!~`'\"":
+            assert not admits(char), f"{char!r} should be outside the measured subset"
+
+    def test_a_tool_name_outside_the_subject_of_the_measurement_is_unknown(self):
+        """The equivalence holds for tool names, not for arbitrary strings.
+
+        `$` matches before a trailing newline in Python but not in JavaScript,
+        and `.` excludes a different set of line terminators in each. Both are
+        reachable only through the tool argument, so the guard lives there —
+        as a test, not as a sentence in the docstring.
+
+        Built with `chr()` rather than typed: a review of this change found a
+        U+2028 sitting in a source file where a space was intended.
+        """
+        newline = chr(10)
+        assert matcher_fires_on("Edit.*", f"Edit{newline}") is None
+        assert matcher_fires_on("Edit.*", f"Edit{chr(0x2028)}") is None
+        # The control, twice over: the same regex matcher against a plain name
+        # still answers, and the simple form is an exact comparison in both
+        # engines, so an odd tool name does not stop it answering either.
+        assert matcher_fires_on("Edit.*", "Edit") is True
+        assert matcher_fires_on("Edit|Write", f"Edit{newline}") is False
