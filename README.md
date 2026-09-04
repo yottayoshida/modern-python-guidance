@@ -89,6 +89,8 @@ If this project already has mpg's Skills or Rules symlinks from a previous `mpg 
 
 After registering, `mpg setup` checks whether a same-name registration in a higher-precedence scope (local > project > user) would shadow the one it just wrote, and prints a warning with the exact `claude mcp remove` command if so.
 
+When `mpg setup` reports success, every symlink it created leads to a bundled source with readable content — a skills directory carrying a readable `SKILL.md`, and a non-empty rule file. An installation that is present but hollow (a packaging or install accident) fails setup with the hollow path named, instead of linking silently; `mpg doctor` keeps reporting an already-made link to such a source as `degraded`, exactly as described under **Check the install** below.
+
 **Uninstall** — reverse `mpg setup` (deregister the MCP server and unlink Agent Skills + Rules):
 ```bash
 mpg uninstall            # remove all

@@ -718,7 +718,10 @@ class TestSetupSkills:
     def _make_source(self, tmp_path: Path) -> Path:
         source = tmp_path / "pkg_skills" / "modern-python-guidance"
         source.mkdir(parents=True)
-        (source / "SKILL.md").touch()
+        # Real content, not touch(): setup now refuses a source whose SKILL.md
+        # has nothing behind it (#238). A 0-byte fixture here would pin the very
+        # bug that check exists to catch.
+        (source / "SKILL.md").write_text("# skill\n", encoding="utf-8")
         return source
 
     def test_creates_symlink(self, tmp_path: Path, capsys: pytest.CaptureFixture[str]):
@@ -1135,6 +1138,164 @@ class _WindowsOSError(OSError):
         return self._winerror
 
 
+class TestSetupRefusesHollowSource:
+    """#238: a bundled source that exists but delivers nothing must not link.
+
+    Each test carries its healthy half, so a predicate stuck at "always
+    hollow" cannot pass any of them — the same both-ways shape
+    test_doctor pins for the delivers predicates.
+
+    Driven through setup_skills / setup_rules — the check's call sites —
+    so a call site that stops consulting the predicate fails here even if
+    `_first_byte_readable` itself stays correct.
+    """
+
+    def test_skills_source_with_empty_skill_md_does_not_link(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ):
+        source = tmp_path / "pkg_skills" / "modern-python-guidance"
+        source.mkdir(parents=True)
+        (source / "SKILL.md").touch()  # present and empty: the #238 accident
+        project = tmp_path / "project"
+        project.mkdir()
+        link = project / ".claude" / "skills" / "modern-python-guidance"
+
+        with patch("modern_python_guidance.setup_cmd._find_skills_dir", return_value=source):
+            hollow_ok = setup_skills(project_dir=project)
+
+        err = capsys.readouterr().err
+        assert hollow_ok is False
+        assert not link.is_symlink()
+        assert not link.exists()
+        assert "no readable SKILL.md" in err
+        assert "Nothing was linked" in err
+
+        (source / "SKILL.md").write_text("# skill\n", encoding="utf-8")
+        with patch("modern_python_guidance.setup_cmd._find_skills_dir", return_value=source):
+            assert setup_skills(project_dir=project) is True
+        assert link.is_symlink()
+
+    def test_skills_source_without_skill_md_does_not_link(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ):
+        """A directory with no SKILL.md at all is the same hollow install."""
+        source = tmp_path / "pkg_skills" / "modern-python-guidance"
+        source.mkdir(parents=True)
+        project = tmp_path / "project"
+        project.mkdir()
+
+        with patch("modern_python_guidance.setup_cmd._find_skills_dir", return_value=source):
+            assert setup_skills(project_dir=project) is False
+
+        assert not (project / ".claude" / "skills" / "modern-python-guidance").exists()
+        assert "no readable SKILL.md" in capsys.readouterr().err
+
+    def test_empty_rule_source_does_not_link(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ):
+        source = tmp_path / "pkg_rules" / RULE_FILE_NAME
+        source.parent.mkdir(parents=True)
+        source.touch()  # present and empty
+        project = tmp_path / "project"
+        project.mkdir()
+        link = project / ".claude" / "rules" / RULE_FILE_NAME
+
+        with patch("modern_python_guidance.setup_cmd._find_rule_source", return_value=source):
+            hollow_ok = setup_rules(project_dir=project)
+
+        err = capsys.readouterr().err
+        assert hollow_ok is False
+        assert not link.is_symlink()
+        assert not link.exists()
+        assert "empty or unreadable" in err
+        assert "Nothing was linked" in err
+
+        source.write_text("rule body\n", encoding="utf-8")
+        with patch("modern_python_guidance.setup_cmd._find_rule_source", return_value=source):
+            assert setup_rules(project_dir=project) is True
+        assert link.is_symlink()
+
+    def test_the_predicate_survives_a_platform_without_o_nonblock(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ):
+        """Windows has no `os.O_NONBLOCK`; a bare attribute access raises
+        AttributeError straight past every `except OSError` in the callers.
+        The `getattr` in `_first_byte_readable` is what keeps setup alive
+        there — reverting it to `os.O_NONBLOCK` fails exactly this test.
+
+        The deletion is process-wide until teardown, so nothing after this
+        line may touch a stdlib path that opens files non-blockingly —
+        `shutil.rmtree` is one. Keep this test to setup's own call, and let
+        pytest remove the tmp tree after the attribute is back.
+        """
+        monkeypatch.delattr(os, "O_NONBLOCK", raising=False)
+        source = tmp_path / "pkg_skills" / "modern-python-guidance"
+        source.mkdir(parents=True)
+        (source / "SKILL.md").write_text("# skill\n", encoding="utf-8")
+        project = tmp_path / "project"
+        project.mkdir()
+
+        with patch("modern_python_guidance.setup_cmd._find_skills_dir", return_value=source):
+            assert setup_skills(project_dir=project) is True
+
+    def test_a_fifo_skill_md_is_refused_without_blocking(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ):
+        """setup must not hand control to whoever wrote the tree.
+
+        A `SKILL.md` that is a fifo blocks a plain `open()` forever — the
+        hang the predicate's O_NONBLOCK exists to prevent, now claimed for
+        setup as well as doctor. If this test hangs rather than fails, that
+        is the bug (same shape as doctor's fifo test)."""
+        source = tmp_path / "pkg_skills" / "modern-python-guidance"
+        source.mkdir(parents=True)
+        os.mkfifo(source / "SKILL.md")
+        project = tmp_path / "project"
+        project.mkdir()
+
+        with patch("modern_python_guidance.setup_cmd._find_skills_dir", return_value=source):
+            assert setup_skills(project_dir=project) is False
+
+        assert not (project / ".claude" / "skills" / "modern-python-guidance").exists()
+        assert "no readable SKILL.md" in capsys.readouterr().err
+
+    def test_hollow_rule_fails_dry_run_too(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ):
+        """The rule half of the dry-run promise. Both call sites check before
+        their own `dry_run` branch, and a site that moved the check below it
+        would still pass the skills-only version of this test."""
+        source = tmp_path / "pkg_rules" / RULE_FILE_NAME
+        source.parent.mkdir(parents=True)
+        source.touch()
+        project = tmp_path / "project"
+        project.mkdir()
+
+        with patch("modern_python_guidance.setup_cmd._find_rule_source", return_value=source):
+            assert setup_rules(project_dir=project, dry_run=True) is False
+
+        captured = capsys.readouterr()
+        assert "Would link" not in captured.out
+        assert "empty or unreadable" in captured.err
+
+    def test_hollow_source_fails_dry_run_too(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ):
+        """dry-run must not promise a link the real run would refuse."""
+        source = tmp_path / "pkg_skills" / "modern-python-guidance"
+        source.mkdir(parents=True)
+        (source / "SKILL.md").touch()
+        project = tmp_path / "project"
+        project.mkdir()
+
+        with patch("modern_python_guidance.setup_cmd._find_skills_dir", return_value=source):
+            assert setup_skills(project_dir=project, dry_run=True) is False
+
+        captured = capsys.readouterr()
+        assert "Would link" not in captured.out
+        assert "no readable SKILL.md" in captured.err
+
+
 class TestSymlinkCreateFailureHint:
     """#206: creating a symlink is a privileged operation on Windows.
 
@@ -1150,7 +1311,7 @@ class TestSymlinkCreateFailureHint:
     def _skills_source(self, tmp_path: Path) -> Path:
         source = tmp_path / "pkg_skills" / SKILLS_LINK_NAME
         source.mkdir(parents=True)
-        (source / "SKILL.md").touch()
+        (source / "SKILL.md").write_text("# skill\n", encoding="utf-8")
         return source
 
     def _rule_source(self, tmp_path: Path) -> Path:
@@ -1256,7 +1417,7 @@ class TestSymlinkTargetType:
     ) -> None:
         source = tmp_path / "pkg_skills" / SKILLS_LINK_NAME
         source.mkdir(parents=True)
-        (source / "SKILL.md").touch()
+        (source / "SKILL.md").write_text("# skill\n", encoding="utf-8")
         project = tmp_path / "project"
         project.mkdir()
         seen = self._record_symlink(monkeypatch)
