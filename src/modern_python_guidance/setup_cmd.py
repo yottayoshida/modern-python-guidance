@@ -7,6 +7,7 @@ import json
 import os
 import shlex
 import shutil
+import stat
 import subprocess
 import sys
 from pathlib import Path
@@ -72,6 +73,73 @@ def _find_rule_source() -> Path:
 
     msg = "Cannot locate bundled rule file"
     raise FileNotFoundError(msg)
+
+
+def _first_byte_readable(path: Path) -> bool:
+    """Whether `path` is a regular file with content this process can read.
+
+    The one content predicate behind every "does this delivery path carry
+    anything?" answer: `setup` refusing to link a bundled source that delivers
+    nothing, `doctor` deciding whether a link has anything behind it, and the
+    wheel verifier checking what actually shipped. It lives here for the same
+    reason `link_state` does — a second implementation written against half the
+    question is how two of those readers end up disagreeing.
+
+    Reading a byte rather than asking `stat` for a size: an unreadable file has
+    a size, and a directory standing where a file belongs answers `st_size`
+    too. The question is whether a consumer opening this path would get
+    anything, and the only way to answer it is to open it.
+
+    Opened `O_NONBLOCK`, and confirmed to be a regular file *through the
+    descriptor* before anything is read. Both matter, and neither is
+    hypothetical: a skills directory is a directory in a repository, so a
+    `SKILL.md` that is a symlink to a fifo or to `/dev/stdin` can be committed
+    and cloned. A plain `open()` on it blocks, and both callers — `mpg doctor`,
+    a read-only command someone runs precisely because they do not trust the
+    state of the tree, and `mpg setup`, which must not hang before it has
+    linked anything — would hang forever. Checking `is_file()` first and
+    opening after would still leave the gap between the two calls, so the check
+    is made on the descriptor that gets read.
+
+    `O_NONBLOCK` is a Unix flag; `getattr` leaves it out of the open on
+    Windows, where the fifos it guards against do not exist and the bare
+    attribute access would raise `AttributeError` past every `except OSError`
+    in the callers.
+    """
+    try:
+        fd = os.open(path, os.O_RDONLY | getattr(os, "O_NONBLOCK", 0))
+    except OSError:
+        return False
+    try:
+        if not stat.S_ISREG(os.fstat(fd).st_mode):
+            return False
+        return bool(os.read(fd, 1))
+    except OSError:
+        return False
+    finally:
+        os.close(fd)
+
+
+def _refuse_hollow_source(detail: str) -> None:
+    """Explain a bundled source that exists but delivers nothing, then refuse.
+
+    Shared by the two linking call sites so the wording cannot drift — the
+    same reason `_print_flattened_symlink_error` is one function. The locators
+    stay shape-only on purpose: `doctor` must keep locating a hollow source so
+    it can measure the damage and report `degraded` (README's promise for a
+    link with nothing behind it), so the refusal belongs to `setup`, the one
+    caller about to *create* a link on the strength of that source.
+    """
+    print(
+        f"Error: {detail} — the installation is present but hollow"
+        " (a packaging or install accident). Nothing was linked.",
+        file=sys.stderr,
+    )
+    print(
+        "Reinstall mpg (or fix that file's permissions, if it exists but cannot"
+        " be read), then re-run: mpg setup",
+        file=sys.stderr,
+    )
 
 
 def _find_project_root(start: Path | None = None) -> Path:
@@ -573,6 +641,11 @@ def setup_skills(
         print(f"Error: {e}", file=sys.stderr)
         return False
 
+    skill_md = source / "SKILL.md"
+    if not _first_byte_readable(skill_md):
+        _refuse_hollow_source(f"the bundled skills have no readable SKILL.md at {skill_md}")
+        return False
+
     root = project_dir or _find_project_root()
     link_path = _skills_link_path(project_dir)
     skills_parent = link_path.parent
@@ -632,6 +705,10 @@ def setup_rules(
 
     if source.is_symlink():
         print("Error: rule source is itself a symlink (unexpected).", file=sys.stderr)
+        return False
+
+    if not _first_byte_readable(source):
+        _refuse_hollow_source(f"bundled rule file {source} is empty or unreadable")
         return False
 
     root = project_dir or _find_project_root()

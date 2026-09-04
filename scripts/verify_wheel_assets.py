@@ -52,6 +52,7 @@ def main() -> None:
         SKILLS_LINK_NAME,
         _find_rule_source,
         _find_skills_dir,
+        _first_byte_readable,
     )
 
     module_path = Path(modern_python_guidance.__file__).resolve()
@@ -93,8 +94,19 @@ def main() -> None:
                 f" {pkg_root}) — a stale external copy is masking the wheel contents; {HINT}"
             )
 
-    if not (skills_dir / "SKILL.md").is_file():
+    skill_md = skills_dir / "SKILL.md"
+    if not skill_md.is_file():
         fail(f"SKILL.md is missing from the installed skills directory ({skills_dir}) — {HINT}")
+    # Present is not delivered: a truncated build ships the name with nothing
+    # behind it, and `mpg setup` now refuses exactly that. Same predicate, so
+    # this gate and setup cannot disagree about what counts as hollow.
+    if not _first_byte_readable(skill_md):
+        fail(
+            f"SKILL.md is present but empty or unreadable ({skill_md}) — the wheel"
+            f" bundles a hollow skills directory; {HINT}"
+        )
+    if not _first_byte_readable(rule_file):
+        fail(f"the bundled rule file is present but empty or unreadable ({rule_file}) — {HINT}")
 
     expected = relative_md_set(checkout / "skills" / SKILLS_LINK_NAME / "guides")
     if not expected:

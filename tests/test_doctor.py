@@ -14,13 +14,14 @@ implementation fails it:
 
 from __future__ import annotations
 
+import importlib.resources
 import os
 import subprocess
 from pathlib import Path
 
 import pytest
 
-from modern_python_guidance import doctor
+from modern_python_guidance import doctor, setup_cmd
 from modern_python_guidance.doctor import (
     ABSENT,
     CHANNELS,
@@ -290,6 +291,64 @@ class TestSkillsAndRules:
         assert link_state(link, skills) == LINK_STALE
         report = diagnose_skills(project)  # must not raise
         assert report.state == DEGRADED
+
+
+class TestHollowBundledSourceStaysMeasurable:
+    """#238, pinned from doctor's side: the locators stay shape-only.
+
+    `mpg setup` now refuses to link a hollow bundled source, and the rejected
+    way to build that was a content predicate inside `_find_skills_dir`. That
+    design turns this exact case into `unknown` ("cannot locate") — a measured
+    breakage reported as an unmeasured one, doctor's exit flipped from 1 to 2,
+    and README's "nothing behind it is `degraded`" promise unreachable.
+    Reverting to it fails here.
+
+    Unlike the `sources` fixture, nothing is monkeypatched between doctor and
+    the locator: the real `_find_skills_dir` walks its dev fallback into this
+    layout, so a predicate added to the locator itself is caught.
+    """
+
+    def _point_dev_fallback_at(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
+        # The importlib candidate is refused explicitly — with FileNotFoundError,
+        # one of the two exceptions the locator's own `except` names — rather
+        # than trusted to lose on its own. Under an editable install it would
+        # (the package directory carries no skills/), but a wheel-installed
+        # environment bundles real skills there, and this test must not pick
+        # those up. Only the path arithmetic in `_find_skills_dir` reads
+        # __file__; the file itself never has to exist.
+        def refuse(_pkg: str) -> Path:
+            raise FileNotFoundError("package resources disabled for this test")
+
+        monkeypatch.setattr(importlib.resources, "files", refuse)
+        fake_file = tmp_path / "src" / "modern_python_guidance" / "setup_cmd.py"
+        monkeypatch.setattr(setup_cmd, "__file__", str(fake_file))
+        skills = tmp_path / "skills" / "modern-python-guidance"
+        skills.mkdir(parents=True)
+        return skills
+
+    def test_a_hollow_install_reads_degraded_not_unknown(
+        self, monkeypatch: pytest.MonkeyPatch, project: Path, tmp_path: Path
+    ) -> None:
+        skills = self._point_dev_fallback_at(monkeypatch, tmp_path)
+        (skills / "SKILL.md").touch()  # present and empty: the packaging accident
+
+        located = setup_cmd._find_skills_dir()
+        assert located == skills  # still handed to doctor, not refused
+
+        _link_skills(project, skills)
+        report = diagnose_skills(project)
+        assert report.state == DEGRADED
+        assert "nothing behind it" in report.detail
+
+    def test_the_same_layout_with_content_reads_present(
+        self, monkeypatch: pytest.MonkeyPatch, project: Path, tmp_path: Path
+    ) -> None:
+        """The healthy control, through the same unpatched locator."""
+        skills = self._point_dev_fallback_at(monkeypatch, tmp_path)
+        (skills / "SKILL.md").write_text("---\nname: modern-python-guidance\n---\n")
+
+        _link_skills(project, skills)
+        assert diagnose_skills(project).state == PRESENT
 
 
 class TestHook:

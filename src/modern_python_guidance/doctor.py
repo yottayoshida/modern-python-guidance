@@ -19,7 +19,6 @@ from __future__ import annotations
 
 import os
 import shutil
-import stat
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -44,6 +43,7 @@ from modern_python_guidance.setup_cmd import (
     _find_project_root,
     _find_rule_source,
     _find_skills_dir,
+    _first_byte_readable,
     _resolve_cwd,
     _rules_file_path,
     _run_claude_mcp_quiet,
@@ -95,38 +95,6 @@ def _worst(reports: list[ChannelReport]) -> ChannelReport:
     """The report that decides the channel. Ties keep the first, so the order
     the observations were made in is the order the reader sees them explained."""
     return max(reports, key=lambda report: _SEVERITY[report.state])
-
-
-def _first_byte_readable(path: Path) -> bool:
-    """Whether `path` is a regular file with content this process can read.
-
-    Reading a byte rather than asking `stat` for a size: an unreadable file has
-    a size, and a directory standing where a file belongs answers `st_size`
-    too. The question is whether a consumer opening this path would get
-    anything, and the only way to answer it is to open it.
-
-    Opened `O_NONBLOCK`, and confirmed to be a regular file *through the
-    descriptor* before anything is read. Both matter, and neither is
-    hypothetical: a skills directory is a directory in a repository, so a
-    `SKILL.md` that is a symlink to a fifo or to `/dev/stdin` can be committed
-    and cloned. A plain `open()` on it blocks, and `mpg doctor` — a read-only
-    command someone runs precisely because they do not trust the state of the
-    tree — hangs forever. Checking `is_file()` first and opening after would
-    still leave the gap between the two calls, so the check is made on the
-    descriptor that gets read.
-    """
-    try:
-        fd = os.open(path, os.O_RDONLY | os.O_NONBLOCK)
-    except OSError:
-        return False
-    try:
-        if not stat.S_ISREG(os.fstat(fd).st_mode):
-            return False
-        return bool(os.read(fd, 1))
-    except OSError:
-        return False
-    finally:
-        os.close(fd)
 
 
 def _skills_are_delivered(link_path: Path) -> bool:
