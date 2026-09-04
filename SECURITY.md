@@ -2,12 +2,12 @@
 
 ## Supported versions
 
-<!-- supported-release-line: 1.1.x -->
+<!-- supported-release-line: 1.2.x -->
 
 | Release line | Security fixes |
 |---|---|
-| 1.1.x | Supported |
-| < 1.1 | Unsupported; upgrade before requesting a fix |
+| 1.2.x | Supported |
+| < 1.2 | Unsupported; upgrade before requesting a fix |
 
 Security fixes go to the latest minor release line. Backports to older minor
 lines are not promised, and upgrading within 1.x is not a breaking change:
