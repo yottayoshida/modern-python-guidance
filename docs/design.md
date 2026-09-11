@@ -498,7 +498,10 @@ would otherwise answer a typo with 0.
   in `cli.py` covers only the interpreter-level path that remains when the signal is handled
   elsewhere; it is not the observable behaviour of `mpg search … | head`.
 - **Uncaught exceptions**, which exit 1 like a legitimate empty result. A caller separating
-  a crash from an empty result needs stderr, not the status.
+  a crash from an empty result needs stderr, not the status. `doctor` is the exception to
+  this: it catches a failure per channel and reports that channel as `unknown`, so a crash
+  inside a diagnosis exits 2 with every other channel still reported, rather than 1 — which
+  would read as "something is degraded".
 - **`hook`**, whose exit status belongs to the PostToolUse hook stdout contract in
   [VERSIONING.md](VERSIONING.md) and is held there rather than duplicated here.
 

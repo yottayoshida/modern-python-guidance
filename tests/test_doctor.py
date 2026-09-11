@@ -983,7 +983,7 @@ class TestMcp:
         installs Python and uv, never Claude Code — and make exit 0
         unreachable there.
         """
-        monkeypatch.setattr(doctor.shutil, "which", lambda _: None)
+        monkeypatch.setattr(doctor.shutil, "which", lambda *_, **__: None)
         report = diagnose_mcp(project)
         assert report.state == ABSENT
         assert report.fix
@@ -991,7 +991,7 @@ class TestMcp:
     def test_a_connected_registration_is_present(
         self, project: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        monkeypatch.setattr(doctor.shutil, "which", lambda _: "/usr/local/bin/claude")
+        monkeypatch.setattr(doctor.shutil, "which", lambda *_, **__: "/usr/local/bin/claude")
         monkeypatch.setattr(
             doctor, "_run_claude_mcp_quiet", lambda *a, **k: _completed(MCP_CONNECTED)
         )
@@ -1004,7 +1004,7 @@ class TestMcp:
     def test_a_registration_that_does_not_connect_is_degraded(
         self, project: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        monkeypatch.setattr(doctor.shutil, "which", lambda _: "/usr/local/bin/claude")
+        monkeypatch.setattr(doctor.shutil, "which", lambda *_, **__: "/usr/local/bin/claude")
         monkeypatch.setattr(
             doctor, "_run_claude_mcp_quiet", lambda *a, **k: _completed(MCP_FAILED)
         )
@@ -1015,7 +1015,7 @@ class TestMcp:
     def test_an_unregistered_server_is_absent(
         self, project: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        monkeypatch.setattr(doctor.shutil, "which", lambda _: "/usr/local/bin/claude")
+        monkeypatch.setattr(doctor.shutil, "which", lambda *_, **__: "/usr/local/bin/claude")
         monkeypatch.setattr(
             doctor,
             "_run_claude_mcp_quiet",
@@ -1034,7 +1034,7 @@ class TestMcp:
         registration was never examined. That is the confusion this whole
         command exists to end, so it must not be committed here.
         """
-        monkeypatch.setattr(doctor.shutil, "which", lambda _: "/usr/local/bin/claude")
+        monkeypatch.setattr(doctor.shutil, "which", lambda *_, **__: "/usr/local/bin/claude")
         monkeypatch.setattr(
             doctor,
             "_run_claude_mcp_quiet",
@@ -1047,7 +1047,7 @@ class TestMcp:
     def test_a_command_that_did_not_complete_is_unknown(
         self, project: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        monkeypatch.setattr(doctor.shutil, "which", lambda _: "/usr/local/bin/claude")
+        monkeypatch.setattr(doctor.shutil, "which", lambda *_, **__: "/usr/local/bin/claude")
         monkeypatch.setattr(doctor, "_run_claude_mcp_quiet", lambda *a, **k: None)
         assert diagnose_mcp(project).state == UNKNOWN
 
@@ -1061,7 +1061,7 @@ class TestMcp:
         Here the stakes are reversed: staying silent would mean reporting a
         channel as fine without having established anything about it.
         """
-        monkeypatch.setattr(doctor.shutil, "which", lambda _: "/usr/local/bin/claude")
+        monkeypatch.setattr(doctor.shutil, "which", lambda *_, **__: "/usr/local/bin/claude")
         monkeypatch.setattr(
             doctor, "_run_claude_mcp_quiet", lambda *a, **k: _completed(MCP_NO_STATUS)
         )
@@ -1129,7 +1129,7 @@ class TestDiagnoseAll:
         comparison still holds. The count of four is pinned by check 1's
         exact-dict comparison instead, which names the channels literally.
         """
-        monkeypatch.setattr(doctor.shutil, "which", lambda _: None)
+        monkeypatch.setattr(doctor.shutil, "which", lambda *_, **__: None)
         reported = [report.channel for report in diagnose_all(project)]
         assert reported == list(CHANNELS)
         assert len(reported) == len(set(reported))
@@ -1154,7 +1154,7 @@ class TestDiagnoseAll:
         fabricated world, and only the other three are measured end to end.
         """
         skills, rule = sources
-        monkeypatch.setattr(doctor.shutil, "which", lambda _: "/usr/local/bin/claude")
+        monkeypatch.setattr(doctor.shutil, "which", lambda *_, **__: "/usr/local/bin/claude")
 
         # --- broken: every channel in a different failure mode
         monkeypatch.setattr(
