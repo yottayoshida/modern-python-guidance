@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import errno
 import importlib.resources
 import json
 import os
@@ -142,15 +143,66 @@ def _refuse_hollow_source(detail: str) -> None:
     )
 
 
-def _find_project_root(start: Path | None = None) -> Path:
-    """Walk upward; return the nearest ancestor containing any marker."""
+NOTHING_THERE = frozenset({errno.ENOENT, errno.ENOTDIR})
+"""Errnos meaning a lookup found nothing at the path — and only those.
+
+`doctor` may call a channel `absent` only on this answer. `absent` exits 0, so
+any other failure to look (EACCES, ENAMETOOLONG, ELOOP) reported as absence
+would call a directory `doctor` never looked into healthy."""
+
+NO_MARKER = NOTHING_THERE | {errno.EBADF, errno.ELOOP}
+"""What `Path.exists()` folds into False on 3.11-3.13.
+
+Used for project-root markers, where the question is "which directory would
+`setup` choose" rather than "is anything installed": answering it with a
+different set would let `doctor` inspect one directory while `setup` writes to
+another. 3.14 widened `exists()` to swallow every OSError; this pins the older
+set on every interpreter."""
+
+
+def _lookup_failure(path: Path) -> OSError | None:
+    """The error that stopped `path` from being looked up, or None.
+
+    None both when something is at `path` and when the OS said nothing is
+    (`NOTHING_THERE`). `lstat`, so a link is looked at rather than followed —
+    what is behind it is the caller's next question.
+    """
+    try:
+        os.lstat(path)
+    except OSError as e:
+        return None if e.errno in NOTHING_THERE else e
+    return None
+
+
+def _marker_present(path: Path) -> bool:
+    """`Path.exists()` as 3.11-3.13 define it, on every interpreter."""
+    try:
+        os.stat(path)
+    except OSError as e:
+        if e.errno in NO_MARKER:
+            return False
+        raise
+    return True
+
+
+def _find_project_root(start: Path | None = None, *, strict: bool = False) -> Path:
+    """Walk upward; return the nearest ancestor containing any marker.
+
+    `strict` is for `doctor`: a marker that cannot be looked up raises instead
+    of being skipped. On 3.14 `Path.exists()` answers False for an unreadable
+    marker, so the walk climbed past it and `doctor` diagnosed a directory
+    further up — `$HOME`, when it was measured. The default is left alone
+    because `setup` and `uninstall` call it, and the only difference strict
+    makes is whether the errors outside `NO_MARKER` raise.
+    """
     current = (start or Path.cwd()).resolve()
     markers = [".git", "pyproject.toml", ".claude"]
 
     d = current
     while True:
         for marker in markers:
-            if (d / marker).exists():
+            present = _marker_present(d / marker) if strict else (d / marker).exists()
+            if present:
                 return d
         parent = d.parent
         if parent == d:
@@ -246,15 +298,17 @@ def _print_stderr(result: subprocess.CompletedProcess[bytes]) -> None:
 
 
 def _run_claude_mcp_quiet(
-    cmd: list[str], cwd: str | None = None
+    cmd: list[str], cwd: str | None = None, env: dict[str, str] | None = None
 ) -> subprocess.CompletedProcess[bytes] | None:
     """Run a claude mcp subcommand without reporting failures.
 
     For advisory paths (shadowing detection) where an ``Error:`` line right
     after a successful setup would be misleading; callers degrade instead.
+    `env` defaults to this process's environment; `doctor` passes one whose
+    `PATH` has no relative entries.
     """
     try:
-        return subprocess.run(cmd, capture_output=True, timeout=30, cwd=cwd)
+        return subprocess.run(cmd, capture_output=True, timeout=30, cwd=cwd, env=env)
     except (subprocess.TimeoutExpired, OSError):
         return None
 

@@ -35,6 +35,7 @@ from modern_python_guidance.hook_config import (
     HOOK_SUBCOMMAND,
     HOOK_TOOLS,
     HookConfigError,
+    HookConfigUnparsable,
     build_mpg_hook_entry,
     find_mpg_entries,
     is_ephemeral_interpreter,
@@ -52,6 +53,7 @@ from modern_python_guidance.setup_cmd import (
     _find_rule_source,
     _find_skills_dir,
     _first_byte_readable,
+    _lookup_failure,
     _resolve_cwd,
     _rules_file_path,
     _run_claude_mcp_quiet,
@@ -165,7 +167,34 @@ def _link_report(
     which is the decay this module's own docstring opens by naming — a link
     whose target moved still resolves as a name.
     """
+    # Looked up before `link_state` classifies it, because `link_state` answers
+    # `absent` for anything `Path.is_symlink()` and `Path.exists()` both call
+    # False — and on 3.14 that includes a directory this process may not enter.
+    # `absent` is healthy, so an unreadable `.claude` read as an uninstalled
+    # project. `link_state` itself is left alone: `setup` relies on that answer
+    # to reach its own `mkdir`, which reports the permission error cleanly.
+    failure = _lookup_failure(link_path)
+    if failure is not None:
+        return ChannelReport(
+            channel, UNKNOWN, f"cannot look up {link_path}: {failure.strerror or failure}"
+        )
     state = link_state(link_path, source)
+    # Linked or stale, what decides is whether the link can be followed, since
+    # that is what Claude Code does with it. `link_state` answers from strings
+    # and a non-strict `resolve()`, which walks past a component the OS will
+    # not look up and lets a following `..` cancel it, so `<300
+    # characters>/../<source>` reads as linked. `os.path.exists`, not
+    # `Path.exists()`: the pathlib method raises on 3.11-3.13 for a destination
+    # the OS refuses (a component past NAME_MAX, an unreadable directory), and
+    # 3.14 answered "linked, nothing behind it — reinstall mpg" instead.
+    if state in (LINK_LINKED, LINK_STALE) and not os.path.exists(link_path):
+        return ChannelReport(
+            channel,
+            DEGRADED,
+            f"{link_path} points at {_link_target(link_path)}, which does not exist"
+            " or cannot be reached",
+            "Run `mpg setup` to re-point it",
+        )
     if state == LINK_LINKED:
         if not delivers(link_path):
             return ChannelReport(
@@ -186,13 +215,6 @@ def _link_report(
         )
     if state == LINK_STALE:
         target = _link_target(link_path)
-        if not link_path.exists():
-            return ChannelReport(
-                channel,
-                DEGRADED,
-                f"{link_path} points at {target}, which does not exist",
-                "Run `mpg setup` to re-point it",
-            )
         # Existing is not enough to call it another mpg installation. Both
         # delivery paths end in a fixed name (`modern-python-guidance`,
         # `modern-python.md`) in every layout mpg ships, so comparing the final
@@ -341,22 +363,29 @@ def _entry_shape_report(entry: dict, path: Path) -> ChannelReport:
     # the latter. `Path("/")` exists; so does a text file with no execute bit.
     # Claude Code can spawn neither, so reporting either as `present` would
     # state exactly the thing this change was written to stop.
-    interpreter = Path(command)
-    if not interpreter.exists():
+    #
+    # `os.path`, not `Path`, for the first two (#246): `command` is untrusted,
+    # and `Path.exists()` raises on 3.11-3.13 for a name the OS will not look up
+    # — 100,001 characters ended `doctor` with ENAMETOOLONG. `os.path.exists`
+    # and `isfile` answer False for every OSError and ValueError on all four
+    # interpreters, and a path Claude Code cannot look up is one it cannot
+    # spawn. `os.access` stays last and relies on that order: it raises on a
+    # NUL or a lone surrogate, which `isfile` has already turned away.
+    if not os.path.exists(command):
         return ChannelReport(
             CHANNEL_HOOK,
             DEGRADED,
-            f"the hook runs {command}, which does not exist",
+            f"the hook runs {command}, which does not exist or cannot be reached",
             "Run `mpg setup --with-hook` to re-point it",
         )
-    if not interpreter.is_file():
+    if not os.path.isfile(command):
         return ChannelReport(
             CHANNEL_HOOK,
             DEGRADED,
             f"the hook runs {command}, which is not a file",
             "Run `mpg setup --with-hook` to re-point it",
         )
-    if not os.access(interpreter, os.X_OK):
+    if not os.access(command, os.X_OK):
         return ChannelReport(
             CHANNEL_HOOK,
             DEGRADED,
@@ -461,8 +490,23 @@ def diagnose_hook(
     """
     root = project_dir or _find_project_root()
     path = settings_local_path(root)
+    # The same lookup `_link_report` makes, for the same reason: `read_settings`
+    # answers `{}` — `absent`, healthy — for a file `Path.exists()` calls
+    # missing, and on 3.14 that includes one inside a directory this process
+    # cannot enter.
+    failure = _lookup_failure(path)
+    if failure is not None:
+        return ChannelReport(
+            CHANNEL_HOOK, UNKNOWN, f"cannot look up {path}: {failure.strerror or failure}"
+        )
     try:
         settings = read_settings(path)
+    except HookConfigUnparsable as e:
+        # Python's reader gave up (see `HookConfigUnparsable`); Claude Code's
+        # may not have. Calling it broken would state a result nobody obtained.
+        return ChannelReport(
+            CHANNEL_HOOK, UNKNOWN, f"{e}, so the hook registration was not examined"
+        )
     except HookConfigError as e:
         return ChannelReport(
             CHANNEL_HOOK,
@@ -911,6 +955,22 @@ def _parse_mcp_fields(stdout: bytes) -> dict[str, str]:
     return fields
 
 
+def _absolute_search_path() -> str:
+    """`PATH` without the entries the current directory decides.
+
+    A relative entry — `.`, `node_modules/.bin`, or an empty one, which POSIX
+    reads as `.` — resolves against the working directory, and that is usually
+    the project, so what it finds may be something the project ships. Used for
+    both halves of running `claude`: finding it, and the `PATH` it runs with.
+    The second half matters as much as the first. `claude` installed from npm
+    is a `#!/usr/bin/env node` script, and a perfectly good `claude` that looks
+    its interpreter up through `node_modules/.bin` runs the project's `node` —
+    which then decides the MCP line and the exit status (found in review).
+    """
+    entries = os.environ.get("PATH", os.defpath).split(os.pathsep)
+    return os.pathsep.join(entry for entry in entries if os.path.isabs(entry))
+
+
 def diagnose_mcp(project_dir: Path | None = None) -> ChannelReport:
     """Report the MCP registration by asking `claude` whether it connects.
 
@@ -929,7 +989,19 @@ def diagnose_mcp(project_dir: Path | None = None) -> ChannelReport:
     mpg registration". Calling it `unknown` would make exit 0 unreachable in CI,
     where `claude` is not installed.
     """
-    claude = shutil.which("claude")
+    search_path = _absolute_search_path()
+    claude = shutil.which("claude", path=search_path)
+    if claude is None and shutil.which("claude") is not None:
+        # On PATH, but only through a relative entry: see
+        # `_absolute_search_path`. Not run, and not `absent` either — there is
+        # a `claude` there, and whether it is the user's is what nobody knows.
+        return ChannelReport(
+            CHANNEL_MCP,
+            UNKNOWN,
+            "'claude' is on PATH only through a relative entry that the current directory"
+            " decides (such as node_modules/.bin), so it was not run",
+            "Put the directory holding Claude Code on PATH as an absolute path",
+        )
     if claude is None:
         return ChannelReport(
             CHANNEL_MCP,
@@ -937,9 +1009,12 @@ def diagnose_mcp(project_dir: Path | None = None) -> ChannelReport:
             "'claude' is not on PATH, so there is no MCP registration",
             "Install Claude Code, then run `mpg setup`",
         )
-
+    # What `claude mcp get` itself starts is outside what `doctor` can bound;
+    # which `claude` runs, and what it finds on PATH, is not.
     result = _run_claude_mcp_quiet(
-        [claude, "mcp", "get", MCP_SERVER_NAME], cwd=_resolve_cwd(project_dir)
+        [claude, "mcp", "get", MCP_SERVER_NAME],
+        cwd=_resolve_cwd(project_dir),
+        env={**os.environ, "PATH": search_path},
     )
     if result is None:
         return ChannelReport(
@@ -1020,13 +1095,58 @@ def diagnose_all(
     would put `run_interpreter` on three diagnosers that ignore it, which reads
     as though they might not — and the whole point of this flag is that a reader
     can tell exactly what executes.
+
+    Every channel is reported, whatever happens to the others. Each diagnoser
+    runs inside its own `except Exception`, which turns a failure into
+    `unknown` with the exception named — exit 2, visible — instead of a
+    traceback that takes every line with it. That is a backstop for shapes
+    nobody has found yet: the ones found so far are closed where they occur,
+    with the verdict each one deserves, and do not depend on it.
+
+    The project root is found here, once, in strict mode (see
+    `_find_project_root`), and handed to the three channels that live in the
+    project. Found inside each channel instead, a root that could not be
+    determined would be three identical exceptions; found outside the
+    `except`, it would be a traceback. The MCP channel keeps `project_dir` as
+    given, because its answer depends on the working directory, not the root.
     """
+    root = project_dir
+    root_failure: OSError | None = None
+    if root is None:
+        try:
+            root = _find_project_root(strict=True)
+        except OSError as e:
+            root_failure = e
     return [
-        diagnose_hook(project_dir, run_interpreter=run_interpreter)
-        if name == CHANNEL_HOOK
-        else _DIAGNOSERS[name](project_dir)
-        for name in CHANNELS
+        _diagnose_one(name, project_dir, root, root_failure, run_interpreter) for name in CHANNELS
     ]
+
+
+def _diagnose_one(
+    name: str,
+    project_dir: Path | None,
+    root: Path | None,
+    root_failure: OSError | None,
+    run_interpreter: bool,
+) -> ChannelReport:
+    if name != CHANNEL_MCP and root_failure is not None:
+        return ChannelReport(
+            name,
+            UNKNOWN,
+            # `str()` of an OSError already carries the errno, the reason, and
+            # the path when there is one.
+            f"cannot determine the project root: {root_failure}",
+        )
+    try:
+        if name == CHANNEL_MCP:
+            return _DIAGNOSERS[name](project_dir)
+        if name == CHANNEL_HOOK:
+            return diagnose_hook(root, run_interpreter=run_interpreter)
+        return _DIAGNOSERS[name](root)
+    except Exception as e:
+        return ChannelReport(
+            name, UNKNOWN, f"doctor could not examine this channel: {type(e).__name__}: {e}"
+        )
 
 
 def summarize(reports: list[ChannelReport]) -> int:

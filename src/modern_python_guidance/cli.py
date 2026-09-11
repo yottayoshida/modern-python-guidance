@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 import argparse
+import codecs
 import contextlib
 import json
 import logging
+import os
 import signal
 import sys
+import unicodedata
 from pathlib import Path
 
 from packaging.utils import canonicalize_name
@@ -629,6 +632,89 @@ def _cmd_uninstall(args: argparse.Namespace) -> None:
     sys.exit(code)
 
 
+_SHOWN_ESCAPED = frozenset({"Cc", "Cf", "Zl", "Zp", "Cs"})
+"""Unicode categories `_printable` renders as escapes: controls, format
+characters (bidirectional overrides, zero-width, tags), line and paragraph
+separators, and surrogates."""
+
+
+def _printable(text: str) -> str:
+    """`text` with every character that could act on a terminal shown instead.
+
+    What `doctor` prints comes from a settings file, a link's destination, and
+    `claude mcp get` — all of which a cloned repository can supply. A newline
+    in a registered `command` wrote a whole fabricated `mcp  present` line into
+    the report (#245); an escape sequence can erase and redraw one on a
+    terminal; a lone surrogate from JSON's `\\ud800` made `print` itself raise.
+    Escaping at the one place output is written covers every interpolation,
+    including the ones nobody has added yet.
+
+    Escaped, not deleted, so the reader can see something was there.
+    `surrogateescape` carries an undecodable byte as U+DC80-DCFF, and that is
+    shown as the byte it was (`\\xff`) — a raw 0x9B is CSI on an 8-bit
+    terminal and passed straight through before. A backslash is left alone:
+    a literal `\\x0a` in a path now reads like an escaped newline, which is
+    ambiguous to a reader but cannot add a line.
+    """
+    if text.isprintable():
+        return text
+    return "".join(_shown(char) for char in text)
+
+
+def _shown(char: str) -> str:
+    if unicodedata.category(char) not in _SHOWN_ESCAPED:
+        return char
+    code = ord(char)
+    if 0xDC80 <= code <= 0xDCFF:
+        return f"\\x{code - 0xDC00:02x}"
+    if code <= 0xFF:
+        return f"\\x{code:02x}"
+    if code <= 0xFFFF:
+        return f"\\u{code:04x}"
+    return f"\\U{code:08x}"
+
+
+@contextlib.contextmanager
+def _confined_doctor_output():
+    """While `doctor` writes, stdout and stderr cannot emit a byte a terminal obeys.
+
+    Escaping by Unicode category is not enough on its own, because the
+    terminal sees encoded bytes: under cp1251, U+2026 is written as 0x85 (NEL)
+    and U+203A as 0x9B (CSI) — both printable characters, so `_printable` leaves
+    them, and both control characters by the time they are bytes. A stream
+    that is not UTF-8 is switched to ASCII with backslash escapes; a UTF-8
+    one only stops raising on a character it cannot encode. A stream without
+    `reconfigure` (a replaced `sys.stdout`) is left as it is.
+
+    Restored on the way out, `SystemExit` included: these are the process's
+    own streams, and a caller running `main(["doctor"])` in-process should not
+    find them ASCII afterwards. What decides is the stream's encoding, which is
+    what Python writes with — not what the terminal on the other end expects.
+    """
+    changed = []
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure is None:
+            continue
+        before = (stream.encoding, stream.errors)
+        try:
+            is_utf8 = codecs.lookup(stream.encoding or "ascii").name.startswith("utf-8")
+            if is_utf8:
+                reconfigure(errors="backslashreplace")
+            else:
+                reconfigure(encoding="ascii", errors="backslashreplace")
+        except (LookupError, ValueError, OSError):
+            continue
+        changed.append((stream, before))
+    try:
+        yield
+    finally:
+        for stream, (encoding, errors) in changed:
+            with contextlib.suppress(LookupError, ValueError, OSError):
+                stream.flush()
+                stream.reconfigure(encoding=encoding, errors=errors)
+
+
 def _cmd_doctor(args: argparse.Namespace) -> None:
     """Report every delivery channel, then exit with the summary status.
 
@@ -636,12 +722,24 @@ def _cmd_doctor(args: argparse.Namespace) -> None:
     the exit status the machine-readable half of this command: 0 healthy,
     1 something is broken, 2 something could not be determined.
     """
-    if args.project_dir is not None and not args.project_dir.is_dir():
+    with _confined_doctor_output():
+        _report_doctor(args)
+
+
+def _report_doctor(args: argparse.Namespace) -> None:
+    # `os.path.isdir`, not `Path.is_dir()`: 3.11-3.13 raise on a path through a
+    # directory this process cannot enter — and a link on the way to the
+    # project can put one there — which ended `doctor` in a traceback before a
+    # channel was looked at. Either way nothing can be inspected.
+    if args.project_dir is not None and not os.path.isdir(args.project_dir):
         # Every channel would read as `absent` against a directory that is not
         # there, and absent is healthy — so a mistyped path would be answered
         # with "everything is fine". Nothing was inspected, so the status says
         # exactly that, via the same rule an empty report set uses.
-        print(f"{args.project_dir} is not a directory; nothing was inspected.", file=sys.stderr)
+        print(
+            f"{_printable(str(args.project_dir))} is not a directory; nothing was inspected.",
+            file=sys.stderr,
+        )
         print(
             "Check the path, or omit --project-dir to use the nearest project root.",
             file=sys.stderr,
@@ -651,9 +749,9 @@ def _cmd_doctor(args: argparse.Namespace) -> None:
     reports = diagnose_all(args.project_dir, run_interpreter=args.run_interpreter)
     width = max((len(report.channel) for report in reports), default=0)
     for report in reports:
-        print(f"{report.channel:<{width}}  {report.state:<8}  {report.detail}")
+        print(f"{report.channel:<{width}}  {report.state:<8}  {_printable(report.detail)}")
         if report.fix:
-            print(f"{' ' * width}  {' ' * 8}  -> {report.fix}")
+            print(f"{' ' * width}  {' ' * 8}  -> {_printable(report.fix)}")
     if args.project_dir is not None:
         # Setup registers MCP in user scope by default, and no --project-dir
         # narrows that. Three channels answer for the given project and one

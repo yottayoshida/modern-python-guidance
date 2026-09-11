@@ -184,11 +184,14 @@ _SIMPLE_MATCHER = re.compile(r"[A-Za-z0-9_ ,|-]*")
 #   moves. The cost of leaving it out is that `(Edit|Write)` and
 #   `^(Edit|Write)$` read as `unknown`.
 #
-# What this subset does NOT buy is a matcher that always comes back. `".*" * 200
-# + "Z"` is admitted here and does not answer within 20 seconds (measured):
-# catastrophic backtracking needs no parentheses, and it is not an exception, so
-# the `except` below cannot see it. That is older than this subset and unchanged
-# by it — tracked in #242.
+# The subset also buys a language small enough to evaluate without `re` (#242).
+# Without `( ) [ ] \ + ?` there are no groups, classes, or escapes: a pattern is
+# `|`-separated branches of literals, `.`, `^` and `$`, with `*` on a literal or
+# `.` — see `_subset_syntax_ok` and `_subset_search`. `re` was measured unusable
+# here in two ways, neither of them an exception an `except` could see:
+# `".*" * 200 + "Z"` backtracks for more than 20 seconds against `Write`, and
+# `re.compile` alone is quadratic in two branches sharing a prefix — thirty
+# seconds for a million characters on 3.12, sixty-eight on 3.14.
 #
 # `-` sits last so it stays a literal, and `^` is not first so it does not
 # negate the class.
@@ -275,17 +278,96 @@ def matcher_fires_on(matcher: object, tool: str) -> bool | None:
     # turn a measured `False` into `None` for no reason.
     if not _PORTABLE_MATCHER.fullmatch(matcher) or not _PLAIN_TOOL_NAME.fullmatch(tool):
         return None
-    try:
-        return re.search(matcher, tool) is not None
-    except Exception:
-        # Not just `re.error`. A large enough repetition count raises
-        # `OverflowError` and deep nesting can exhaust the stack, neither of
-        # which is an `re.error` — and a matcher out of a settings file is
-        # untrusted input, so a narrow `except` here is a way to end `mpg
-        # doctor` in a traceback by writing one line of JSON. Everything that
-        # goes wrong evaluating it means the same thing to the caller: not
-        # measured.
+    # A pattern both engines refuse is one this process has not measured
+    # either: `None`, exactly as the `re.error` this replaces used to give.
+    # There is no `except` below on purpose. A matcher out of a settings file
+    # is untrusted input, and the old `except Exception` around `re.search`
+    # was there so one line of JSON could not end `mpg doctor` in a traceback —
+    # but it could not see the failure that mattered, a search that never
+    # returns. Both functions are plain loops over the string, with nothing to
+    # raise and nothing to wait on.
+    if not _subset_syntax_ok(matcher):
         return None
+    return _subset_search(matcher, tool)
+
+
+def _subset_syntax_ok(matcher: str) -> bool:
+    """Whether a pattern in `_PORTABLE_MATCHER`'s subset compiles.
+
+    In that subset the only syntax error is a `*` with nothing to repeat: at
+    the start, or straight after `|`, `^`, `$`, or another `*`. Checked against
+    `re.compile` on every pattern of length five or less over the subset's
+    metacharacters and letters from both tool names — 177,156 patterns, no
+    disagreement, on 3.12.13 and 3.14.7 (2026-09-11) — and held by a test that
+    repeats the sweep to length four. Node refuses the same shapes, which is
+    what #237's sweep established for the subset.
+
+    It replaces `re.compile`, which is quadratic in branches sharing a prefix
+    and turned a one-megabyte matcher into a wait of thirty seconds or more.
+    """
+    previous = None
+    for char in matcher:
+        if char == "*" and (previous is None or previous in "|^$*"):
+            return False
+        previous = char
+    return True
+
+
+def _subset_search(matcher: str, tool: str) -> bool:
+    """`re.search(matcher, tool) is not None`, in time linear in the matcher.
+
+    Only for a pattern `_subset_syntax_ok` accepted. With no groups, `|` is
+    always top-level and `*` always applies to the one character before it,
+    so a branch is a list of one-character steps, and the search can carry the
+    *set* of positions a match may have reached instead of trying them one
+    path at a time. The set never holds more than `len(tool) + 1` entries,
+    which is what bounds the work — backtracking revisits a position once per
+    way of getting there, and `".*" * 200` has a great many ways.
+
+    Unanchored, as Claude Code evaluates it: every position is a possible
+    start. `^` keeps only position 0 and `$` only the end. The subject is a
+    plain tool name (`_PLAIN_TOOL_NAME`), so Python's "`$` before a trailing
+    newline" never arises and `.` has no newline to skip.
+    """
+    end = len(tool)
+    every_position = frozenset(range(end + 1))
+    for branch in matcher.split("|"):
+        steps: list[tuple[str, bool]] = []
+        for char in branch:
+            if char == "*":
+                steps[-1] = (steps[-1][0], True)
+            else:
+                steps.append((char, False))
+        positions = set(every_position)
+        for char, repeated in steps:
+            if char == "^":
+                positions &= {0}
+            elif char == "$":
+                positions &= {end}
+            elif repeated:
+                # A repeat can only add positions, so a full set stays full.
+                if positions == every_position:
+                    continue
+                reached = set(positions)
+                for start in sorted(positions):
+                    at = start
+                    while at < end and _step_matches(char, tool[at]) and at + 1 not in reached:
+                        at += 1
+                        reached.add(at)
+                positions = reached
+            else:
+                positions = {
+                    at + 1 for at in positions if at < end and _step_matches(char, tool[at])
+                }
+            if not positions:
+                break
+        if positions:
+            return True
+    return False
+
+
+def _step_matches(char: str, subject: str) -> bool:
+    return subject != "\n" if char == "." else char == subject
 
 
 def _strip_mpg_entries(post: list) -> list:
@@ -467,12 +549,48 @@ def symlinked_parent_notes(project_root: Path, write_paths: Iterable[Path]) -> l
     return notes
 
 
+SETTINGS_SIZE_LIMIT = 1 << 20
+"""The most of a settings file `read_settings` will read: one mebibyte.
+
+A settings.local.json holds a few hundred bytes. The limit is there because
+the file is untrusted — it is git-ignored, but `git add -f` puts it in a commit
+and a clone delivers it — and reading it whole is how a multi-gigabyte file
+ends the process instead of being refused."""
+
+
+class HookConfigUnparsable(HookConfigError):
+    """The file was opened, and this process could not finish parsing it.
+
+    Not a JSON syntax error, which both engines refuse. These are limits of
+    Python's reader: bytes that are not UTF-8, an integer past
+    `sys.get_int_max_str_digits()`, nesting deeper than the stack, `NaN` and
+    `Infinity` (which Python accepts and JSON does not), a file larger than
+    `SETTINGS_SIZE_LIMIT`. Claude Code reads with a different parser and may
+    accept some of them, so `doctor` reports this as `unknown` rather than
+    `degraded`. To `setup` it is a `HookConfigError` like any other: leave the
+    file untouched.
+    """
+
+
+def _refuse_non_json_constant(name: str) -> object:
+    msg = f"{name} is not a JSON value"
+    raise ValueError(msg)
+
+
 def read_settings(path: Path) -> dict:
     """Read and parse a settings file. An absent file reads as `{}`.
 
     Fail-closed: symlinks (including dangling ones), unreadable files,
-    invalid JSON, and non-object JSON all raise HookConfigError rather
-    than guessing — the caller must leave the file untouched.
+    anything that is not a regular file, invalid JSON, and non-object JSON all
+    raise HookConfigError rather than guessing — the caller must leave the file
+    untouched. Content this process cannot finish parsing raises the subclass
+    `HookConfigUnparsable`.
+
+    Opened with `O_NONBLOCK` and checked with `fstat` before a byte is read,
+    the way `_first_byte_readable` opens bundled assets: a fifo here made
+    `read_text` wait for a writer that never came, and `mpg doctor` and
+    `mpg setup` never answered. Read up to one byte past the limit, so a file
+    that grows after the `fstat` is still refused rather than read whole.
     """
     if path.is_symlink():
         msg = f"{path} is a symlink; refusing to follow into it"
@@ -480,15 +598,33 @@ def read_settings(path: Path) -> dict:
     if not path.exists():
         return {}
     try:
-        text = path.read_text(encoding="utf-8-sig")
+        fd = os.open(path, os.O_RDONLY | getattr(os, "O_NONBLOCK", 0))
     except OSError as e:
         msg = f"cannot read {path}: {e}"
         raise HookConfigError(msg) from e
+    with os.fdopen(fd, "rb") as stream:
+        if not stat.S_ISREG(os.fstat(stream.fileno()).st_mode):
+            msg = f"{path} is not a regular file"
+            raise HookConfigError(msg)
+        try:
+            raw = stream.read(SETTINGS_SIZE_LIMIT + 1)
+        except OSError as e:
+            msg = f"cannot read {path}: {e}"
+            raise HookConfigError(msg) from e
+    if len(raw) > SETTINGS_SIZE_LIMIT:
+        msg = f"{path} is larger than {SETTINGS_SIZE_LIMIT} bytes"
+        raise HookConfigUnparsable(msg)
     try:
-        data = json.loads(text)
+        data = json.loads(raw.decode("utf-8-sig"), parse_constant=_refuse_non_json_constant)
     except json.JSONDecodeError as e:
         msg = f"{path} is not valid JSON: {e}"
         raise HookConfigError(msg) from e
+    except (ValueError, RecursionError) as e:
+        # `JSONDecodeError` is a `ValueError` too, and is caught above; what
+        # reaches here is `UnicodeDecodeError`, the integer-digit limit, the
+        # constant hook, and the stack.
+        msg = f"{path} could not be parsed by this process ({type(e).__name__}: {e})"
+        raise HookConfigUnparsable(msg) from e
     if not isinstance(data, dict):
         msg = f"{path} does not contain a JSON object"
         raise HookConfigError(msg)
