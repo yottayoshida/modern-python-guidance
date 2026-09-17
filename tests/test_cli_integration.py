@@ -501,6 +501,29 @@ class TestHook:
         assert r.stdout == ""
         assert r.stderr == ""
 
+    def test_hook_file_it_could_not_check_says_so(self, tmp_path):
+        """#209 end to end: a file over the size cap is reported to the user
+        through `systemMessage`, with nothing for Claude, exit 0, stderr empty —
+        and `mpg check` on the same file reports the same reason, exit 2."""
+        from modern_python_guidance.check import _MAX_FILE_SIZE
+
+        p = tmp_path / "big.py"
+        p.write_bytes(b"#" * (_MAX_FILE_SIZE + 1))
+        stdin = json.dumps({"tool_input": {"file_path": str(p)}})
+        r = self._run_hook(stdin)
+        assert r.returncode == 0
+        assert r.stderr == ""
+        assert r.stdout.isascii()
+        payload = json.loads(r.stdout)
+        assert "hookSpecificOutput" not in payload
+        message = payload["systemMessage"]
+        assert message.startswith("mpg: could not check this file: file too large")
+        assert "\n" not in message
+
+        check = run_cli("check", str(p))
+        assert check.returncode == 2
+        assert "file too large" in check.stderr
+
     def test_hook_caps_surfaced_matches(self, tmp_path):
         """#152 Step 4: additionalContext surfaces at most 5 matches + a '+N more'
         summary, even when many more patterns are found (noise-bound per UX)."""

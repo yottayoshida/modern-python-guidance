@@ -5,13 +5,16 @@ from __future__ import annotations
 import argparse
 import codecs
 import contextlib
+import errno
 import json
 import logging
 import os
 import signal
+import stat
 import sys
 import unicodedata
 from pathlib import Path
+from typing import NoReturn
 
 from packaging.utils import canonicalize_name
 from packaging.version import InvalidVersion, Version
@@ -894,6 +897,10 @@ def _hook_post_tool_use() -> None:
 
 _MAX_SURFACED_MATCHES = 5
 
+# "Nothing there": the only stat() failures the hook keeps silent, at the gate
+# and again in `_hook_not_checked`. Every other errno is a file it cannot reach.
+_ABSENT_ERRNOS = (errno.ENOENT, errno.ENOTDIR)
+
 
 def _hook_post_tool_use_inner() -> None:
     try:
@@ -910,13 +917,36 @@ def _hook_post_tool_use_inner() -> None:
         sys.exit(0)
 
     path = Path(file_path)
-    if not path.is_file():
+    try:
+        mode = path.stat().st_mode
+    except ValueError:
+        # A NUL byte or an unencodable surrogate: no filesystem holds a file by
+        # this name, so this is "nothing there", like ENOENT. `is_file()` folded
+        # these into False on every version; `stat()` raises.
+        sys.exit(0)
+    except OSError as exc:
+        if exc.errno in _ABSENT_ERRNOS:
+            sys.exit(0)
+        # EACCES, ENAMETOOLONG, ELOOP...: something may be there and the hook
+        # cannot reach it. `is_file()` raised here on 3.11-3.13 (a traceback,
+        # of which Claude Code shows only the first line) and answered False
+        # on 3.14 (silence); `stat()` behaves the same on every version.
+        _hook_not_checked(path, exc)
+    if not stat.S_ISREG(mode):
         sys.exit(0)
 
     resolution = _resolve_python_for_file(path)
 
-    index = build_index()
     try:
+        index = build_index()
+        if not index.guides:
+            # `build_index()` never raises: a missing or hollow guides
+            # directory is logged (silenced here) and comes back empty, and
+            # an empty catalog finds nothing in any file — the one shape of
+            # a broken install that reads exactly like a clean file.
+            # Not "see `mpg doctor`": its skills channel reads `SKILL.md`, not
+            # the guides beside it, and would call this install `present`.
+            raise _HookCannotCheck("the bundled guide catalog loaded no guides; reinstall mpg")
         dependency_context = find_dependency_context(path.resolve().parent)
         coverage = detection_coverage(
             index,
@@ -929,8 +959,13 @@ def _hook_post_tool_use_inner() -> None:
             python_version=resolution.version,
             dependency_context=dependency_context,
         )
-    except (CheckError, OSError, RuntimeError):
-        sys.exit(0)
+    except Exception as exc:
+        # A hook must never break an edit. Until #209 it kept that promise by
+        # exiting 0 in silence, indistinguishable from a clean file; it now
+        # says so. Broad on purpose, around the check itself: a detector
+        # raising ended in a traceback before, of which Claude Code shows
+        # only the first line, and the message keeps the exception's type.
+        _hook_not_checked(path, exc)
 
     if not matches:
         sys.exit(0)
@@ -946,6 +981,53 @@ def _hook_post_tool_use_inner() -> None:
             }
         )
     )
+    sys.exit(0)
+
+
+class _HookCannotCheck(Exception):
+    """A failure the hook diagnosed itself, inside its guard.
+
+    Shown as its text alone: no type name, which foreign exceptions carry so
+    a bug stays visible, and no `mpg check` hint, which would not reproduce
+    it — `check` with an empty catalog reports a clean file.
+    """
+
+
+def _hook_not_checked(path: Path, exc: BaseException) -> NoReturn:
+    """Tell the user, not Claude, that this file was not checked; exit 0.
+
+    Until #209 a file the hook could not check and a clean file were
+    byte-identical: nothing on stdout or stderr, exit 0. `systemMessage` is the
+    field Claude Code shows to the user; nothing reaches Claude's context, and
+    the edit is never blocked. Stderr is not used because on exit 0 it reaches
+    only the debug log. `mpg check` is named only for a CheckError, the
+    failures `check` reproduces on stderr; for the rest `check` ends in a
+    traceback of its own.
+
+    Every character that could act on a terminal is shown as an escape
+    (`_printable`, the function `doctor` writes through since #245), and the
+    JSON stays ASCII, so a path or an OS message cannot add a line or redraw
+    one — the value stays one line.
+
+    A file that vanished after the gate let it through arrives here as
+    "file not found", since the check opens it again, and one replaced by a
+    directory as "not a file". Both are what the gate keeps silent — nothing
+    there, or nothing that is a regular file — so they are silent here too.
+    """
+    try:
+        if not stat.S_ISREG(path.stat().st_mode):
+            sys.exit(0)
+    except OSError as now:
+        if now.errno in _ABSENT_ERRNOS:
+            sys.exit(0)
+    detail = str(exc)
+    if isinstance(exc, (CheckError, _HookCannotCheck)):
+        reason = detail
+    else:
+        reason = f"{type(exc).__name__}: {detail}" if detail else type(exc).__name__
+    hint = " `mpg check <file>` reports the same reason." if isinstance(exc, CheckError) else ""
+    message = _printable(f"mpg: could not check this file: {reason}.{hint}")
+    print(json.dumps({"systemMessage": message}))
     sys.exit(0)
 
 

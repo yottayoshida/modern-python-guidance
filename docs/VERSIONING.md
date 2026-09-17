@@ -105,11 +105,20 @@ surprising semantics.
 ### 5. PostToolUse hook stdout contract
 
 The `hookSpecificOutput.additionalContext` shape written to stdout, and the exit code
-that accompanies it.
+that accompanies it. Since #209, also the one-line `systemMessage` written for a file the
+hook could not check; a clean file still writes nothing.
+
+**Additive only**: the `systemMessage` line arrived in a minor release, and neither the
+findings shape nor the exit status moved. What did move is what previously silent inputs
+return — a file the hook cannot reach, a symlink loop — which is why it is written here
+rather than waved through as additive; [6](#6-exit-code-guarantees) applies the same rule
+to exit codes.
 
 Held by `tests/test_cli_unit.py`, which reads the emitted JSON rather than the exit status
 alone — a hook that exits 0 while printing nothing usable is the failure mode this
-contract exists to prevent.
+contract exists to prevent. The warning is read as the parsed `systemMessage` value, not
+the raw stdout, because `json.dumps` alone would hide a control character the escaper
+missed.
 
 ### 6. Exit-code guarantees
 
