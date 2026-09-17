@@ -77,7 +77,11 @@ or these notes, as containment of the `.claude` tree.
   bounded reads, tokenization, regular expressions, and `ast.parse`; it does
   not import, execute, or evaluate the edited Python.
 - PostToolUse hook output names guide IDs and line numbers, not raw source
-  lines, to reduce indirect prompt-injection exposure from source text.
+  lines, to reduce indirect prompt-injection exposure from source text. Since
+  #209 it can also return a one-line `systemMessage` for a file it could not
+  check, carrying the file's path and an OS or exception message — still never
+  source text — with every control, format, line and paragraph separator, and
+  surrogate character shown as an escape and the JSON kept ASCII.
 - Python project files and dependency evidence are bounded and parsed as data.
   They may be malformed or attacker-controlled and are not trusted as code.
 - MCP `project_dir` must be relative and is confined to the server working

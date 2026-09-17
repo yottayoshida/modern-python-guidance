@@ -270,7 +270,8 @@ and retrieval content are unchanged. Each non-empty result item now includes
 target-applicable total, detectable/advisory-only counts, and sorted
 `advisory_only_ids`. Human check output and finding-bearing PostToolUse context
 show the same compact scope line. Clean `--quiet` and clean hook invocations
-remain byte-silent; silence is not a certificate for advisory-only guidance.
+remain byte-silent; a hook invocation that could not check the file is not clean, and says
+so in a `systemMessage` (#209). Silence is not a certificate for advisory-only guidance.
 
 ## Output format
 

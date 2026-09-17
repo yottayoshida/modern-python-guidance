@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import sys
 from unittest.mock import patch
 
@@ -666,6 +667,9 @@ class TestCmdHookVersionDetection:
         assert captured.out == ""
 
     def test_dependency_context_failure_does_not_break_hook(self, tmp_path, capsys, monkeypatch):
+        """Synthetic: `find_dependency_context` catches its own OSErrors, so this
+        path is reached only by monkeypatch. It still must not break the edit,
+        and since #209 it says so instead of staying silent."""
         p = tmp_path / "bad.py"
         p.write_text("from typing import List\n")
         monkeypatch.setattr(
@@ -674,7 +678,221 @@ class TestCmdHookVersionDetection:
         )
         with pytest.raises(SystemExit, match="0"):
             self._run_hook(monkeypatch, p)
-        assert capsys.readouterr().out == ""
+        captured = capsys.readouterr()
+        assert captured.err == ""
+        payload = json.loads(captured.out)
+        assert "hookSpecificOutput" not in payload
+        assert payload["systemMessage"] == "mpg: could not check this file: OSError: unreadable."
+
+
+_NEEDS_A_PERMISSION_THE_CALLER_LACKS = pytest.mark.skipif(
+    sys.platform == "win32" or os.geteuid() == 0,
+    reason="chmod 0 does not lock a file away from root or on Windows",
+)
+
+
+class TestCmdHookNotChecked:
+    """#209: a `.py` file the hook could not check produces a one-line warning;
+    a clean file still produces nothing. The warning is `systemMessage`, the
+    field Claude Code shows to the user, with nothing for Claude and exit 0."""
+
+    def _run_hook(self, monkeypatch, file_path):
+        import io
+
+        stdin_data = json.dumps({"tool_input": {"file_path": str(file_path)}})
+        monkeypatch.setattr("sys.stdin", io.StringIO(stdin_data))
+        with pytest.raises(SystemExit, match="0"):
+            main(argv=["hook", "claude-post-tool-use"])
+
+    @staticmethod
+    def _warning(captured) -> str:
+        assert captured.err == ""
+        assert "additionalContext" not in captured.out
+        payload = json.loads(captured.out)
+        assert "hookSpecificOutput" not in payload
+        return payload["systemMessage"]
+
+    @staticmethod
+    def _silent(captured) -> None:
+        assert (captured.out, captured.err) == ("", "")
+
+    def test_clean_file_is_silent_and_too_large_file_says_so(self, tmp_path, capsys, monkeypatch):
+        """The paired check: same harness, two inputs. Before #209 both gave ''."""
+        from modern_python_guidance.check import _MAX_FILE_SIZE
+
+        clean = tmp_path / "clean.py"
+        clean.write_text("x = 1\n")
+        self._run_hook(monkeypatch, clean)
+        self._silent(capsys.readouterr())
+
+        big = tmp_path / "big.py"
+        big.write_bytes(b"#" * (_MAX_FILE_SIZE + 1))
+        self._run_hook(monkeypatch, big)
+        message = self._warning(capsys.readouterr())
+        assert message.startswith("mpg: could not check this file: file too large")
+        assert message.endswith(" `mpg check <file>` reports the same reason.")
+        assert "\n" not in message
+
+    def test_binary_file_says_so(self, tmp_path, capsys, monkeypatch):
+        p = tmp_path / "blob.py"
+        p.write_bytes(b"\x00\x01binary")
+        self._run_hook(monkeypatch, p)
+        assert "binary file" in self._warning(capsys.readouterr())
+
+    @_NEEDS_A_PERMISSION_THE_CALLER_LACKS
+    def test_unreadable_file_says_so(self, tmp_path, capsys, monkeypatch):
+        p = tmp_path / "locked.py"
+        p.write_text("x = 1\n")
+        p.chmod(0)
+        try:
+            self._run_hook(monkeypatch, p)
+        finally:
+            p.chmod(0o644)
+        assert "cannot read" in self._warning(capsys.readouterr())
+
+    @_NEEDS_A_PERMISSION_THE_CALLER_LACKS
+    def test_unreachable_parent_directory_says_so(self, tmp_path, capsys, monkeypatch):
+        """`is_file()` raised PermissionError here on 3.11-3.13 (a traceback)
+        and answered False on 3.14 (silence); `stat()` says so on every version."""
+        inner = tmp_path / "inner"
+        inner.mkdir()
+        p = inner / "x.py"
+        p.write_text("x = 1\n")
+        inner.chmod(0)
+        try:
+            self._run_hook(monkeypatch, p)
+        finally:
+            inner.chmod(0o755)
+        message = self._warning(capsys.readouterr())
+        assert message.startswith("mpg: could not check this file: PermissionError:")
+        assert "`mpg check" not in message
+
+    @pytest.mark.skipif(sys.platform == "win32", reason="symlinks need a privilege on Windows")
+    def test_symlink_loop_says_so(self, tmp_path, capsys, monkeypatch):
+        """ELOOP was one of the errnos `is_file()` folded into False; now a reason."""
+        p = tmp_path / "loop.py"
+        p.symlink_to(p)
+        self._run_hook(monkeypatch, p)
+        assert "OSError:" in self._warning(capsys.readouterr())
+
+    def test_missing_file_stays_silent(self, tmp_path, capsys, monkeypatch):
+        self._run_hook(monkeypatch, tmp_path / "absent.py")
+        self._silent(capsys.readouterr())
+
+    @pytest.mark.parametrize("name", ["a\x00b.py", "x\ud800y.py"])
+    def test_name_no_filesystem_can_hold_stays_silent(self, name, capsys, monkeypatch):
+        """A NUL or a lone surrogate raises ValueError from `stat()`, which
+        `is_file()` folded into False; nothing there, so nothing said."""
+        self._run_hook(monkeypatch, name)
+        self._silent(capsys.readouterr())
+
+    def test_file_gone_before_the_check_stays_silent(self, tmp_path, capsys, monkeypatch):
+        """A file that vanishes between the gate and the check arrives as
+        CheckError("file not found"). Nothing there, so nothing said — the
+        same answer the gate gives, whichever side of it the file disappears."""
+        from modern_python_guidance import cli
+
+        p = tmp_path / "x.py"
+        p.write_text("x = 1\n")
+        real_check_file = cli.check_file
+
+        def vanish(path, *args, **kwargs):
+            path.unlink()
+            return real_check_file(path, *args, **kwargs)
+
+        monkeypatch.setattr("modern_python_guidance.cli.check_file", vanish)
+        self._run_hook(monkeypatch, p)
+        self._silent(capsys.readouterr())
+
+    def test_path_replaced_by_directory_before_the_check_stays_silent(
+        self, tmp_path, capsys, monkeypatch
+    ):
+        """The other race: the path is a directory by the time the check opens
+        it, which arrives as CheckError("not a file"). The gate keeps a
+        non-regular file silent, so the handler does too."""
+        from modern_python_guidance import cli
+
+        p = tmp_path / "x.py"
+        p.write_text("x = 1\n")
+        real_check_file = cli.check_file
+
+        def replace(path, *args, **kwargs):
+            path.unlink()
+            path.mkdir()
+            return real_check_file(path, *args, **kwargs)
+
+        monkeypatch.setattr("modern_python_guidance.cli.check_file", replace)
+        self._run_hook(monkeypatch, p)
+        self._silent(capsys.readouterr())
+
+    def test_empty_catalog_says_so(self, tmp_path, capsys, monkeypatch):
+        """The real `build_index()` never raises: a missing guides directory is
+        logged and comes back empty, and an empty catalog finds nothing in any
+        file — silence, before this. Pointed at an empty directory here, not
+        replaced by a fake that throws."""
+        p = tmp_path / "x.py"
+        p.write_text("from typing import List\n")
+        empty = tmp_path / "no-guides"
+        empty.mkdir()
+        monkeypatch.setattr("modern_python_guidance.guide_index._find_guides_dir", lambda: empty)
+        self._run_hook(monkeypatch, p)
+        message = self._warning(capsys.readouterr())
+        assert message == (
+            "mpg: could not check this file: the bundled guide catalog loaded no guides; "
+            "reinstall mpg."
+        )
+        assert "`mpg check" not in message
+
+    def test_catalog_failure_says_so_without_naming_check(self, tmp_path, capsys, monkeypatch):
+        """A foreign exception out of the catalog load is reported with its
+        type, and without the `mpg check` hint, which would not reproduce it.
+        (`build_index()` itself never raises; see `test_empty_catalog_says_so`
+        for the real failure shape. This pins the guard, not the catalog.)"""
+        p = tmp_path / "x.py"
+        p.write_text("x = 1\n")
+        monkeypatch.setattr(
+            "modern_python_guidance.cli.build_index",
+            lambda: (_ for _ in ()).throw(ValueError("catalog")),
+        )
+        self._run_hook(monkeypatch, p)
+        message = self._warning(capsys.readouterr())
+        assert message == "mpg: could not check this file: ValueError: catalog."
+
+    def test_reason_cannot_add_a_line_or_redraw_one(self, tmp_path, capsys, monkeypatch):
+        """#245's lesson applied to the hook. Asserted on the parsed value:
+        `json.dumps` alone would hide a raw control character behind `\\u001b`."""
+        from modern_python_guidance.check import CheckError
+
+        p = tmp_path / "x.py"
+        p.write_text("x = 1\n")
+
+        def boom(*_args, **_kwargs):
+            raise CheckError("x\x1b[2Ky\nz")
+
+        monkeypatch.setattr("modern_python_guidance.cli.check_file", boom)
+        self._run_hook(monkeypatch, p)
+        message = self._warning(capsys.readouterr())
+        assert "\x1b" not in message
+        assert "\n" not in message
+        assert "x\\x1b[2Ky\\x0az" in message
+
+    def test_stdout_stays_ascii(self, tmp_path, capsys, monkeypatch):
+        """`ensure_ascii` is left at its default on purpose: under cp1251 a
+        printable U+203A is written as byte 0x9B, which is CSI. ASCII has no
+        such byte, and the parsed value still carries the character."""
+        from modern_python_guidance.check import CheckError
+
+        p = tmp_path / "x.py"
+        p.write_text("x = 1\n")
+
+        def boom(*_args, **_kwargs):
+            raise CheckError("caf\u00e9 \u203a")
+
+        monkeypatch.setattr("modern_python_guidance.cli.check_file", boom)
+        self._run_hook(monkeypatch, p)
+        captured = capsys.readouterr()
+        assert captured.out.isascii()
+        assert "caf\u00e9 \u203a" in json.loads(captured.out)["systemMessage"]
 
 
 class TestCmdSetupUninstall:

@@ -42,11 +42,13 @@ def main() -> int:
     )
 
     additional_context = None
+    system_message = None
     parse_error = False
     if proc.stdout.strip():
         try:
             payload = json.loads(proc.stdout)
             additional_context = payload.get("hookSpecificOutput", {}).get("additionalContext")
+            system_message = payload.get("systemMessage")
         except json.JSONDecodeError:
             parse_error = True
 
@@ -55,6 +57,7 @@ def main() -> int:
         "exit_code": proc.returncode,
         "additional_context_present": bool(additional_context),
         "additional_context_len": len(additional_context) if additional_context else 0,
+        "system_message_present": bool(system_message),
     }
     if parse_error:
         log_entry["parse_error"] = True
