@@ -6,7 +6,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
-## [1.3.0] — 2026-09-17
+## [1.3.0] — 2026-09-18
 
 **Summary**: The PostToolUse hook was silent in exactly the same way for a clean file and for a file it could not check, so a broken hook read as a healthy one from outside (#209). It now says so — one line, shown to the user and not to Claude, the edit never blocked — and a clean file still writes nothing.
 
