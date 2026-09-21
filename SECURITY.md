@@ -2,38 +2,13 @@
 
 ## Supported versions
 
-<!-- supported-release-line: 1.3.x -->
+<!-- supported-release-line: none -->
 
-| Release line | Security fixes |
-|---|---|
-| 1.3.x | Supported |
-| < 1.3 | Unsupported; upgrade before requesting a fix |
-
-Security fixes go to the latest minor release line. Backports to older minor
-lines are not promised, and upgrading within 1.x is not a breaking change:
-[docs/VERSIONING.md](docs/VERSIONING.md) lists the surfaces that stay fixed
-until 2.0, so moving to the supported line does not require a rewrite.
-
-## Reporting a vulnerability
-
-Please do not open a public issue for a suspected vulnerability. Use the
-repository-owned private reporting form as the primary channel:
-
-<https://github.com/yottayoshida/modern-python-guidance/security/advisories/new>
-
-This covers vulnerabilities in mpg itself, which are not public until they are
-disclosed. It does not cover already-published advisories against third-party
-packages mpg depends on: those are public by the time anyone can act on them,
-and the weekly dependency audit tracks them in open issues (see below).
-
-Include the impact, reproduction steps or proof of concept, affected version,
-and any relevant configuration details. Do not include secrets, access tokens,
-or real credentials in a report. Maintainers acknowledge and triage reports on
-a best-effort basis; there is no fixed response SLA.
-
-If GitHub Private Vulnerability Reporting is unavailable to you, use
-[i.yoshida@raksul.com](mailto:i.yoshida@raksul.com) as a fallback. This
-fallback mailbox is not promised to be monitored continuously.
+mpg is no longer actively maintained. No release line receives security fixes,
+including the last release, 1.3.x, and no fix is planned. Vulnerability reports
+are not taken either: there is no private channel, and nobody is reading one.
+Decide whether mpg is safe for your use from what it does today, which the rest
+of this document describes.
 
 ## What mpg can change and run
 
@@ -97,14 +72,7 @@ generated code is safe.
 
 ## Guide supply chain
 
-Guide changes use normal pull-request review and CI. GitHub Actions references
+Guide changes went through pull-request review and CI. GitHub Actions references
 are SHA-pinned. Before publishing, build CI verifies the packaged Skill, Rules,
 guide set, and guide index; releases publish the verified artifact. mpg does
 not currently provide cryptographic guide signing or require two-person review.
-
-A weekly workflow audits the dependencies this repository resolves and opens an
-issue when advisories appear; the check fails rather than reporting "nothing
-found" if it cannot establish what it covered. This is repository maintenance,
-not a feature of the published package — mpg still does not scan *your*
-dependencies, as stated above. The audit does not run on pull requests, so a
-newly published advisory does not block unrelated review.

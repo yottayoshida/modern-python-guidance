@@ -216,9 +216,10 @@ MODEL=claude-opus-4-8 ./bench/run-v5.sh myrun-t both --variant a --granularity t
 MODEL=claude-fable-5 ./bench/run-v5.sh myrun-f both --variant a --granularity terse -N 3 --budget 10.00 --allow-credit-use
 ```
 
-The older V1/V2 procedure in `docs/benchmark-procedure.md` is historical. Issue
-[#124](https://github.com/yottayoshida/modern-python-guidance/issues/124) tracks
-consolidating the benchmark docs so V5 is the single primary reproduction path.
+The older V1/V2 procedure in `docs/benchmark-procedure.md` is historical.
+Consolidating the benchmark docs so V5 is the single reproduction path
+([#124](https://github.com/yottayoshida/modern-python-guidance/issues/124)) was not
+done before maintenance stopped.
 
 ## Appendix: V5 scorer changes from V4
 

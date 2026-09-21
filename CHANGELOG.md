@@ -6,6 +6,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Changed
+
+- The project is no longer actively maintained: it works as-is, and no new features or fixes are planned. The README says so first, and the other documents no longer promise otherwise. `SECURITY.md` no longer names a supported release line — no line receives security fixes, 1.3.x included — and no longer offers a reporting channel: the private reporting form it pointed to had been switched off on GitHub, and the fallback mailbox is withdrawn. `CONTRIBUTING.md` says issues and pull requests are not reviewed. The automation that would have kept filing work with nobody to answer it is removed: the weekly dependency audit (`.github/workflows/audit-dependencies.yml` and `scripts/check_dependency_audit.py`), the weekly check that opened an issue for each new Python release (`.github/workflows/check-python-release.yml`), and Dependabot's monthly pull requests (`.github/dependabot.yml`). `uv audit` still audits a checkout by hand. A test now fails if a workflow runs on a schedule or can open issues or pull requests, or if a Dependabot configuration comes back, and the `SECURITY.md` guard checks that no line is called supported instead of following the version.
+
 ## [1.3.0] — 2026-09-18
 
 **Summary**: The PostToolUse hook was silent in exactly the same way for a clean file and for a file it could not check, so a broken hook read as a healthy one from outside (#209). It now says so — one line, shown to the user and not to Claude, the edit never blocked — and a clean file still writes nothing.
