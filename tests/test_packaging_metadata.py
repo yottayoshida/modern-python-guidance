@@ -7,8 +7,8 @@ type checkers ignored the annotations the classifier advertised (#204).
 `Development Status :: 3 - Alpha` survived just as long for the same reason
 (#207).
 
-The version-derived checks follow the shape `test_security_policy.py` already
-uses for SECURITY.md: a helper that takes its inputs as arguments, the real tree
+The version-derived checks follow the shape `test_security_policy.py` uses
+for SECURITY.md: a helper that takes its inputs as arguments, the real tree
 passed through it, and synthetic inputs proving the helper rejects the drift it
 exists to catch.
 
@@ -59,7 +59,8 @@ def expected_development_status(version: str) -> str:
     1.0 while its own PyPI page says Alpha contradicts itself. This lives in a
     test rather than in a release checklist so the version bump and the
     classifier cannot land in separate commits — the same reason SECURITY.md's
-    supported release line is pinned to the version rather than to a reminder.
+    supported release line was pinned to the version, rather than to a reminder,
+    until maintenance stopped.
 
     Prereleases of 1.0 are exempt. `1.0.0rc1` is where a project finds out
     whether it is stable, so requiring the stable classifier there would force

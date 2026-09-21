@@ -4,10 +4,10 @@ Issue: #8
 
 > Historical note: this page documents the V1/V2 benchmark procedure. The
 > current reproduction path is V5 in `docs/benchmark-v5.md`, including the
-> credit-use opt-in required by `bench/run-v5.sh`. Issue
-> [#124](https://github.com/yottayoshida/modern-python-guidance/issues/124)
-> tracks consolidating the benchmark docs so V5 is the primary procedure and
-> V1/V2 are retained only as historical reference.
+> credit-use opt-in required by `bench/run-v5.sh`. Consolidating the benchmark
+> docs so V5 is the only procedure
+> ([#124](https://github.com/yottayoshida/modern-python-guidance/issues/124)) was
+> not done before maintenance stopped; V1/V2 below are historical reference.
 
 ## Overview
 

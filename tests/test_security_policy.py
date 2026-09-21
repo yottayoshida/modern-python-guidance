@@ -1,36 +1,44 @@
 from __future__ import annotations
 
 import re
-import tomllib
 from pathlib import Path
 
 import pytest
-from packaging.version import Version
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 POLICY = REPO_ROOT / "SECURITY.md"
-PYPROJECT = REPO_ROOT / "pyproject.toml"
-MARKER_RE = re.compile(r"<!-- supported-release-line: (\d+\.\d+\.x) -->")
+MARKER_RE = re.compile(r"<!-- supported-release-line: (\S+) -->")
+NO_FIXES = "No release line receives security fixes"
+SUPPORTED_ROW_RE = re.compile(r"\bsupported\b", re.IGNORECASE)
 
 
-def expected_release_line() -> str:
-    data = tomllib.loads(PYPROJECT.read_text(encoding="utf-8"))
-    version = Version(data["project"]["version"])
-    return f"{version.major}.{version.minor}.x"
+def assert_unmaintained_security_policy(text: str) -> None:
+    """The project is no longer maintained, so SECURITY.md may neither name a
+    supported release line nor offer a channel nobody answers.
 
-
-def assert_current_security_policy(text: str) -> None:
+    Until maintenance stopped this guard derived the supported line from
+    `pyproject.toml` so a version bump could not leave the policy behind; with
+    no further releases there is nothing to follow, and what has to hold is
+    that nothing here promises a fix or a reply.
+    """
     marker = MARKER_RE.search(text)
     assert marker is not None, "SECURITY.md lacks supported-release-line marker"
-    assert marker.group(1) == expected_release_line()
-    assert f"| {expected_release_line()} | Supported |" in text
-    assert "security/advisories/new" in text
+    assert marker.group(1) == "none", f"marker names a supported line: {marker.group(1)}"
+    flat = text.replace("\n", " ")
+    assert NO_FIXES in flat, "SECURITY.md does not say no line receives fixes"
+    rows = [line for line in text.splitlines() if line.lstrip().startswith("|")]
+    supported = [row for row in rows if SUPPORTED_ROW_RE.search(row)]
+    assert not supported, f"table row calls a line supported: {supported}"
+    assert "security/advisories/new" not in text, (
+        "SECURITY.md points at the private reporting form"
+    )
+    assert "mailto:" not in text, "SECURITY.md offers a reporting mailbox"
     assert "read-only reference tool" not in text
     assert "does not" + " write to the filesystem" not in text
 
 
-def test_security_policy_matches_current_release_line() -> None:
-    assert_current_security_policy(POLICY.read_text(encoding="utf-8"))
+def test_security_policy_says_no_line_is_supported() -> None:
+    assert_unmaintained_security_policy(POLICY.read_text(encoding="utf-8"))
 
 
 def test_obsolete_policy_fixture_fails_the_guard() -> None:
@@ -39,7 +47,57 @@ def test_obsolete_policy_fixture_fails_the_guard() -> None:
 This is a read-only reference tool and does not write to the filesystem.
 """
     with pytest.raises(AssertionError):
-        assert_current_security_policy(obsolete)
+        assert_unmaintained_security_policy(obsolete)
+
+
+SUPPORTED_TABLE = (
+    "## Supported versions\n"
+    "\n"
+    "| Release line | Security fixes |\n"
+    "|---|---|\n"
+    "| 1.3.x | Supported |\n"
+)
+
+
+def _with(text: str, old: str, new: str) -> str:
+    """Replace `old`, insisting it was there: a replacement that silently
+    matched nothing would hand the guard the passing policy unchanged."""
+    assert old in text, f"fixture edit found nothing to replace: {old!r}"
+    return text.replace(old, new, 1)
+
+
+@pytest.mark.parametrize(
+    ("edit", "reason"),
+    [
+        (
+            lambda t: _with(t, "supported-release-line: none", "supported-release-line: 1.3.x"),
+            "marker names a supported line",
+        ),
+        (
+            lambda t: _with(t, NO_FIXES, "Security fixes go to the latest minor release line"),
+            "does not say no line receives fixes",
+        ),
+        (
+            lambda t: _with(t, "## Supported versions\n", SUPPORTED_TABLE),
+            "table row calls a line supported",
+        ),
+        (
+            lambda t: (
+                t
+                + "\n<https://github.com/yottayoshida/modern-python-guidance/security/advisories/new>\n"
+            ),
+            "private reporting form",
+        ),
+        (lambda t: t + "\n[a mailbox](mailto:someone@example.invalid)\n", "reporting mailbox"),
+    ],
+    ids=["marker", "no-fixes-sentence", "supported-row", "reporting-form", "mailbox"],
+)
+def test_security_policy_guard_rejects_each_promise(edit, reason: str) -> None:
+    """One promise added to the real policy at a time, each rejected for its
+    own reason — so no single assertion can be carrying all of them."""
+    real = POLICY.read_text(encoding="utf-8")
+    with pytest.raises(AssertionError, match=reason):
+        assert_unmaintained_security_policy(edit(real))
 
 
 def _notes_for(project_root: Path) -> list[str]:

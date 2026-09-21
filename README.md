@@ -1,5 +1,7 @@
 # modern-python-guidance
 
+> **Note:** This project is no longer actively maintained. It works as-is but no new features or fixes are planned.
+
 [![CI](https://github.com/yottayoshida/modern-python-guidance/actions/workflows/ci.yml/badge.svg)](https://github.com/yottayoshida/modern-python-guidance/actions/workflows/ci.yml)
 [![PyPI version](https://img.shields.io/pypi/v/modern-python-guidance.svg)](https://pypi.org/project/modern-python-guidance/)
 [![Python](https://img.shields.io/pypi/pyversions/modern-python-guidance.svg)](https://pypi.org/project/modern-python-guidance/)
@@ -186,7 +188,7 @@ mpg search "pydantic validator" --dependency-version package:pydantic=2.7.4
 
 ## Supported platforms
 
-Linux is what CI runs — `ubuntu-latest` across Python 3.11, 3.12, 3.13, and 3.14 — and macOS is where the project is developed. Both are exercised routinely.
+Linux is what CI runs — `ubuntu-latest` across Python 3.11, 3.12, 3.13, and 3.14 — and macOS is where the project was developed.
 
 Windows is untested, and one part of it is known to fail. `mpg setup` installs the Agent Skills directory and the rule file as symlinks, and Windows grants that privilege only with Developer Mode enabled or from an elevated prompt; without either, `os.symlink` raises `WinError 1314` and those two steps report an error. The remaining steps are unaffected — MCP registration and hook registration run independently and complete — but `mpg setup` still exits non-zero, because one of its steps failed. `mpg setup --mcp-only` avoids the symlinks entirely, at the cost of skipping the hook as well. This is read off the code path, not observed: no Windows machine has run it.
 
